@@ -206,7 +206,7 @@ fn header(font: &Font, game: &GameState) {
 }
 
 fn trail(font: &Font, current: Stage) {
-    let node_x = |i: usize| 80.0 + i as f32 * 160.0;
+    let node_x = |i: usize| 50.0 + i as f32 * 90.0;
     let y = 48.0;
     let current = current as usize;
     for (i, stage) in Stage::ALL.iter().enumerate() {
@@ -220,16 +220,23 @@ fn trail(font: &Font, current: Stage) {
             draw_line(node_x(i - 1) + 6.0, y, node_x(i) - 6.0, y, 2.0, line_color);
         }
         draw_rectangle(node_x(i) - 6.0, y - 6.0, 12.0, 12.0, color);
-        font.centered(
-            &stage.to_string().to_uppercase(),
-            node_x(i),
-            y + 14.0,
-            1.0,
-            color,
-        );
+        font.centered(trail_label(*stage), node_x(i), y + 14.0, 1.0, color);
     }
     if blink() {
         font.centered("v", node_x(current), y - 18.0, 1.0, AMBER);
+    }
+}
+
+/// Short stage names that fit between trail nodes.
+fn trail_label(stage: Stage) -> &'static str {
+    match stage {
+        Stage::Reconnaissance => "RECON",
+        Stage::Weaponization => "WEAPONIZE",
+        Stage::Delivery => "DELIVERY",
+        Stage::Exploitation => "EXPLOIT",
+        Stage::Installation => "INSTALL",
+        Stage::CommandAndControl => "C2",
+        Stage::ActionsOnObjectives => "ACTIONS",
     }
 }
 
@@ -353,7 +360,7 @@ fn ending(font: &Font, game: &GameState, outcome: Outcome) {
         ),
         Outcome::TeamCollapsed => (
             format!(
-                "Every analyst has walked out. {} is defenseless.",
+                "No analysts left: quit, sick, or worse. {} is defenseless.",
                 game.company
             ),
             RED,
