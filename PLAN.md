@@ -23,7 +23,7 @@ Success criteria:
 ## Phase 2: Core game rules
 
 Tasks:
-- Four landmarks played in order: Reconnaissance, Initial Access, Lateral Movement, Exfiltration.
+- Seven kill chain landmarks played in order: Reconnaissance, Weaponization, Delivery, Exploitation, Installation, Command and Control (C2), Actions on Objectives.
 - Each landmark offers its own choices trading budget, coffee, fatigue, containment, trust, and brand.
 - Budget limits which choices are available; coffee is consumed each stage and running out hurts the team.
 - Falling behind the attacker each stage costs corporate trust and brand loyalty.
@@ -31,7 +31,7 @@ Tasks:
 - Game logic is independent of input and output so it can be driven by the terminal now and the graphical front end later.
 
 Success criteria:
-- [x] A decision is made at all four landmarks, including Exfiltration.
+- [x] A decision is made at all seven landmarks, including Actions on Objectives.
 - [x] Each landmark has distinct choices.
 - [x] Budget, coffee, trust, brand, and containment all affect the outcome.
 - [x] A test exhaustively plays every choice path and proves all four outcomes are reachable.
@@ -41,14 +41,14 @@ Success criteria:
 
 Tasks:
 - Roster of analysts, a manager, a CISO, and a CIO, each with individual burnout.
-- Members who reach full burnout quit; low trust gets the CISO fired.
+- Members who reach full burnout leave in humorous ways (quitting, heart attack, stroke, dysentery); low trust gets the CISO fired; low budget makes the Manager redundant.
 - Losing analysts reduces containment progress; losing all analysts collapses the team.
 - Narrative log of decisions, departures, firings, and warnings shown to the player each turn.
 
 Success criteria:
 - [x] The player enters a company name and incident lead name at startup.
 - [x] Roster and burnout are shown each turn and affect gameplay.
-- [x] Burnout departures and firings produce Oregon Trail-style messages.
+- [x] Burnout departures, firings, and redundancies produce Oregon Trail-style messages.
 - [x] Unit tests cover departures, firing, coffee shortage, and each outcome trigger.
 
 ## Phase 4: Graphical front end

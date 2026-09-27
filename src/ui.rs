@@ -163,8 +163,8 @@ mod tests {
     fn number_keys_play_the_matching_choice() {
         let screen = new_game().update(Input::Char('2'));
 
-        assert_eq!(game(&screen).stage, Stage::InitialAccess);
-        assert_eq!(game(&screen).budget, 70);
+        assert_eq!(game(&screen).stage, Stage::Weaponization);
+        assert_eq!(game(&screen).budget, 120);
     }
 
     #[test]
@@ -219,10 +219,10 @@ mod tests {
 
     #[test]
     fn outcomes_cue_win_or_lose() {
-        let won = type_text(new_game(), "22");
+        let won = type_text(new_game(), "312312");
         let lost = type_text(new_game(), "33");
 
-        assert_eq!(cue(&won, &type_text(won.clone(), "32")), Some(Cue::Win));
+        assert_eq!(cue(&won, &type_text(won.clone(), "2")), Some(Cue::Win));
         assert_eq!(cue(&lost, &type_text(lost.clone(), "3")), Some(Cue::Lose));
     }
 
