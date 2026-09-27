@@ -1,2 +1,21 @@
-# the_kill_chain_trail
-A text adventure cyber security operations game inspired by Oregon Trail
+# The Kill Chain Trail
+
+A cyber security operations game inspired by Oregon Trail, written in Rust.
+
+Lead a SOC team through four landmarks of an attack (Reconnaissance, Initial Access, Lateral Movement, Exfiltration), spending budget, coffee, and your team's sleep to contain the attacker before trust, brand loyalty, or your analysts run out.
+
+Enter your company and name, then press 1-3 to choose at each landmark. The window renders at 640x480 and scales when resized. Sound effects and techno music are synthesized in code; see [PLAN.md](PLAN.md).
+
+## Run
+
+```bash
+cargo run --release
+```
+
+## Test
+
+```bash
+cargo test
+```
+
+See [PLAYTEST.md](PLAYTEST.md) for the manual playtest checklist.
