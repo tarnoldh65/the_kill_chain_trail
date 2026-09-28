@@ -87,6 +87,19 @@ Success criteria:
 - [x] No unused code or clippy warnings.
 - [x] README is accurate and minimal.
 
+## Phase 7: Incident reports and music selection
+
+Tasks:
+- After each decision, an incident report pop-up shows a pixel-art illustration of the activity and of the worst setback (falling behind, firing or redundancy, departure), with flavor text and that turn's consequences.
+- Two more original synthesized techno tracks.
+- Title screen menu to pick a track or turn music off, remembered across games.
+
+Success criteria:
+- [x] Every choice has report text and an illustration; ENTER dismisses the report.
+- [x] Sprites are 24x16 and use only the game palette (unit tested).
+- [x] Three tracks, each four whole bars that never clip (unit tested).
+- [x] Music choice keys work only on the title screen (unit tested).
+
 ## Current status
 
 - [x] Phase 1: Project scaffolding
@@ -95,3 +108,4 @@ Success criteria:
 - [x] Phase 4: Graphical front end
 - [ ] Phase 5: Audio
 - [ ] Phase 6: Polish and playtest
+- [x] Phase 7: Incident reports and music selection

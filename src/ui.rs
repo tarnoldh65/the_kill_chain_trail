@@ -1,4 +1,5 @@
-use crate::game::{GameState, Outcome};
+use crate::audio::TRACKS;
+use crate::game::{Choice, GameState, Outcome, Setback};
 
 const NAME_LIMIT: usize = 20;
 
@@ -10,9 +11,28 @@ pub enum Cue {
     Lose,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Music {
+    Track(usize),
+    Off,
+}
+
+/// Music picked by a number key on the title screen: a track, or off after the last track.
+pub fn music_choice(screen: &Screen, input: Input) -> Option<Music> {
+    let Input::Char(c @ '1'..='9') = input else {
+        return None;
+    };
+    let i = c as usize - '1' as usize;
+    match screen {
+        Screen::Title if i < TRACKS.len() => Some(Music::Track(i)),
+        Screen::Title if i == TRACKS.len() => Some(Music::Off),
+        _ => None,
+    }
+}
+
 /// Sound to play for a screen transition, if anything changed.
 pub fn cue(before: &Screen, after: &Screen) -> Option<Cue> {
-    if let (Screen::Play(old), Screen::Play(new)) = (before, after) {
+    if let (Some(old), Some(new)) = (before.game(), after.game()) {
         if old.outcome.is_none()
             && let Some(outcome) = new.outcome
         {
@@ -42,9 +62,27 @@ pub enum Screen {
     Company(String),
     Lead { company: String, lead: String },
     Play(GameState),
+    Report(Report),
+}
+
+/// What happened after a decision, shown before play continues.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Report {
+    pub game: GameState,
+    pub choice: Choice,
+    pub setback: Option<Setback>,
+    /// Index of the first log entry caused by the decision.
+    pub news: usize,
 }
 
 impl Screen {
+    pub fn game(&self) -> Option<&GameState> {
+        match self {
+            Self::Play(game) | Self::Report(Report { game, .. }) => Some(game),
+            _ => None,
+        }
+    }
+
     pub fn update(self, input: Input) -> Self {
         match (self, input) {
             (Self::Title, Input::Enter) => Self::Company(String::new()),
@@ -63,11 +101,19 @@ impl Screen {
             (Self::Play(game), Input::Enter) if game.outcome.is_some() => Self::Title,
             (Self::Play(mut game), Input::Char(c @ '1'..='3')) if game.outcome.is_none() => {
                 let choice = game.stage.choices()[c as usize - '1' as usize];
-                if game.can_afford(&choice) {
-                    game.play(&choice);
+                if !game.can_afford(&choice) {
+                    return Self::Play(game);
                 }
-                Self::Play(game)
+                let news = game.log.len() + 1;
+                let setback = game.play(&choice);
+                Self::Report(Report {
+                    game,
+                    choice,
+                    setback,
+                    news,
+                })
             }
+            (Self::Report(report), Input::Enter) => Self::Play(report.game),
             (screen, _) => screen,
         }
     }
@@ -106,7 +152,7 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::{Outcome, Stage};
+    use crate::game::{Outcome, Setback, Stage};
 
     fn type_text(mut screen: Screen, text: &str) -> Screen {
         for c in text.chars() {
@@ -121,11 +167,16 @@ mod tests {
         type_text(screen, "Alex").update(Input::Enter)
     }
 
-    fn game(screen: &Screen) -> &GameState {
-        match screen {
-            Screen::Play(game) => game,
-            other => panic!("expected Play, got {other:?}"),
+    /// Makes each choice and dismisses its report.
+    fn choose(mut screen: Screen, choices: &str) -> Screen {
+        for c in choices.chars() {
+            screen = screen.update(Input::Char(c)).update(Input::Enter);
         }
+        screen
+    }
+
+    fn game(screen: &Screen) -> &GameState {
+        screen.game().expect("expected a game screen")
     }
 
     #[test]
@@ -168,6 +219,42 @@ mod tests {
     }
 
     #[test]
+    fn a_decision_shows_its_report_until_enter() {
+        let screen = new_game().update(Input::Char('3'));
+        let Screen::Report(report) = &screen else {
+            panic!("expected Report, got {screen:?}");
+        };
+
+        assert_eq!(report.choice.label, "Ignore the noise and rest up");
+        assert_eq!(report.setback, Some(Setback::Behind));
+        assert!(report.game.log[report.news].contains("attackers are ahead"));
+        assert_eq!(screen.clone().update(Input::Char('1')), screen);
+        assert_eq!(
+            screen.clone().update(Input::Enter),
+            Screen::Play(report.game.clone())
+        );
+    }
+
+    #[test]
+    fn number_keys_pick_music_only_on_the_title() {
+        assert_eq!(
+            music_choice(&Screen::Title, Input::Char('1')),
+            Some(Music::Track(0))
+        );
+        assert_eq!(
+            music_choice(&Screen::Title, Input::Char('3')),
+            Some(Music::Track(2))
+        );
+        assert_eq!(
+            music_choice(&Screen::Title, Input::Char('4')),
+            Some(Music::Off)
+        );
+        assert_eq!(music_choice(&Screen::Title, Input::Char('5')), None);
+        assert_eq!(music_choice(&Screen::Title, Input::Enter), None);
+        assert_eq!(music_choice(&new_game(), Input::Char('1')), None);
+    }
+
+    #[test]
     fn unaffordable_and_invalid_choices_are_ignored() {
         let mut screen = new_game();
         if let Screen::Play(game) = &mut screen {
@@ -181,7 +268,7 @@ mod tests {
 
     #[test]
     fn enter_after_the_outcome_returns_to_title() {
-        let screen = type_text(new_game(), "333");
+        let screen = choose(new_game(), "333");
         assert_eq!(game(&screen).outcome, Some(Outcome::Fired));
 
         assert_eq!(screen.update(Input::Enter), Screen::Title);
@@ -219,11 +306,17 @@ mod tests {
 
     #[test]
     fn outcomes_cue_win_or_lose() {
-        let won = type_text(new_game(), "312312");
-        let lost = type_text(new_game(), "33");
+        let won = choose(new_game(), "312312");
+        let lost = choose(new_game(), "33");
 
-        assert_eq!(cue(&won, &type_text(won.clone(), "2")), Some(Cue::Win));
-        assert_eq!(cue(&lost, &type_text(lost.clone(), "3")), Some(Cue::Lose));
+        assert_eq!(
+            cue(&won, &won.clone().update(Input::Char('2'))),
+            Some(Cue::Win)
+        );
+        assert_eq!(
+            cue(&lost, &lost.clone().update(Input::Char('3'))),
+            Some(Cue::Lose)
+        );
     }
 
     #[test]

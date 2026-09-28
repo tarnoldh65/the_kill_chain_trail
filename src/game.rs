@@ -78,9 +78,34 @@ impl fmt::Display for Stage {
     }
 }
 
+/// What a choice looks like in its report illustration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scene {
+    Hunt,
+    Spend,
+    Sleep,
+    Patch,
+    Phish,
+    Coffee,
+    Block,
+    Isolate,
+    Unplug,
+    Press,
+}
+
+/// The worst thing that happened on a turn, ordered by severity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Setback {
+    Behind,
+    Fired,
+    Departed,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Choice {
     pub label: &'static str,
+    pub text: &'static str,
+    pub scene: Scene,
     pub cost: i32,
     pub coffee: i32,
     pub fatigue: i32,
@@ -91,6 +116,8 @@ pub struct Choice {
 
 const NONE: Choice = Choice {
     label: "",
+    text: "",
+    scene: Scene::Hunt,
     cost: 0,
     coffee: 0,
     fatigue: 0,
@@ -102,6 +129,8 @@ const NONE: Choice = Choice {
 const RECONNAISSANCE: [Choice; 3] = [
     Choice {
         label: "Hunt for scanning activity",
+        text: "The team combs the firewall logs and finds a port scan from a server in a country nobody can pronounce.",
+        scene: Scene::Hunt,
         cost: 10,
         fatigue: 10,
         containment: 8,
@@ -109,6 +138,8 @@ const RECONNAISSANCE: [Choice; 3] = [
     },
     Choice {
         label: "Buy a threat intel feed",
+        text: "The vendor promised AI-powered, blockchain-ready threat intel. It is a CSV file. It is useful anyway.",
+        scene: Scene::Spend,
         cost: 30,
         containment: 7,
         trust: 5,
@@ -116,6 +147,8 @@ const RECONNAISSANCE: [Choice; 3] = [
     },
     Choice {
         label: "Ignore the noise and rest up",
+        text: "Everyone goes home early. The attacker, sadly, does not.",
+        scene: Scene::Sleep,
         fatigue: -12,
         trust: -5,
         ..NONE
@@ -125,6 +158,8 @@ const RECONNAISSANCE: [Choice; 3] = [
 const WEAPONIZATION: [Choice; 3] = [
     Choice {
         label: "Patch the internet-facing servers",
+        text: "Servers are patched overnight. Three of them now need a reboot nobody approved.",
+        scene: Scene::Patch,
         cost: 5,
         fatigue: 12,
         containment: 8,
@@ -132,6 +167,8 @@ const WEAPONIZATION: [Choice; 3] = [
     },
     Choice {
         label: "Run a phishing awareness drill",
+        text: "Staff click the fake phish at a record 42% rate. The CEO clicked twice.",
+        scene: Scene::Phish,
         cost: 15,
         fatigue: 3,
         containment: 5,
@@ -140,6 +177,8 @@ const WEAPONIZATION: [Choice; 3] = [
     },
     Choice {
         label: "Order pizza and restock coffee",
+        text: "Pizza arrives and morale improves. Someone ordered pineapple on half of it and a feud begins.",
+        scene: Scene::Coffee,
         cost: 10,
         coffee: 12,
         fatigue: -8,
@@ -151,6 +190,8 @@ const WEAPONIZATION: [Choice; 3] = [
 const DELIVERY: [Choice; 3] = [
     Choice {
         label: "Quarantine the phishing emails",
+        text: "Hundreds of \"Urgent Invoice\" emails vanish. Accounts payable finds the silence suspicious.",
+        scene: Scene::Phish,
         cost: 5,
         fatigue: 10,
         containment: 8,
@@ -158,6 +199,8 @@ const DELIVERY: [Choice; 3] = [
     },
     Choice {
         label: "Hire an incident response firm",
+        text: "Consultants arrive in matching fleece vests and bill you for the parking.",
+        scene: Scene::Spend,
         cost: 40,
         containment: 10,
         trust: 5,
@@ -165,6 +208,8 @@ const DELIVERY: [Choice; 3] = [
     },
     Choice {
         label: "Send the team home to sleep",
+        text: "The team sleeps for the first time in days. The phishing emails keep arriving.",
+        scene: Scene::Sleep,
         fatigue: -20,
         trust: -10,
         ..NONE
@@ -174,6 +219,8 @@ const DELIVERY: [Choice; 3] = [
 const EXPLOITATION: [Choice; 3] = [
     Choice {
         label: "Isolate the phished laptops",
+        text: "Infected laptops are yanked off the network, including the one running the CFO's slideshow.",
+        scene: Scene::Isolate,
         cost: 10,
         fatigue: 12,
         containment: 9,
@@ -182,6 +229,8 @@ const EXPLOITATION: [Choice; 3] = [
     },
     Choice {
         label: "Deploy emergency EDR everywhere",
+        text: "EDR lands on every endpoint and immediately flags the printer as a nation-state actor.",
+        scene: Scene::Spend,
         cost: 35,
         fatigue: 5,
         containment: 10,
@@ -189,6 +238,8 @@ const EXPLOITATION: [Choice; 3] = [
     },
     Choice {
         label: "Coffee run and a nap rotation",
+        text: "Fresh coffee arrives. Naps are scheduled in 20 minute shifts under desks.",
+        scene: Scene::Coffee,
         cost: 10,
         coffee: 12,
         fatigue: -10,
@@ -200,6 +251,8 @@ const EXPLOITATION: [Choice; 3] = [
 const INSTALLATION: [Choice; 3] = [
     Choice {
         label: "Reimage the infected servers",
+        text: "Infected servers are wiped and rebuilt. Nobody backed up the wiki. Nobody notices.",
+        scene: Scene::Patch,
         cost: 10,
         fatigue: 15,
         containment: 10,
@@ -208,6 +261,8 @@ const INSTALLATION: [Choice; 3] = [
     },
     Choice {
         label: "Hunt for persistence with the IR firm",
+        text: "The IR firm finds a backdoor, a rogue scheduled task, and a crypto miner from 2019.",
+        scene: Scene::Hunt,
         cost: 30,
         fatigue: 5,
         containment: 9,
@@ -215,6 +270,8 @@ const INSTALLATION: [Choice; 3] = [
     },
     Choice {
         label: "Blame the intern and go to bed",
+        text: "The intern is blamed for everything. The intern started yesterday.",
+        scene: Scene::Sleep,
         fatigue: -15,
         trust: -5,
         ..NONE
@@ -224,6 +281,8 @@ const INSTALLATION: [Choice; 3] = [
 const COMMAND_AND_CONTROL: [Choice; 3] = [
     Choice {
         label: "Block the C2 servers at the firewall",
+        text: "Firewall rules cut off the attacker's servers. They spin up new ones, but it slows them down.",
+        scene: Scene::Block,
         cost: 15,
         fatigue: 10,
         containment: 9,
@@ -231,6 +290,8 @@ const COMMAND_AND_CONTROL: [Choice; 3] = [
     },
     Choice {
         label: "Sinkhole the attacker's domains",
+        text: "The attacker's domains now point at you. Their malware phones home to your SOC instead.",
+        scene: Scene::Block,
         cost: 30,
         fatigue: 5,
         containment: 10,
@@ -239,6 +300,8 @@ const COMMAND_AND_CONTROL: [Choice; 3] = [
     },
     Choice {
         label: "Pull the internet connection",
+        text: "The internet is cut. The attacker and every customer are locked out equally.",
+        scene: Scene::Unplug,
         fatigue: 5,
         containment: 14,
         brand: -15,
@@ -249,6 +312,8 @@ const COMMAND_AND_CONTROL: [Choice; 3] = [
 const ACTIONS_ON_OBJECTIVES: [Choice; 3] = [
     Choice {
         label: "Reset every domain password",
+        text: "Every password is reset. The help desk queue hits 4,000 tickets before lunch.",
+        scene: Scene::Isolate,
         cost: 5,
         fatigue: 15,
         containment: 12,
@@ -257,6 +322,8 @@ const ACTIONS_ON_OBJECTIVES: [Choice; 3] = [
     },
     Choice {
         label: "Segment the network",
+        text: "The network is carved into zones. The attacker is trapped in a VLAN with the vending machines.",
+        scene: Scene::Block,
         cost: 35,
         fatigue: 10,
         containment: 11,
@@ -264,6 +331,8 @@ const ACTIONS_ON_OBJECTIVES: [Choice; 3] = [
     },
     Choice {
         label: "Brief the press early",
+        text: "Leadership gets ahead of the story. The headline reads \"Company Mostly Fine, Probably\".",
+        scene: Scene::Press,
         cost: 10,
         trust: 10,
         brand: 15,
@@ -359,7 +428,9 @@ impl GameState {
         choice.cost <= self.budget
     }
 
-    pub fn play(&mut self, choice: &Choice) {
+    /// Plays a choice and returns the worst setback it caused.
+    pub fn play(&mut self, choice: &Choice) -> Option<Setback> {
+        let mut setback = None;
         self.log.push(format!("{}: {}.", self.stage, choice.label));
 
         self.budget -= choice.cost;
@@ -382,6 +453,7 @@ impl GameState {
         }
 
         if self.containment < self.stage.target() {
+            setback = Some(Setback::Behind);
             self.trust = (self.trust - 15).max(0);
             self.brand = (self.brand - 10).max(0);
             self.log.push(
@@ -396,6 +468,7 @@ impl GameState {
                 let reason = BURNOUT_EXITS[exit % BURNOUT_EXITS.len()];
                 log.push(format!("{} the {} {reason}", m.name, m.role));
                 exit += 1;
+                setback = Some(Setback::Departed);
             }
             m.burnout < 100
         });
@@ -404,6 +477,7 @@ impl GameState {
             && let Some(i) = self.team.iter().position(|m| m.role == Role::Manager)
         {
             let manager = self.team.remove(i);
+            setback = setback.max(Some(Setback::Fired));
             self.log.push(format!(
                 "Finance made {} the Manager redundant to save money. The consultants who recommended it billed $80k.",
                 manager.name
@@ -414,6 +488,7 @@ impl GameState {
             && let Some(i) = self.team.iter().position(|m| m.role == Role::Ciso)
         {
             let ciso = self.team.remove(i);
+            setback = setback.max(Some(Setback::Fired));
             self.log.push(format!(
                 "The board fired {} the CISO over the handling of the incident.",
                 ciso.name
@@ -437,6 +512,7 @@ impl GameState {
         if self.outcome.is_none() {
             self.stage = self.stage.next();
         }
+        setback
     }
 }
 
@@ -603,6 +679,24 @@ mod tests {
                 .iter()
                 .any(|e| e.contains("made Jules the Manager redundant"))
         );
+    }
+
+    #[test]
+    fn play_reports_the_worst_setback() {
+        let mut game = game();
+        assert_eq!(game.clone().play(&RECONNAISSANCE[0]), None);
+        assert_eq!(game.clone().play(&RECONNAISSANCE[2]), Some(Setback::Behind));
+
+        game.trust = 20;
+        game.team[0].burnout = 95;
+        assert_eq!(game.play(&RECONNAISSANCE[0]), Some(Setback::Departed));
+    }
+
+    #[test]
+    fn every_choice_has_report_text() {
+        for choice in Stage::ALL.iter().flat_map(|s| s.choices()) {
+            assert!(!choice.text.is_empty(), "{} has no text", choice.label);
+        }
     }
 
     #[test]

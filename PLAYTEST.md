@@ -7,6 +7,8 @@
 - [x] A decision can be made at each landmark.
 - [x] Resource values change based on the decision.
 - [x] The incident advances through the landmark sequence.
+- [ ] An illustrated incident report appears after each decision.
+- [ ] Each music track and the off option can be picked on the title screen.
 - [x] The game resolves to a clear outcome: contained, breached, team collapsed, or fired.
 
 ## Quality checks

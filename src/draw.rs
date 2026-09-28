@@ -1,8 +1,10 @@
 use font8x8::legacy::BASIC_LEGACY;
 use macroquad::prelude::*;
 
-use crate::game::{GameState, Outcome, Stage};
-use crate::ui::{Screen, wrap};
+use crate::art::{self, Sprite};
+use crate::audio::TRACKS;
+use crate::game::{GameState, Outcome, Scene, Setback, Stage};
+use crate::ui::{Music, Report, Screen, wrap};
 
 pub const WIDTH: f32 = 640.0;
 pub const HEIGHT: f32 = 480.0;
@@ -16,6 +18,9 @@ const DARK_GREEN: Color = Color::from_hex(0x008751);
 const CYAN: Color = Color::from_hex(0x29adff);
 const AMBER: Color = Color::from_hex(0xffa300);
 const RED: Color = Color::from_hex(0xff004d);
+const LIGHT: Color = Color::from_hex(0xc2c3c7);
+const BROWN: Color = Color::from_hex(0xab5236);
+const YELLOW: Color = Color::from_hex(0xffec27);
 
 const GLYPH: f32 = 8.0;
 const MARGIN: f32 = 16.0;
@@ -65,10 +70,10 @@ impl Font {
     }
 }
 
-pub fn screen(screen: &Screen, font: &Font) {
+pub fn screen(screen: &Screen, font: &Font, music: Music) {
     clear_background(BG);
     match screen {
-        Screen::Title => title(font),
+        Screen::Title => title(font, music),
         Screen::Company(company) => {
             name_entry(font, "Name the company you are protecting:", company)
         }
@@ -78,6 +83,10 @@ pub fn screen(screen: &Screen, font: &Font) {
             lead,
         ),
         Screen::Play(game) => play(font, game),
+        Screen::Report(report) => {
+            play(font, &report.game);
+            report_popup(font, report);
+        }
     }
 }
 
@@ -118,7 +127,7 @@ fn server_racks(y: f32) {
     }
 }
 
-fn title(font: &Font) {
+fn title(font: &Font, music: Music) {
     binary_band(font, 16.0);
     font.centered("THE KILL CHAIN", WIDTH / 2.0, 96.0, 4.0, GREEN);
     font.centered("TRAIL", WIDTH / 2.0, 136.0, 4.0, GREEN);
@@ -130,10 +139,33 @@ fn title(font: &Font) {
         CYAN,
     );
     server_racks(248.0);
+    music_menu(font, music);
     if blink() {
-        font.centered("PRESS ENTER TO BEGIN", WIDTH / 2.0, 384.0, 2.0, AMBER);
+        font.centered("PRESS ENTER TO BEGIN", WIDTH / 2.0, 400.0, 2.0, AMBER);
     }
     binary_band(font, 456.0);
+}
+
+fn music_menu(font: &Font, music: Music) {
+    font.centered("Choose music with 1-4", WIDTH / 2.0, 344.0, 1.0, DIM);
+    let options: Vec<(String, Music)> = TRACKS
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (format!("{} {name}", i + 1), Music::Track(i)))
+        .chain([(format!("{} Off", TRACKS.len() + 1), Music::Off)])
+        .collect();
+    let gap = 3;
+    let len: usize = options
+        .iter()
+        .map(|(label, _)| label.len() + gap)
+        .sum::<usize>()
+        - gap;
+    let mut x = ((WIDTH - len as f32 * GLYPH) / 2.0).floor();
+    for (label, option) in options {
+        let color = if option == music { AMBER } else { INK };
+        font.text(&label, x, 360.0, 1.0, color);
+        x += (label.len() + gap) as f32 * GLYPH;
+    }
 }
 
 fn name_entry(font: &Font, prompt: &str, value: &str) {
@@ -378,5 +410,112 @@ fn ending(font: &Font, game: &GameState, outcome: Outcome) {
     }
     if blink() {
         font.text("Press ENTER to play again", MARGIN, 456.0, 1.0, AMBER);
+    }
+}
+
+fn scene_sprite(scene: Scene) -> &'static Sprite {
+    match scene {
+        Scene::Hunt => &art::HUNT,
+        Scene::Spend => &art::SPEND,
+        Scene::Sleep => &art::SLEEP,
+        Scene::Patch => &art::PATCH,
+        Scene::Phish => &art::PHISH,
+        Scene::Coffee => &art::COFFEE,
+        Scene::Block => &art::BLOCK,
+        Scene::Isolate => &art::ISOLATE,
+        Scene::Unplug => &art::UNPLUG,
+        Scene::Press => &art::PRESS,
+    }
+}
+
+fn setback_sprite(setback: Setback) -> &'static Sprite {
+    match setback {
+        Setback::Behind => &art::SKULL,
+        Setback::Fired => &art::BOX,
+        Setback::Departed => &art::TOMBSTONE,
+    }
+}
+
+/// Draws a sprite on a black panel centered at `center_x`, one block per pixel.
+fn sprite_panel(sprite: &Sprite, center_x: f32, y: f32) {
+    let scale = 7.0;
+    let width = art::WIDTH as f32 * scale;
+    let x = (center_x - width / 2.0).floor();
+    draw_rectangle(x - 8.0, y - 8.0, width + 16.0, 16.0 * scale + 16.0, BG);
+    draw_rectangle_lines(
+        x - 8.0,
+        y - 8.0,
+        width + 16.0,
+        16.0 * scale + 16.0,
+        2.0,
+        DIM,
+    );
+    for (row, pixels) in sprite.iter().enumerate() {
+        for (col, pixel) in pixels.chars().enumerate() {
+            let color = match pixel {
+                'k' => BG,
+                'n' => NAVY,
+                'd' => DIM,
+                'l' => LIGHT,
+                'w' => INK,
+                'g' => GREEN,
+                'G' => DARK_GREEN,
+                'c' => CYAN,
+                'a' => AMBER,
+                'r' => RED,
+                'b' => BROWN,
+                'y' => YELLOW,
+                _ => continue,
+            };
+            draw_rectangle(
+                x + col as f32 * scale,
+                y + row as f32 * scale,
+                scale,
+                scale,
+                color,
+            );
+        }
+    }
+}
+
+fn report_popup(font: &Font, report: &Report) {
+    let (x, y, w, h) = (40.0, 24.0, WIDTH - 80.0, HEIGHT - 48.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, CYAN);
+    font.centered("INCIDENT REPORT", WIDTH / 2.0, y + 12.0, 2.0, AMBER);
+    font.centered(report.choice.label, WIDTH / 2.0, y + 36.0, 1.0, CYAN);
+
+    let sprite_y = y + 64.0;
+    let activity = scene_sprite(report.choice.scene);
+    match report.setback {
+        Some(setback) => {
+            sprite_panel(activity, WIDTH / 2.0 - 112.0, sprite_y);
+            font.centered("->", WIDTH / 2.0, sprite_y + 48.0, 2.0, AMBER);
+            sprite_panel(setback_sprite(setback), WIDTH / 2.0 + 112.0, sprite_y);
+        }
+        None => sprite_panel(activity, WIDTH / 2.0, sprite_y),
+    }
+
+    let width = ((w - 32.0) / GLYPH) as usize;
+    let lines = wrap(report.choice.text, width)
+        .into_iter()
+        .map(|line| (line, INK))
+        .chain(
+            report.game.log[report.news..]
+                .iter()
+                .flat_map(|entry| wrap(entry, width))
+                .map(|line| (line, RED)),
+        );
+    for (i, (line, color)) in lines.take(15).enumerate() {
+        font.text(&line, x + 16.0, 216.0 + i as f32 * 12.0, 1.0, color);
+    }
+    if blink() {
+        font.centered(
+            "Press ENTER to continue",
+            WIDTH / 2.0,
+            y + h - 20.0,
+            1.0,
+            AMBER,
+        );
     }
 }
