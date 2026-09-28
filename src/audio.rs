@@ -1,8 +1,11 @@
 use macroquad::audio::{
-    PlaySoundParams, Sound, load_sound_from_bytes, play_sound, play_sound_once,
+    PlaySoundParams, Sound, load_sound_from_bytes, play_sound, play_sound_once, stop_sound,
 };
 
-use crate::ui::Cue;
+use crate::ui::{Cue, Music};
+
+/// Names of the music tracks, in the order `tracks` builds them.
+pub const TRACKS: [&str; 3] = ["Packet Storm", "Zero Day Drive", "Neon Firewall"];
 
 const RATE: u32 = 44_100;
 /// Samples per sixteenth note, about 128 BPM.
@@ -76,8 +79,12 @@ fn mix(buffer: &mut [f32], samples: &[f32], start: usize) {
     }
 }
 
+fn tracks() -> [Vec<f32>; 3] {
+    [packet_storm(), zero_day_drive(), neon_firewall()]
+}
+
 /// Four bars of minor-key techno: kick, off-beat hats, octave bass, and a chord arpeggio.
-fn music() -> Vec<f32> {
+fn packet_storm() -> Vec<f32> {
     // Chord roots (A3, F3, G3, E3) with minor or major thirds.
     let chords = [(57, 3), (53, 4), (55, 4), (52, 3)];
     let mut buffer = vec![0.0; chords.len() * 16 * STEP];
@@ -107,6 +114,88 @@ fn music() -> Vec<f32> {
                 &note(Wave::Square, root + 12 + arp[step % 4], STEP, 0.1),
                 start,
             );
+        }
+    }
+    buffer
+}
+
+/// Four bars of driving techno in D minor: rolling sixteenth bass, snare, and a triangle lead.
+fn zero_day_drive() -> Vec<f32> {
+    // Chord roots (D3, Bb2, C3, A2) with minor or major thirds.
+    let chords = [(50, 3), (46, 4), (48, 4), (45, 3)];
+    let mut buffer = vec![0.0; chords.len() * 16 * STEP];
+    let kick = kick(0.4);
+    let snare = note(Wave::Noise, 0, STEP, 0.2);
+
+    for (bar, &(root, third)) in chords.iter().enumerate() {
+        let lead = [0, 7, third + 12, 7, 12, third, 7, 12];
+        for step in 0..16 {
+            let start = (bar * 16 + step) * STEP;
+            if step % 4 == 0 {
+                mix(&mut buffer, &kick, start);
+            }
+            if step % 8 == 4 {
+                mix(&mut buffer, &snare, start);
+            }
+            let bass = [0, 0, 12, 0][step % 4];
+            mix(
+                &mut buffer,
+                &note(Wave::Square, root - 12 + bass, STEP, 0.14),
+                start,
+            );
+            if step % 2 == 0 {
+                mix(
+                    &mut buffer,
+                    &note(Wave::Triangle, root + 12 + lead[step / 2], 2 * STEP, 0.22),
+                    start,
+                );
+            }
+        }
+    }
+    buffer
+}
+
+/// Four bars of broken-beat techno in E minor: syncopated kicks, a triangle pad, and a pentatonic lead.
+fn neon_firewall() -> Vec<f32> {
+    // Chord roots (E3, C3, D3, B2) with minor or major thirds.
+    let chords = [(52, 3), (48, 4), (50, 4), (47, 4)];
+    // Lead notes above E4 on steps 0, 3, 6, 8, 11, and 14 of each bar.
+    let leads = [
+        [7, 10, 12, 10, 7, 3],
+        [3, 5, 7, 5, 3, 0],
+        [5, 7, 10, 12, 15, 12],
+        [10, 7, 5, 3, 5, 7],
+    ];
+    let mut buffer = vec![0.0; chords.len() * 16 * STEP];
+    let kick = kick(0.4);
+    let snare = note(Wave::Noise, 0, STEP, 0.18);
+    let hat = note(Wave::Noise, 0, STEP / 4, 0.05);
+
+    for (bar, (&(root, third), lead)) in chords.iter().zip(&leads).enumerate() {
+        let bar_start = bar * 16 * STEP;
+        for interval in [0, third, 7] {
+            mix(
+                &mut buffer,
+                &note(Wave::Triangle, root + interval, 16 * STEP, 0.08),
+                bar_start,
+            );
+        }
+        for step in 0..16 {
+            let start = bar_start + step * STEP;
+            if [0, 3, 10].contains(&step) {
+                mix(&mut buffer, &kick, start);
+            }
+            if step % 8 == 4 {
+                mix(&mut buffer, &snare, start);
+            }
+            mix(&mut buffer, &hat, start);
+            if let Some(i) = [0, 3, 6, 8, 11, 14].iter().position(|&s| s == step) {
+                mix(
+                    &mut buffer,
+                    &note(Wave::Square, 64 + lead[i], 2 * STEP, 0.1),
+                    start,
+                );
+            }
         }
     }
     buffer
@@ -156,7 +245,7 @@ pub struct Audio {
     alarm: Sound,
     win: Sound,
     lose: Sound,
-    music: Sound,
+    music: Vec<Sound>,
 }
 
 async fn load(samples: Vec<f32>) -> Sound {
@@ -170,18 +259,29 @@ impl Audio {
             alarm: load(alarm()).await,
             win: load(win()).await,
             lose: load(lose()).await,
-            music: load(music()).await,
+            music: {
+                let mut music = Vec::new();
+                for track in tracks() {
+                    music.push(load(track).await);
+                }
+                music
+            },
         }
     }
 
-    pub fn start_music(&self) {
-        play_sound(
-            &self.music,
-            PlaySoundParams {
-                looped: true,
-                volume: MUSIC_VOLUME,
-            },
-        );
+    pub fn play_music(&self, music: Music) {
+        for track in &self.music {
+            stop_sound(track);
+        }
+        if let Music::Track(i) = music {
+            play_sound(
+                &self.music[i],
+                PlaySoundParams {
+                    looped: true,
+                    volume: MUSIC_VOLUME,
+                },
+            );
+        }
     }
 
     pub fn play(&self, cue: Cue) {
@@ -220,12 +320,12 @@ mod tests {
     }
 
     #[test]
-    fn music_is_four_whole_bars_and_never_clips() {
-        let music = music();
-
-        assert_eq!(music.len(), 4 * 16 * STEP);
-        assert!(peak(&music) > 0.3);
-        assert!(peak(&music) <= 1.0);
+    fn every_track_is_four_whole_bars_and_never_clips() {
+        for (name, music) in TRACKS.iter().zip(tracks()) {
+            assert_eq!(music.len(), 4 * 16 * STEP, "{name}");
+            assert!(peak(&music) > 0.3, "{name} is too quiet");
+            assert!(peak(&music) <= 1.0, "{name} clips");
+        }
     }
 
     #[test]

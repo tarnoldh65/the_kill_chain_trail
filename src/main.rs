@@ -1,3 +1,4 @@
+mod art;
 mod audio;
 mod draw;
 mod game;
@@ -5,7 +6,7 @@ mod ui;
 
 use draw::{HEIGHT, WIDTH};
 use macroquad::prelude::*;
-use ui::{Input, Screen};
+use ui::{Cue, Input, Music, Screen};
 
 fn conf() -> Conf {
     Conf {
@@ -38,11 +39,17 @@ async fn main() {
     let mut camera = Camera2D::from_display_rect(Rect::new(0.0, 0.0, WIDTH, HEIGHT));
     camera.render_target = Some(target.clone());
     let audio = audio::Audio::load().await;
-    audio.start_music();
+    let mut music = Music::Track(0);
+    audio.play_music(music);
     let mut screen = Screen::Title;
 
     loop {
         for input in inputs() {
+            if let Some(choice) = ui::music_choice(&screen, input) {
+                music = choice;
+                audio.play_music(music);
+                audio.play(Cue::Select);
+            }
             let next = screen.clone().update(input);
             if let Some(cue) = ui::cue(&screen, &next) {
                 audio.play(cue);
@@ -51,7 +58,7 @@ async fn main() {
         }
 
         set_camera(&camera);
-        draw::screen(&screen, &font);
+        draw::screen(&screen, &font, music);
 
         // Scale the 640x480 frame to the window in whole steps when it fits, letterboxed.
         set_default_camera();
