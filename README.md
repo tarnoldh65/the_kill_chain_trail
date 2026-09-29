@@ -19,3 +19,13 @@ cargo test
 ```
 
 See [PLAYTEST.md](PLAYTEST.md) for the manual playtest checklist.
+
+## Run in a browser
+
+The game also builds to WebAssembly and can be served as a static site (for example on Unraid via Docker):
+
+```bash
+docker compose up -d
+```
+
+Then open `http://localhost:8080`. The `web/` directory holds the static HTML and macroquad JS loader; `Dockerfile` compiles the `wasm32-unknown-unknown` target and serves it with nginx.
