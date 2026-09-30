@@ -2,10 +2,13 @@ mod art;
 mod audio;
 mod draw;
 mod game;
+mod street;
 mod ui;
 
+use audio::Audio;
 use draw::{HEIGHT, WIDTH};
 use macroquad::prelude::*;
+use street::Hop;
 use ui::{Cue, Input, Music, Screen};
 
 fn conf() -> Conf {
@@ -28,7 +31,30 @@ fn inputs() -> Vec<Input> {
     if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter) {
         inputs.push(Input::Enter);
     }
+    for (key, hop) in [
+        (KeyCode::Up, Hop::Up),
+        (KeyCode::Down, Hop::Down),
+        (KeyCode::Left, Hop::Left),
+        (KeyCode::Right, Hop::Right),
+    ] {
+        if is_key_pressed(key) {
+            inputs.push(Input::Arrow(hop));
+        }
+    }
     inputs
+}
+
+/// Plays the sound for a screen change and swaps music when entering or leaving the street.
+fn transition(audio: &Audio, music: Music, before: &Screen, after: &Screen) {
+    if let Some(cue) = ui::cue(before, after) {
+        audio.play(cue);
+    }
+    let in_traffic = |screen: &Screen| matches!(screen, Screen::Coffee(_));
+    match (in_traffic(before), in_traffic(after)) {
+        (false, true) => audio.play_rush_hour(music),
+        (true, false) => audio.play_music(music),
+        _ => {}
+    }
 }
 
 #[macroquad::main(conf)]
@@ -38,7 +64,8 @@ async fn main() {
     target.texture.set_filter(FilterMode::Nearest);
     let mut camera = Camera2D::from_display_rect(Rect::new(0.0, 0.0, WIDTH, HEIGHT));
     camera.render_target = Some(target.clone());
-    let audio = audio::Audio::load().await;
+    macroquad::rand::srand(miniquad::date::now() as u64);
+    let audio = Audio::load().await;
     let mut music = Music::Track(0);
     audio.play_music(music);
     let mut screen = Screen::Title;
@@ -51,11 +78,13 @@ async fn main() {
                 audio.play(Cue::Select);
             }
             let next = screen.clone().update(input);
-            if let Some(cue) = ui::cue(&screen, &next) {
-                audio.play(cue);
-            }
+            transition(&audio, music, &screen, &next);
             screen = next;
         }
+        // Cap the step so a slow frame cannot carry a car straight through the intern.
+        let next = screen.clone().tick(get_frame_time().min(0.05));
+        transition(&audio, music, &screen, &next);
+        screen = next;
 
         set_camera(&camera);
         draw::screen(&screen, &font, music);
