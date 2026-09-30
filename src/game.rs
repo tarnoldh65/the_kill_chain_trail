@@ -11,6 +11,21 @@ const FIRING_TRUST: i32 = 30;
 /// Budget below this gets the Manager made redundant.
 const REDUNDANCY_BUDGET: i32 = 20;
 
+/// Pots of coffee the break room can hold.
+pub const COFFEE_CAPACITY: i32 = 36;
+/// Cost of sending the intern across the street for coffee.
+pub const COFFEE_RUN_COST: i32 = 10;
+/// Pots of coffee the intern brings back.
+const COFFEE_RUN_POTS: i32 = 12;
+
+/// What happens to an intern who loses to traffic, rotated by stage.
+const INTERN_FATES: [&str; 4] = [
+    "The intern was flattened by a delivery truck. The $10 and the coffee order are gone.",
+    "The intern became a hood ornament. Legal says interns are unpaid, so this is technically fine.",
+    "The intern was hit by a rideshare driver who then rated them one star. No coffee today.",
+    "The intern crossed on \"Don't Walk\". Traffic did not stop. HR is already posting the job ad.",
+];
+
 /// Ways a burned out team member leaves, rotated so departures read differently.
 const BURNOUT_EXITS: [&str; 5] = [
     "burned out and quit to open a llama sanctuary.",
@@ -372,6 +387,7 @@ pub enum Outcome {
     Breached,
     TeamCollapsed,
     Fired,
+    Bankrupt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -387,6 +403,8 @@ pub struct GameState {
     pub team: Vec<TeamMember>,
     pub log: Vec<String>,
     pub outcome: Option<Outcome>,
+    /// Whether the intern has already been sent for coffee this stage.
+    pub coffee_run_made: bool,
 }
 
 impl GameState {
@@ -417,6 +435,7 @@ impl GameState {
                 "Suspicious traffic is hitting {company}. {lead} takes command of the SOC."
             )],
             outcome: None,
+            coffee_run_made: false,
         }
     }
 
@@ -428,13 +447,50 @@ impl GameState {
         choice.cost <= self.budget
     }
 
+    pub fn coffee_full(&self) -> bool {
+        self.coffee >= COFFEE_CAPACITY
+    }
+
+    pub fn can_send_intern(&self) -> bool {
+        self.outcome.is_none()
+            && !self.coffee_run_made
+            && !self.coffee_full()
+            && self.budget >= COFFEE_RUN_COST
+    }
+
+    /// Pays for a coffee run; the intern still has to survive the street.
+    pub fn send_intern(&mut self) {
+        self.budget -= COFFEE_RUN_COST;
+        self.coffee_run_made = true;
+    }
+
+    pub fn intern_returns(&mut self, survived: bool) {
+        if survived {
+            self.coffee = (self.coffee + COFFEE_RUN_POTS).min(COFFEE_CAPACITY);
+            self.log.push(format!(
+                "The intern made it back with {COFFEE_RUN_POTS} pots of coffee and only minor tire marks."
+            ));
+        } else {
+            self.log
+                .push(INTERN_FATES[self.stage as usize % INTERN_FATES.len()].to_string());
+        }
+        self.check_bankrupt();
+    }
+
+    /// Ends the game when no choice at the current stage is affordable.
+    fn check_bankrupt(&mut self) {
+        if self.outcome.is_none() && !self.stage.choices().iter().any(|c| self.can_afford(c)) {
+            self.outcome = Some(Outcome::Bankrupt);
+        }
+    }
+
     /// Plays a choice and returns the worst setback it caused.
     pub fn play(&mut self, choice: &Choice) -> Option<Setback> {
         let mut setback = None;
         self.log.push(format!("{}: {}.", self.stage, choice.label));
 
         self.budget -= choice.cost;
-        self.coffee += choice.coffee - self.team.len() as i32;
+        self.coffee = (self.coffee + choice.coffee).min(COFFEE_CAPACITY) - self.team.len() as i32;
         self.trust = (self.trust + choice.trust).clamp(0, 100);
         self.brand = (self.brand + choice.brand).clamp(0, 100);
         self.containment =
@@ -511,6 +567,8 @@ impl GameState {
 
         if self.outcome.is_none() {
             self.stage = self.stage.next();
+            self.coffee_run_made = false;
+            self.check_bankrupt();
         }
         setback
     }
@@ -700,6 +758,62 @@ mod tests {
     }
 
     #[test]
+    fn a_coffee_run_costs_money_once_per_stage() {
+        let mut game = game();
+
+        game.send_intern();
+
+        assert_eq!(game.budget, 150 - COFFEE_RUN_COST);
+        assert!(!game.can_send_intern());
+        game.play(&RECONNAISSANCE[0]);
+        assert!(game.can_send_intern());
+        game.budget = COFFEE_RUN_COST - 1;
+        assert!(!game.can_send_intern());
+    }
+
+    #[test]
+    fn a_surviving_intern_restocks_the_coffee() {
+        let mut game = game();
+
+        game.intern_returns(true);
+
+        assert_eq!(game.coffee, 24 + COFFEE_RUN_POTS);
+        assert!(game.log.last().unwrap().contains("made it back"));
+    }
+
+    #[test]
+    fn coffee_never_exceeds_capacity() {
+        let mut game = game();
+        game.coffee = COFFEE_CAPACITY - 2;
+
+        game.intern_returns(true);
+        assert_eq!(game.coffee, COFFEE_CAPACITY);
+
+        game.play(&WEAPONIZATION[2]);
+        assert_eq!(game.coffee, COFFEE_CAPACITY - 6);
+    }
+
+    #[test]
+    fn the_intern_is_not_sent_when_coffee_is_full() {
+        let mut game = game();
+        game.coffee = COFFEE_CAPACITY;
+
+        assert!(!game.can_send_intern());
+        game.coffee -= 1;
+        assert!(game.can_send_intern());
+    }
+
+    #[test]
+    fn a_flattened_intern_brings_no_coffee() {
+        let mut game = game();
+
+        game.intern_returns(false);
+
+        assert_eq!(game.coffee, 24);
+        assert!(game.log.last().unwrap().contains("delivery truck"));
+    }
+
+    #[test]
     fn low_trust_gets_the_ciso_fired() {
         let mut game = game();
         game.trust = 20;
@@ -750,6 +864,41 @@ mod tests {
     }
 
     #[test]
+    fn running_out_of_money_without_a_free_choice_is_bankruptcy() {
+        let mut game = game();
+        game.budget = 4;
+
+        game.play(&RECONNAISSANCE[2]);
+
+        assert_eq!(game.stage, Stage::Weaponization);
+        assert_eq!(game.outcome, Some(Outcome::Bankrupt));
+    }
+
+    #[test]
+    fn a_free_choice_keeps_a_broke_team_playing() {
+        let mut game = game();
+        game.stage = Stage::Weaponization;
+        game.budget = 5;
+
+        game.play(&WEAPONIZATION[0]);
+
+        assert_eq!(game.stage, Stage::Delivery);
+        assert_eq!(game.outcome, None);
+    }
+
+    #[test]
+    fn a_coffee_run_that_empties_the_budget_ends_the_game() {
+        let mut game = game();
+        game.stage = Stage::Weaponization;
+        game.budget = COFFEE_RUN_COST;
+
+        game.send_intern();
+        game.intern_returns(true);
+
+        assert_eq!(game.outcome, Some(Outcome::Bankrupt));
+    }
+
+    #[test]
     fn every_outcome_is_reachable() {
         let outcomes: Vec<_> = all_endings().into_iter().map(|(_, o)| o).collect();
 
@@ -758,6 +907,7 @@ mod tests {
             Outcome::Breached,
             Outcome::TeamCollapsed,
             Outcome::Fired,
+            Outcome::Bankrupt,
         ] {
             assert!(outcomes.contains(&outcome), "{outcome:?} is unreachable");
         }

@@ -201,6 +201,64 @@ fn neon_firewall() -> Vec<f32> {
     buffer
 }
 
+/// A triangle wave sliding up to a higher pitch and back down, like a siren.
+fn siren(low: i32, high: i32, samples: usize, volume: f32) -> Vec<f32> {
+    let mut phase = 0.0f32;
+    (0..samples)
+        .map(|i| {
+            let rise = 1.0 - (2.0 * i as f32 / samples as f32 - 1.0).abs();
+            let hz = freq(low) + (freq(high) - freq(low)) * rise;
+            phase = (phase + hz / RATE as f32).fract();
+            (4.0 * (phase - 0.5).abs() - 1.0) * volume
+        })
+        .collect()
+}
+
+/// Four bars of frantic techno for the coffee run, about 170 BPM: broken kicks,
+/// a chromatic bass line, clashing car horns, and a siren every other bar.
+fn rush_hour() -> Vec<f32> {
+    let step = STEP * 3 / 4;
+    let bass = [
+        40, 40, 52, 40, 41, 40, 52, 43, 40, 40, 52, 40, 46, 45, 44, 43,
+    ];
+    let mut buffer = vec![0.0; 4 * 16 * step];
+    let kick = kick(0.35);
+    let snare = note(Wave::Noise, 0, step, 0.2);
+
+    for bar in 0..4 {
+        let bar_start = bar * 16 * step;
+        if bar % 2 == 1 {
+            mix(&mut buffer, &siren(76, 83, 16 * step, 0.07), bar_start);
+        }
+        for (s, &midi) in bass.iter().enumerate() {
+            let start = bar_start + s * step;
+            if [0, 6, 10].contains(&s) {
+                mix(&mut buffer, &kick, start);
+            }
+            // Snare on the backbeat, rolling through the end of the last bar.
+            if s % 8 == 4 || bar == 3 && s >= 12 {
+                mix(&mut buffer, &snare, start);
+            }
+            mix(&mut buffer, &note(Wave::Square, midi, step, 0.14), start);
+            let horn = if bar % 2 == 0 {
+                [3, 11].contains(&s)
+            } else {
+                s == 7
+            };
+            if horn {
+                for midi in [65, 68] {
+                    mix(
+                        &mut buffer,
+                        &note(Wave::Square, midi, 2 * step, 0.09),
+                        start,
+                    );
+                }
+            }
+        }
+    }
+    buffer
+}
+
 fn select() -> Vec<f32> {
     note(Wave::Square, 81, STEP / 2, 0.25)
 }
@@ -246,6 +304,7 @@ pub struct Audio {
     win: Sound,
     lose: Sound,
     music: Vec<Sound>,
+    rush_hour: Sound,
 }
 
 async fn load(samples: Vec<f32>) -> Sound {
@@ -266,21 +325,38 @@ impl Audio {
                 }
                 music
             },
+            rush_hour: load(rush_hour()).await,
         }
     }
 
-    pub fn play_music(&self, music: Music) {
-        for track in &self.music {
+    fn stop_music(&self) {
+        for track in self.music.iter().chain([&self.rush_hour]) {
             stop_sound(track);
         }
-        if let Music::Track(i) = music {
-            play_sound(
-                &self.music[i],
-                PlaySoundParams {
-                    looped: true,
-                    volume: MUSIC_VOLUME,
-                },
-            );
+    }
+
+    fn loop_music(&self, sound: &Sound) {
+        self.stop_music();
+        play_sound(
+            sound,
+            PlaySoundParams {
+                looped: true,
+                volume: MUSIC_VOLUME,
+            },
+        );
+    }
+
+    pub fn play_music(&self, music: Music) {
+        match music {
+            Music::Track(i) => self.loop_music(&self.music[i]),
+            Music::Off => self.stop_music(),
+        }
+    }
+
+    /// Swaps in the traffic music for the coffee run, unless music is off.
+    pub fn play_rush_hour(&self, music: Music) {
+        if music != Music::Off {
+            self.loop_music(&self.rush_hour);
         }
     }
 
@@ -326,6 +402,14 @@ mod tests {
             assert!(peak(&music) > 0.3, "{name} is too quiet");
             assert!(peak(&music) <= 1.0, "{name} clips");
         }
+    }
+
+    #[test]
+    fn rush_hour_is_four_fast_bars_and_never_clips() {
+        let music = rush_hour();
+
+        assert_eq!(music.len(), 4 * 16 * (STEP * 3 / 4));
+        assert!(peak(&music) > 0.3 && peak(&music) <= 1.0);
     }
 
     #[test]

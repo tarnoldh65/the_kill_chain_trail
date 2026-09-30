@@ -1,5 +1,6 @@
 use crate::audio::TRACKS;
 use crate::game::{Choice, GameState, Outcome, Setback};
+use crate::street::{Hop, Street};
 
 const NAME_LIMIT: usize = 20;
 
@@ -32,6 +33,18 @@ pub fn music_choice(screen: &Screen, input: Input) -> Option<Music> {
 
 /// Sound to play for a screen transition, if anything changed.
 pub fn cue(before: &Screen, after: &Screen) -> Option<Cue> {
+    if let (Screen::Coffee(old), Screen::Coffee(new)) = (before, after) {
+        let (old, new) = (&old.street, &new.street);
+        return if old.survived.is_none() && new.survived == Some(false) {
+            Some(Cue::Lose)
+        } else if old.survived.is_none() && new.survived == Some(true) || old.leg != new.leg {
+            Some(Cue::Win)
+        } else if (old.x, old.row) != (new.x, new.row) {
+            Some(Cue::Select)
+        } else {
+            None
+        };
+    }
     if let (Some(old), Some(new)) = (before.game(), after.game()) {
         if old.outcome.is_none()
             && let Some(outcome) = new.outcome
@@ -54,6 +67,7 @@ pub enum Input {
     Char(char),
     Backspace,
     Enter,
+    Arrow(Hop),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +77,14 @@ pub enum Screen {
     Lead { company: String, lead: String },
     Play(GameState),
     Report(Report),
+    Coffee(CoffeeRun),
+}
+
+/// The intern's trip across the street, with the game waiting on the result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoffeeRun {
+    pub game: GameState,
+    pub street: Street,
 }
 
 /// What happened after a decision, shown before play continues.
@@ -78,8 +100,21 @@ pub struct Report {
 impl Screen {
     pub fn game(&self) -> Option<&GameState> {
         match self {
-            Self::Play(game) | Self::Report(Report { game, .. }) => Some(game),
+            Self::Play(game)
+            | Self::Report(Report { game, .. })
+            | Self::Coffee(CoffeeRun { game, .. }) => Some(game),
             _ => None,
+        }
+    }
+
+    /// Advances anything that moves on its own, like traffic.
+    pub fn tick(self, dt: f32) -> Self {
+        match self {
+            Self::Coffee(mut run) => {
+                run.street.tick(dt);
+                Self::Coffee(run)
+            }
+            screen => screen,
         }
     }
 
@@ -114,6 +149,21 @@ impl Screen {
                 })
             }
             (Self::Report(report), Input::Enter) => Self::Play(report.game),
+            (Self::Play(mut game), Input::Char('4')) if game.can_send_intern() => {
+                game.send_intern();
+                Self::Coffee(CoffeeRun {
+                    game,
+                    street: Street::new(),
+                })
+            }
+            (Self::Coffee(mut run), Input::Arrow(hop)) => {
+                run.street.hop(hop);
+                Self::Coffee(run)
+            }
+            (Self::Coffee(mut run), Input::Enter) if run.street.survived.is_some() => {
+                run.game.intern_returns(run.street.survived == Some(true));
+                Self::Play(run.game)
+            }
             (screen, _) => screen,
         }
     }
@@ -233,6 +283,64 @@ mod tests {
             screen.clone().update(Input::Enter),
             Screen::Play(report.game.clone())
         );
+    }
+
+    fn street(screen: &mut Screen) -> &mut Street {
+        match screen {
+            Screen::Coffee(run) => &mut run.street,
+            other => panic!("expected Coffee, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn four_sends_the_intern_across_the_street() {
+        let mut screen = new_game().update(Input::Char('4'));
+
+        assert_eq!(game(&screen).budget, 140);
+        assert_eq!(street(&mut screen).row, 0);
+        let mut screen = screen.update(Input::Arrow(Hop::Up));
+        assert_eq!(street(&mut screen).row, 1);
+    }
+
+    #[test]
+    fn enter_only_leaves_the_street_once_the_run_is_over() {
+        let mut screen = new_game().update(Input::Char('4'));
+        let running = screen.clone();
+        assert_eq!(running.clone().update(Input::Enter), running);
+
+        street(&mut screen).survived = Some(true);
+        let screen = screen.update(Input::Enter);
+
+        assert!(matches!(screen, Screen::Play(_)));
+        assert_eq!(game(&screen).coffee, 36);
+        assert_eq!(screen.clone().update(Input::Char('4')), screen);
+    }
+
+    #[test]
+    fn ticks_only_move_the_street() {
+        assert_eq!(Screen::Title.tick(1.0), Screen::Title);
+
+        let mut screen = new_game().update(Input::Char('4'));
+        let before = street(&mut screen).lanes.clone();
+        let mut screen = screen.tick(0.1);
+        assert_ne!(street(&mut screen).lanes, before);
+    }
+
+    #[test]
+    fn street_cues_hops_escapes_and_crashes_but_not_traffic() {
+        let mut before = new_game().update(Input::Char('4'));
+        street(&mut before).row = 5;
+        let mut hopped = before.clone();
+        street(&mut hopped).row = 4;
+        let mut crashed = before.clone();
+        street(&mut crashed).survived = Some(false);
+        let mut home = before.clone();
+        street(&mut home).survived = Some(true);
+
+        assert_eq!(cue(&before, &before.clone().tick(0.1)), None);
+        assert_eq!(cue(&before, &hopped), Some(Cue::Select));
+        assert_eq!(cue(&before, &crashed), Some(Cue::Lose));
+        assert_eq!(cue(&before, &home), Some(Cue::Win));
     }
 
     #[test]
