@@ -161,8 +161,8 @@ Tasks:
 - README: link to https://lehmanrd.github.io/the_kill_chain_trail/.
 
 Success criteria:
-- [ ] The workflow passes on push to `main`.
-- [ ] The Pages URL loads the title screen with no console errors other than a missing favicon.
+- [x] The workflow passes on push to `main`.
+- [x] The Pages URL loads the title screen with no console errors other than a missing favicon.
 - [ ] A push to `main` redeploys the game without manual steps.
 
 ## Current status
