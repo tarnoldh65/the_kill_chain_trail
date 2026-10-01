@@ -1,5 +1,5 @@
 use crate::audio::TRACKS;
-use crate::game::{Action, GameState, Item, Outcome, Profile};
+use crate::game::{Action, GameState, Item, Outcome, Profile, Reply};
 use crate::street::{Hop, Street};
 
 const NAME_LIMIT: usize = 20;
@@ -57,7 +57,8 @@ pub fn cue(before: &Screen, after: &Screen) -> Option<Cue> {
                 Cue::Lose
             });
         }
-        if new.team.len() < old.team.len() {
+        let trouble = |g: &GameState| g.pending_alert().is_some() || g.incident.is_some();
+        if new.team.len() < old.team.len() || trouble(new) && !trouble(old) {
             return Some(Cue::Alarm);
         }
     }
@@ -107,6 +108,8 @@ pub enum Screen {
     Travel(Travel),
     Team(GameState),
     Coffee(CoffeeRun),
+    /// The after-action report once the game is over.
+    Report(GameState),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,6 +159,7 @@ impl Screen {
         match self {
             Self::Play(game)
             | Self::Team(game)
+            | Self::Report(game)
             | Self::Shop(Shop { game, .. })
             | Self::Actions(ActionMenu { game, .. })
             | Self::Recruit {
@@ -257,8 +261,33 @@ impl Screen {
                 shop,
                 name: edit(name, input),
             },
-            (Self::Play(game), Input::Enter) if game.outcome.is_some() => Self::Title,
+            (Self::Play(game), Input::Enter) if game.outcome.is_some() => Self::Report(game),
             (Self::Play(game), _) if game.outcome.is_some() => Self::Play(game),
+            (Self::Report(_), Input::Enter) => Self::Title,
+            (Self::Play(mut game), input) if game.incident.is_some() => {
+                let responses = game.incident.unwrap().responses();
+                if let Input::Char(c @ '1'..='9') = input
+                    && let Some(response) = responses.get(c as usize - '1' as usize)
+                    && game.can_respond(response)
+                {
+                    game.respond(c as usize - '1' as usize);
+                }
+                Self::Play(game)
+            }
+            (Self::Play(mut game), input) if game.pending_alert().is_some() => {
+                let reply = match input {
+                    Input::Char('1') => Some(Reply::Investigate),
+                    Input::Char('2') => Some(Reply::CallIr),
+                    Input::Char('3') => Some(Reply::Ignore),
+                    _ => None,
+                };
+                if let Some(reply) = reply
+                    && game.can_reply(reply)
+                {
+                    game.reply(reply);
+                }
+                Self::Play(game)
+            }
             (Self::Play(game), Input::Char('1')) => Self::Travel(Travel {
                 game,
                 elapsed_ms: 0,
@@ -399,9 +428,21 @@ mod tests {
         arrows(screen, Hop::Down, Item::ALL.len()).update(Input::Enter)
     }
 
-    /// Day 1 with two junior analysts hired.
+    /// Day 1 with two junior analysts hired, on a seed with no attacker news for ten days.
     fn new_game() -> Screen {
-        open_for_business(hire_junior(hire_junior(vendor_hall(), "Maya"), "Dev"))
+        let screen = open_for_business(hire_junior(hire_junior(vendor_hall(), "Maya"), "Dev"));
+        with_game(screen, |game| {
+            game.seed = (0..)
+                .find(|&seed| {
+                    let mut quiet = game.clone();
+                    quiet.seed = seed;
+                    (0..10).all(|_| {
+                        quiet.advance();
+                        quiet.pending_alert().is_none() && quiet.incident.is_none()
+                    })
+                })
+                .unwrap();
+        })
     }
 
     fn shop(screen: &Screen) -> &Shop {
@@ -804,10 +845,65 @@ mod tests {
     }
 
     #[test]
-    fn enter_after_the_outcome_returns_to_title() {
+    fn enter_after_the_outcome_shows_the_report_then_the_title() {
         let screen = with_game(new_game(), |game| game.outcome = Some(Outcome::Fired));
 
+        let screen = screen.update(Input::Enter);
+        assert!(matches!(screen, Screen::Report(_)));
+        assert_eq!(screen.clone().update(Input::Char('1')), screen);
         assert_eq!(screen.update(Input::Enter), Screen::Title);
+    }
+
+    fn alerted() -> Screen {
+        with_game(new_game(), |game| game.raise_false_alarm())
+    }
+
+    #[test]
+    fn an_alert_takes_over_the_day_menu_until_answered() {
+        let screen = alerted();
+        assert_eq!(screen.clone().update(Input::Char('5')), screen);
+        assert_eq!(
+            screen.clone().update(Input::Char('2')),
+            screen,
+            "no IR retainer"
+        );
+
+        let screen = screen.update(Input::Char('3'));
+        assert_eq!(game(&screen).pending_alert(), None);
+        assert!(matches!(screen.update(Input::Char('1')), Screen::Travel(_)));
+    }
+
+    #[test]
+    fn one_investigates_an_alert() {
+        let screen = alerted().update(Input::Char('1'));
+
+        assert!(game(&screen).investigation.is_some());
+        assert_eq!(game(&screen).pending_alert(), None);
+    }
+
+    #[test]
+    fn an_incident_waits_for_a_possible_response() {
+        let screen = with_game(new_game(), |game| {
+            game.incident = Some(crate::attack::Actor::Ransomware)
+        });
+        assert_eq!(
+            screen.clone().update(Input::Char('1')),
+            screen,
+            "no backups"
+        );
+        assert_eq!(screen.clone().update(Input::Char('9')), screen);
+
+        let screen = screen.update(Input::Char('3'));
+
+        assert_eq!(game(&screen).incident, None);
+        assert!(!game(&screen).conditions.is_empty());
+    }
+
+    #[test]
+    fn alerts_and_incidents_sound_the_alarm() {
+        let before = new_game();
+
+        assert_eq!(cue(&before, &alerted()), Some(Cue::Alarm));
     }
 
     #[test]

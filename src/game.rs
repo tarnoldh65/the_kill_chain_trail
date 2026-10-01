@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::attack::{Actor, Alert, Campaign, Condition, End, Response, Stage};
+
 /// The day the IPO bell rings, 26 weeks after day 1.
 pub const IPO_DAY: u32 = 182;
 
@@ -32,6 +34,15 @@ const POSTURE_DECAY: i32 = 2;
 const BRAND_DRAG_LEVEL: i32 = 50;
 /// Valuation below this percentage of the base valuation pulls the IPO.
 const PULLED_PERCENT: i64 = 40;
+
+/// Most attacker campaigns running at once.
+const MAX_CAMPAIGNS: usize = 3;
+/// Base days an alert investigation takes.
+const INVESTIGATION_DAYS: u32 = 3;
+/// What the incident response firm bills per call.
+pub const IR_FEE: i64 = 40_000;
+/// Weekly legal fees while regulators are asking questions.
+const LEGAL_FEES: i64 = 10_000;
 
 /// What happens to an intern who loses to traffic, rotated by week.
 const INTERN_FATES: [&str; 4] = [
@@ -105,6 +116,15 @@ impl Profile {
             Self::Fintech => 1,
             Self::Healthtech => 2,
             Self::Gaming => 3,
+        }
+    }
+
+    /// How likely each actor in `Actor::ALL` is to pick on this company.
+    fn threats(self) -> [u32; 6] {
+        match self {
+            Self::Fintech => [5, 3, 2, 1, 2, 1],
+            Self::Healthtech => [3, 5, 1, 1, 1, 2],
+            Self::Gaming => [2, 2, 2, 5, 1, 1],
         }
     }
 
@@ -236,6 +256,10 @@ pub enum Action {
     DayOff,
     Offsite,
     BriefLeadership,
+    ThreatHunt,
+    TuneSiem,
+    /// Ends a lingering condition left by an incident.
+    Clear(Condition),
 }
 
 impl Action {
@@ -252,6 +276,9 @@ impl Action {
             Self::DayOff => "Give everyone the day off".to_string(),
             Self::Offsite => "Team offsite".to_string(),
             Self::BriefLeadership => "Brief leadership".to_string(),
+            Self::ThreatHunt => "Threat hunt".to_string(),
+            Self::TuneSiem => "Tune the SIEM".to_string(),
+            Self::Clear(condition) => condition.cure().to_string(),
         }
     }
 
@@ -267,6 +294,11 @@ impl Action {
             Self::DayOff => "Everyone recovers. Nobody is watching for a day.",
             Self::Offsite => "A week of trust falls. Large burnout recovery.",
             Self::BriefLeadership => "Tell the board what the SOC is doing.",
+            Self::ThreatHunt => {
+                "Look for attackers already inside. Better with seniors and a SIEM."
+            }
+            Self::TuneSiem => "Teach the SIEM to cry wolf less often.",
+            Self::Clear(condition) => condition.effect(),
         }
     }
 
@@ -275,6 +307,8 @@ impl Action {
             Self::PhishingSim => 5_000,
             Self::Offsite => 20_000,
             Self::Recruit(level) => level.price(),
+            Self::Clear(Condition::RegulatorInquiry) => 20_000,
+            Self::Clear(Condition::Downtime) => 30_000,
             _ => 0,
         }
     }
@@ -292,6 +326,12 @@ impl Action {
             Self::Tabletop | Self::DayOff | Self::BriefLeadership => 1,
             Self::Recruit(_) => 7,
             Self::Offsite => 5,
+            Self::ThreatHunt | Self::TuneSiem => 3,
+            Self::Clear(Condition::SystemsDown) => 7,
+            Self::Clear(Condition::RegulatorInquiry) => 5,
+            Self::Clear(Condition::LeakyRoadmap | Condition::Paranoia) => 4,
+            Self::Clear(Condition::Downtime) => 2,
+            Self::Clear(Condition::PersistentAccess) => 10,
         }
     }
 
@@ -320,6 +360,22 @@ pub struct Task {
     pub days_left: u32,
     /// The new analyst's name, for `Recruit`.
     pub name: String,
+}
+
+/// An alert being looked into in the background while other work goes on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Investigation {
+    /// Index into the game's alerts.
+    pub alert: usize,
+    pub days_left: u32,
+}
+
+/// Ways to answer an alert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reply {
+    Investigate,
+    CallIr,
+    Ignore,
 }
 
 /// How hard the SOC is working, the game's "pace" setting.
@@ -466,12 +522,24 @@ pub struct GameState {
     pub owned: Vec<Item>,
     pub deployed: Vec<Item>,
     pub task: Option<Task>,
+    pub investigation: Option<Investigation>,
+    pub siem_tuned: bool,
+    pub conditions: Vec<Condition>,
+    /// Hidden from the player until the after-action report.
+    campaigns: Vec<Campaign>,
+    alerts: Vec<Alert>,
+    /// The alert waiting for a reply, as an index into `alerts`.
+    alert: Option<usize>,
+    /// The incident waiting for a response.
+    pub incident: Option<Actor>,
     pub log: Vec<String>,
     pub outcome: Option<Outcome>,
     /// Whether the intern has already been sent for coffee this week.
     pub coffee_run_made: bool,
     /// Drives every random outcome, so a seed always plays out the same way.
     pub seed: u32,
+    /// How many random numbers this game has drawn.
+    rolls: u32,
 }
 
 impl GameState {
@@ -504,13 +572,31 @@ impl GameState {
             owned: Vec::new(),
             deployed: Vec::new(),
             task: None,
+            investigation: None,
+            siem_tuned: false,
+            conditions: Vec::new(),
+            campaigns: Vec::new(),
+            alerts: Vec::new(),
+            alert: None,
+            incident: None,
             log: vec![format!(
                 "{company} goes public in 26 weeks. {lead} takes command of the SOC."
             )],
             outcome: None,
             coffee_run_made: false,
             seed,
+            rolls: 0,
         }
+    }
+
+    /// The next number in this game's random sequence, from 0 to 999.
+    fn chance(&mut self) -> u32 {
+        self.rolls += 1;
+        roll(self.seed, self.rolls) % 1000
+    }
+
+    fn seniors(&self) -> u32 {
+        self.team.iter().filter(|m| m.role == Role::Senior).count() as u32
     }
 
     pub fn can_buy(&self, item: Item) -> bool {
@@ -554,6 +640,13 @@ impl GameState {
         if self.task.is_some() || self.outcome.is_some() {
             return Vec::new();
         }
+        let cures = self.conditions.iter().map(|&c| Action::Clear(c));
+        if self.conditions.contains(&Condition::SystemsDown) {
+            return cures
+                .chain([Action::DayOff, Action::BriefLeadership])
+                .filter(|action| action.cost() <= self.budget)
+                .collect();
+        }
         let deployable = self
             .owned
             .iter()
@@ -564,12 +657,22 @@ impl GameState {
             .deployed
             .contains(&Item::Backups)
             .then_some(Action::BackupTest);
-        let recruits = (self.analysts() < MAX_ANALYSTS)
-            .then_some([Action::Recruit(Item::Junior), Action::Recruit(Item::Senior)])
-            .into_iter()
-            .flatten();
-        deployable
-            .chain([Action::PhishingSim, Action::PatchSprint, Action::Tabletop])
+        let tune =
+            (self.deployed.contains(&Item::Siem) && !self.siem_tuned).then_some(Action::TuneSiem);
+        let recruits = (self.analysts() < MAX_ANALYSTS
+            && !self.conditions.contains(&Condition::Paranoia))
+        .then_some([Action::Recruit(Item::Junior), Action::Recruit(Item::Senior)])
+        .into_iter()
+        .flatten();
+        cures
+            .chain(deployable)
+            .chain([
+                Action::PhishingSim,
+                Action::PatchSprint,
+                Action::Tabletop,
+                Action::ThreatHunt,
+            ])
+            .chain(tune)
             .chain(backup_test)
             .chain(recruits)
             .chain([Action::DayOff, Action::Offsite, Action::BriefLeadership])
@@ -582,9 +685,12 @@ impl GameState {
         if action.fixed() {
             return action.base_days();
         }
-        let seniors = self.team.iter().filter(|m| m.role == Role::Senior).count() as u32;
-        let days = (action.base_days() * self.tempo.duration_percent()).div_ceil(100);
-        days.saturating_sub(seniors / 2).max(1)
+        self.scaled(action.base_days())
+    }
+
+    fn scaled(&self, base_days: u32) -> u32 {
+        let days = (base_days * self.tempo.duration_percent()).div_ceil(100);
+        days.saturating_sub(self.seniors() / 2).max(1)
     }
 
     /// Pays for an action and puts it under way; `name` names a recruit.
@@ -636,7 +742,7 @@ impl GameState {
             }
             Action::PhishingSim => {
                 self.boost(Area::People, 8);
-                if roll(self.seed, self.day).is_multiple_of(3) {
+                if self.chance() < 333 {
                     self.trust -= 3;
                     "The VP of Sales clicked the test phish and is furious about being \"tricked\"."
                         .to_string()
@@ -679,6 +785,16 @@ impl GameState {
                 self.trust += 4;
                 "You briefed leadership. The board nodded at all the right moments.".to_string()
             }
+            Action::ThreatHunt => self.hunt(),
+            Action::TuneSiem => {
+                self.siem_tuned = true;
+                self.boost(Area::Detection, 5);
+                "The SIEM is tuned. It now cries wolf only occasionally.".to_string()
+            }
+            Action::Clear(condition) => {
+                self.conditions.retain(|&c| c != condition);
+                format!("{} is done. Things are back to normal.", condition.cure())
+            }
         };
         self.trust = self.trust.clamp(0, 100);
         self.log.push(message);
@@ -696,6 +812,321 @@ impl GameState {
         let task = self.task.take().unwrap();
         self.finish(task);
         true
+    }
+
+    /// Chance in thousandths that a hunt or investigation finds a real attacker.
+    fn find_odds(&self, base: u32) -> u32 {
+        (base + 15 * self.seniors()).min(90) * 10
+    }
+
+    fn hunt(&mut self) -> String {
+        let siem = if self.deployed.contains(&Item::Siem) {
+            25
+        } else {
+            0
+        };
+        let mut found = Vec::new();
+        for i in 0..self.campaigns.len() {
+            if self.campaigns[i].end.is_none() && self.chance() < self.find_odds(25 + siem) {
+                let campaign = &mut self.campaigns[i];
+                campaign.end = Some(End::Evicted);
+                campaign.seen = true;
+                found.push(campaign.actor.to_string());
+            }
+        }
+        if found.is_empty() {
+            "The threat hunt found nothing. Either you are clean or they are good.".to_string()
+        } else {
+            format!("The threat hunt found and evicted: {}.", found.join(", "))
+        }
+    }
+
+    /// The alert waiting for a reply, if any.
+    pub fn pending_alert(&self) -> Option<&str> {
+        self.alert.map(|i| self.alerts[i].text)
+    }
+
+    pub fn can_reply(&self, reply: Reply) -> bool {
+        match reply {
+            Reply::Investigate => self.investigation.is_none(),
+            Reply::CallIr => self.owned.contains(&Item::IrRetainer) && self.budget >= IR_FEE,
+            Reply::Ignore => true,
+        }
+    }
+
+    pub fn investigation_days(&self) -> u32 {
+        self.scaled(INVESTIGATION_DAYS)
+    }
+
+    pub fn reply(&mut self, reply: Reply) {
+        let Some(alert) = self.alert.take() else {
+            return;
+        };
+        let message = match reply {
+            Reply::Investigate => {
+                let days = self.investigation_days();
+                self.investigation = Some(Investigation {
+                    alert,
+                    days_left: days,
+                });
+                format!("The team starts digging into it ({days} days).")
+            }
+            Reply::CallIr => {
+                self.budget -= IR_FEE;
+                if self.chance() < 950 && self.evict(alert) {
+                    format!(
+                        "The IR firm found {} inside and threw them out.",
+                        self.alert_actor(alert)
+                    )
+                } else {
+                    format!("The IR firm billed {} and found nothing.", money(IR_FEE))
+                }
+            }
+            Reply::Ignore => "You ignore it. Probably nothing.".to_string(),
+        };
+        self.log.push(message);
+    }
+
+    fn alert_actor(&self, alert: usize) -> Actor {
+        let campaign = self.alerts[alert].campaign.expect("a real alert");
+        self.campaigns[campaign].actor
+    }
+
+    /// Ends the campaign behind an alert, if it is real and still running.
+    fn evict(&mut self, alert: usize) -> bool {
+        match self.alerts[alert].campaign {
+            Some(i) if self.campaigns[i].end.is_none() => {
+                self.campaigns[i].end = Some(End::Evicted);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Counts down the investigation and reports what it found on its last day.
+    fn investigate(&mut self) -> bool {
+        let Some(investigation) = &mut self.investigation else {
+            return false;
+        };
+        investigation.days_left -= 1;
+        if investigation.days_left > 0 {
+            return false;
+        }
+        let alert = self.investigation.take().unwrap().alert;
+        let message = if self.chance() < self.find_odds(50) && self.evict(alert) {
+            format!(
+                "Investigation complete: it was a {}. They have been evicted.",
+                self.alert_actor(alert)
+            )
+        } else {
+            "Investigation complete: nothing conclusive.".to_string()
+        };
+        self.log.push(message);
+        true
+    }
+
+    /// Whether a response is possible: backups deployed if needed, and the money for it.
+    pub fn can_respond(&self, response: &Response) -> bool {
+        (!response.needs_backups || self.deployed.contains(&Item::Backups))
+            && self.incident_cost(response) <= self.budget
+    }
+
+    /// What a response costs after insurance pays its half.
+    pub fn incident_cost(&self, response: &Response) -> i64 {
+        if self.owned.contains(&Item::Insurance) {
+            response.budget / 2
+        } else {
+            response.budget
+        }
+    }
+
+    /// Answers the pending incident with one of its responses; Resilience softens the damage.
+    pub fn respond(&mut self, index: usize) {
+        let actor = self.incident.take().expect("an incident to respond to");
+        let response = actor.responses()[index];
+        let scale = 200 - self.posture[Area::Resilience as usize] as i64;
+        self.valuation -= self.base_valuation * response.valuation * scale / 200_000;
+        self.trust = (self.trust + response.trust * scale as i32 / 200).clamp(0, 100);
+        self.brand = (self.brand + response.brand * scale as i32 / 200).clamp(0, 100);
+        self.budget -= self.incident_cost(&response);
+        let condition = actor.condition();
+        if response.lingers && !self.conditions.contains(&condition) {
+            self.conditions.push(condition);
+        }
+        self.log.push(response.text.to_string());
+        self.check_outcome();
+    }
+
+    /// Effective Detection: lower while the team is resting.
+    fn watch(&self) -> i32 {
+        let detection = self.posture[Area::Detection as usize];
+        match self.task.as_ref().map(|t| t.action) {
+            Some(Action::DayOff) => detection / 4,
+            Some(Action::Offsite) => detection / 2,
+            _ => detection,
+        }
+    }
+
+    /// Average posture across the areas that defend against an actor.
+    fn defense(&self, actor: Actor) -> u32 {
+        let areas = actor.defenses();
+        let total: i32 = areas.iter().map(|&a| self.posture[a as usize]).sum();
+        (total / areas.len() as i32) as u32
+    }
+
+    fn pick_actor(&mut self) -> Actor {
+        let weights = self.profile.threats();
+        let mut pick = self.chance() % weights.iter().sum::<u32>();
+        for (actor, weight) in Actor::ALL.into_iter().zip(weights) {
+            if pick < weight {
+                return actor;
+            }
+            pick -= weight;
+        }
+        unreachable!("the pick is below the total weight")
+    }
+
+    /// Raises an alert unless one is already waiting; `campaign` is `None` for a false alarm.
+    fn raise(&mut self, campaign: Option<usize>) -> bool {
+        if self.alert.is_some() {
+            return false;
+        }
+        let actor = match campaign {
+            Some(i) => self.campaigns[i].actor,
+            None => Actor::ALL[self.chance() as usize % Actor::ALL.len()],
+        };
+        let text = actor.alerts()[self.chance() as usize % 2];
+        self.alerts.push(Alert {
+            day: self.day,
+            text,
+            campaign,
+        });
+        self.alert = Some(self.alerts.len() - 1);
+        self.log.push(format!("ALERT: {text}"));
+        true
+    }
+
+    /// One day of attacker activity: new campaigns, kill chain steps, and false alarms.
+    fn attack(&mut self) -> bool {
+        let mut stop = false;
+        let active = self.campaigns.iter().filter(|c| c.end.is_none()).count();
+        let odds = 15 + 45 * self.day / IPO_DAY;
+        if active < MAX_CAMPAIGNS && self.chance() < odds {
+            let actor = self.pick_actor();
+            let stage = if self.conditions.contains(&Condition::PersistentAccess) {
+                Stage::Foothold
+            } else {
+                actor.first_stage()
+            };
+            self.campaigns.push(Campaign {
+                actor,
+                start: self.day,
+                stage,
+                seen: false,
+                end: None,
+            });
+        }
+
+        for i in 0..self.campaigns.len() {
+            if self.campaigns[i].end.is_some() {
+                continue;
+            }
+            let actor = self.campaigns[i].actor;
+            let defense = self.defense(actor);
+            let roll = self.chance();
+            if roll < 20 + 50 * (100 - defense) / 100 {
+                let next = self.campaigns[i].stage.next();
+                if next == Stage::Objective {
+                    // One incident at a time; the attacker waits for the next opening.
+                    if self.incident.is_some() {
+                        continue;
+                    }
+                    self.campaigns[i].stage = next;
+                    self.campaigns[i].end = Some(End::Succeeded);
+                    self.incident = Some(actor);
+                    self.log.push(format!("INCIDENT: {}", actor.incident()));
+                    stop = true;
+                } else {
+                    self.campaigns[i].stage = next;
+                    let detect = 10 + self.watch() as u32 * 7 / 10;
+                    if self.chance() < detect * 10 && self.raise(Some(i)) {
+                        self.campaigns[i].seen = true;
+                        stop = true;
+                    }
+                }
+            } else if roll >= 1000 - defense / 4 {
+                self.campaigns[i].end = Some(End::GaveUp);
+            }
+        }
+
+        let noise = match (self.deployed.contains(&Item::Siem), self.siem_tuned) {
+            (false, _) => 30,
+            (true, false) => 50,
+            (true, true) => 15,
+        };
+        if self.chance() < noise {
+            stop |= self.raise(None);
+        }
+        stop
+    }
+
+    /// Daily damage from lingering conditions.
+    fn linger(&mut self) {
+        if self.conditions.contains(&Condition::SystemsDown) {
+            self.brand -= 1;
+        }
+        if self.conditions.contains(&Condition::Downtime) {
+            self.brand -= 2;
+        }
+        self.brand = self.brand.max(0);
+    }
+
+    /// Raises a false alarm, for testing screens that wait on an alert.
+    #[cfg(test)]
+    pub fn raise_false_alarm(&mut self) {
+        self.raise(None);
+    }
+
+    /// What really happened, shown only once the game is over.
+    pub fn after_action(&self) -> Vec<String> {
+        if self.outcome.is_none() {
+            return Vec::new();
+        }
+        if self.campaigns.is_empty() && self.alerts.is_empty() {
+            return vec!["No attackers came calling. Suspiciously lucky.".to_string()];
+        }
+        let campaigns = self.campaigns.iter().map(|c| {
+            let end = match c.end {
+                None => "still at it",
+                Some(End::GaveUp) => "gave up",
+                Some(End::Evicted) => "evicted",
+                Some(End::Succeeded) => "succeeded",
+            };
+            let seen = if c.seen { "seen" } else { "unseen" };
+            format!(
+                "Day {}: {} reached {}, {seen}, {end}.",
+                c.start, c.actor, c.stage
+            )
+        });
+        let alerts = self.alerts.iter().map(|a| {
+            let kind = if a.campaign.is_some() {
+                "REAL "
+            } else {
+                "FALSE"
+            };
+            format!("Day {} {kind} {}", a.day, a.text)
+        });
+        let none = |empty: bool, text: &str| empty.then(|| text.to_string());
+        std::iter::once("ATTACKERS".to_string())
+            .chain(campaigns)
+            .chain(none(
+                self.campaigns.is_empty(),
+                "None. Every alert was noise.",
+            ))
+            .chain([String::new(), "ALERTS".to_string()])
+            .chain(alerts)
+            .chain(none(self.alerts.is_empty(), "None. They were never seen."))
+            .collect()
     }
 
     pub fn analysts(&self) -> i32 {
@@ -762,6 +1193,9 @@ impl GameState {
             stop |= self.drink_coffee();
             stop |= self.work();
             stop |= self.progress();
+            stop |= self.investigate();
+            self.linger();
+            stop |= self.attack();
             stop |= self.leadership_changes();
             self.check_outcome();
         }
@@ -780,6 +1214,22 @@ impl GameState {
             self.log.push(format!(
                 "Weak brand loyalty knocked {} off the valuation.",
                 money(drag)
+            ));
+        }
+
+        if self.conditions.contains(&Condition::RegulatorInquiry) {
+            self.budget -= LEGAL_FEES;
+            self.log.push(format!(
+                "The regulators' questions cost {} in legal fees this week.",
+                money(LEGAL_FEES)
+            ));
+        }
+        if self.conditions.contains(&Condition::LeakyRoadmap) {
+            let leak = self.base_valuation * 5 / 1000;
+            self.valuation -= leak;
+            self.log.push(format!(
+                "More of the roadmap leaked. The valuation slips {}.",
+                money(leak)
             ));
         }
 
@@ -833,7 +1283,8 @@ impl GameState {
                 member.burnout = (member.burnout - rest).max(0);
             }
         } else if analysts > 0 {
-            let share = self.tempo.workload() / analysts;
+            let paranoia = self.conditions.contains(&Condition::Paranoia) as i32;
+            let share = self.tempo.workload() / analysts + paranoia;
             for member in self.team.iter_mut() {
                 let rest = match member.role {
                     Role::Junior => JUNIOR_REST,
@@ -1627,6 +2078,501 @@ mod tests {
 
         assert_eq!(game.team[3].burnout, 0, "leadership rests too");
         assert_eq!(game.team[1].burnout, 0);
+    }
+
+    /// Plants a hidden campaign and returns its index.
+    fn plant(game: &mut GameState, actor: Actor, stage: Stage) -> usize {
+        game.campaigns.push(Campaign {
+            actor,
+            start: game.day,
+            stage,
+            seen: false,
+            end: None,
+        });
+        game.campaigns.len() - 1
+    }
+
+    /// Plants a pending alert, real if it names a campaign.
+    fn plant_alert(game: &mut GameState, campaign: Option<usize>) {
+        game.alerts.push(Alert {
+            day: game.day,
+            text: "Something odd.",
+            campaign,
+        });
+        game.alert = Some(game.alerts.len() - 1);
+    }
+
+    /// Plays `days` days, ignoring alerts and taking the first possible incident response.
+    fn idle(game: &mut GameState, days: u32, incidents: &mut Vec<Actor>) {
+        for _ in 0..days {
+            if game.outcome.is_some() {
+                return;
+            }
+            game.coffee = COFFEE_CAPACITY;
+            game.budget = 500_000;
+            game.trust = 60;
+            game.brand = 60;
+            game.valuation = game.base_valuation;
+            for member in &mut game.team {
+                member.burnout = 0;
+            }
+            game.advance();
+            game.reply(Reply::Ignore);
+            if let Some(actor) = game.incident {
+                incidents.push(actor);
+                let i = actor
+                    .responses()
+                    .iter()
+                    .position(|r| game.can_respond(r))
+                    .unwrap();
+                game.respond(i);
+            }
+        }
+    }
+
+    fn with_posture(seed: u32, value: i32) -> GameState {
+        GameState {
+            seed,
+            posture: [value; 6],
+            ..game()
+        }
+    }
+
+    #[test]
+    fn each_profile_draws_mostly_its_favorite_attackers() {
+        for (profile, favorite) in [
+            (Profile::Fintech, Actor::Ransomware),
+            (Profile::Healthtech, Actor::DataThief),
+            (Profile::Gaming, Actor::Hacktivists),
+        ] {
+            let mut game = GameState::new("Acme", "Alex", profile, 7);
+            let mut counts = [0; 6];
+            for _ in 0..3000 {
+                let actor = game.pick_actor();
+                counts[Actor::ALL.iter().position(|a| *a == actor).unwrap()] += 1;
+            }
+            let top = Actor::ALL[(0..6).max_by_key(|&i| counts[i]).unwrap()];
+
+            assert_eq!(top, favorite, "{profile}: {counts:?}");
+            assert!(counts.iter().all(|&c| c > 0), "everyone shows up");
+        }
+    }
+
+    #[test]
+    fn higher_posture_slows_attackers_down() {
+        let progress = |posture| -> usize {
+            (0..60)
+                .map(|seed| {
+                    let mut game = with_posture(seed, posture);
+                    let i = plant(&mut game, Actor::DataThief, Stage::Reconnaissance);
+                    for _ in 0..20 {
+                        game.attack();
+                        game.alert = None;
+                    }
+                    game.campaigns[i].stage as usize
+                })
+                .sum()
+        };
+
+        assert!(
+            progress(90) < progress(10),
+            "{} vs {}",
+            progress(90),
+            progress(10)
+        );
+    }
+
+    #[test]
+    fn strong_defenses_make_attackers_give_up() {
+        let gave_up = (0..60)
+            .filter(|&seed| {
+                let mut game = with_posture(seed, 100);
+                let i = plant(&mut game, Actor::Hacktivists, Stage::Reconnaissance);
+                for _ in 0..60 {
+                    game.attack();
+                    game.alert = None;
+                }
+                game.campaigns[i].end == Some(End::GaveUp)
+            })
+            .count();
+
+        assert!(gave_up > 0);
+    }
+
+    #[test]
+    fn better_detection_sees_more_real_attacks() {
+        let real_alerts = |detection| -> usize {
+            (0..40)
+                .map(|seed| {
+                    let mut game = with_posture(seed, 20);
+                    game.posture[Area::Detection as usize] = detection;
+                    idle(&mut game, 120, &mut Vec::new());
+                    game.alerts.iter().filter(|a| a.campaign.is_some()).count()
+                })
+                .sum()
+        };
+
+        assert!(real_alerts(90) > real_alerts(0));
+    }
+
+    #[test]
+    fn a_tuned_siem_cries_wolf_less_often() {
+        let false_alarms = |tuned| -> usize {
+            (0..40)
+                .map(|seed| {
+                    let mut game = with_posture(seed, 100);
+                    game.deployed.push(Item::Siem);
+                    game.siem_tuned = tuned;
+                    idle(&mut game, 120, &mut Vec::new());
+                    game.alerts.iter().filter(|a| a.campaign.is_none()).count()
+                })
+                .sum()
+        };
+
+        assert!(false_alarms(true) < false_alarms(false));
+    }
+
+    #[test]
+    fn alerts_stop_the_clock_and_wait_for_a_reply() {
+        let mut game = game();
+        let i = plant(&mut game, Actor::Ransomware, Stage::Reconnaissance);
+        plant_alert(&mut game, Some(i));
+
+        assert_eq!(game.pending_alert(), Some("Something odd."));
+        game.reply(Reply::Ignore);
+        assert_eq!(game.pending_alert(), None);
+        assert_eq!(game.campaigns[i].end, None, "ignoring does nothing");
+    }
+
+    #[test]
+    fn investigating_a_real_alert_can_evict_the_attacker() {
+        let evicted = (0..40)
+            .filter(|&seed| {
+                let mut game = GameState { seed, ..game() };
+                let i = plant(&mut game, Actor::Espionage, Stage::InitialAccess);
+                plant_alert(&mut game, Some(i));
+                game.reply(Reply::Investigate);
+                while game.investigation.is_some() {
+                    game.campaigns[i].stage = Stage::InitialAccess;
+                    game.advance();
+                    game.reply(Reply::Ignore);
+                }
+                game.campaigns[i].end == Some(End::Evicted)
+            })
+            .count();
+
+        assert!(evicted > 10, "{evicted} of 40");
+    }
+
+    #[test]
+    fn investigating_a_false_alarm_only_costs_days() {
+        let mut game = game();
+        plant_alert(&mut game, None);
+        let days = game.investigation_days();
+
+        game.reply(Reply::Investigate);
+        assert!(!game.can_reply(Reply::Investigate), "one at a time");
+        let start = game.day;
+        while game.investigation.is_some() {
+            game.advance();
+            game.reply(Reply::Ignore);
+        }
+
+        assert_eq!(game.day, start + days);
+        assert!(game.log.iter().any(|e| e.contains("nothing conclusive")));
+    }
+
+    #[test]
+    fn seniors_investigate_faster() {
+        let mut game = game();
+        assert_eq!(game.investigation_days(), 3);
+        game.team.push(member("S1", Role::Senior, 0, 0));
+        game.team.push(member("S2", Role::Senior, 0, 0));
+        assert_eq!(game.investigation_days(), 2);
+    }
+
+    #[test]
+    fn the_ir_firm_needs_a_retainer_and_bills_per_call() {
+        let mut unretained = game();
+        plant_alert(&mut unretained, None);
+        assert!(!unretained.can_reply(Reply::CallIr));
+
+        let evicted = (0..20)
+            .filter(|&seed| {
+                let mut game = GameState { seed, ..game() };
+                game.owned.push(Item::IrRetainer);
+                let i = plant(&mut game, Actor::Apt, Stage::Foothold);
+                plant_alert(&mut game, Some(i));
+                assert!(game.can_reply(Reply::CallIr));
+                game.reply(Reply::CallIr);
+                assert_eq!(game.budget, 500_000 - IR_FEE);
+                game.campaigns[i].end == Some(End::Evicted)
+                    && game.log.last().unwrap().contains("Nation-state APT")
+            })
+            .count();
+
+        assert!(evicted >= 17, "{evicted} of 20");
+    }
+
+    #[test]
+    fn an_attacker_reaching_its_objective_is_an_incident() {
+        let mut game = with_posture(1, 0);
+        let i = plant(&mut game, Actor::Hacktivists, Stage::Foothold);
+        while game.incident.is_none() {
+            game.attack();
+            game.alert = None;
+        }
+
+        assert_eq!(game.incident, Some(Actor::Hacktivists));
+        assert_eq!(game.campaigns[i].end, Some(End::Succeeded));
+        assert!(game.log.last().unwrap().starts_with("INCIDENT:"));
+    }
+
+    #[test]
+    fn every_incident_type_happens_across_seeds() {
+        let mut incidents = Vec::new();
+        for seed in 0..30 {
+            for profile in Profile::ALL {
+                let mut game = GameState {
+                    seed,
+                    profile,
+                    posture: [0; 6],
+                    ..game()
+                };
+                idle(&mut game, IPO_DAY, &mut incidents);
+            }
+        }
+
+        for actor in Actor::ALL {
+            assert!(incidents.contains(&actor), "{actor} never succeeds");
+        }
+    }
+
+    #[test]
+    fn every_response_applies_its_effects_and_condition() {
+        for actor in Actor::ALL {
+            for (i, response) in actor.responses().iter().enumerate() {
+                let mut game = game();
+                game.deployed.push(Item::Backups);
+                game.incident = Some(actor);
+                assert!(game.can_respond(response), "{}", response.label);
+
+                game.respond(i);
+
+                // Resilience 30 scales damage to 170/200.
+                let scale = 170;
+                assert_eq!(
+                    game.valuation,
+                    1_000_000_000 - 1_000_000_000 * response.valuation * scale / 200_000
+                );
+                assert_eq!(game.trust, 60 + response.trust * scale as i32 / 200);
+                assert_eq!(game.brand, 60 + response.brand * scale as i32 / 200);
+                assert_eq!(game.budget, 500_000 - response.budget);
+                assert_eq!(game.incident, None);
+                assert_eq!(
+                    game.conditions.contains(&actor.condition()),
+                    response.lingers,
+                    "{}",
+                    response.label
+                );
+                assert_eq!(game.log.last().unwrap(), response.text);
+            }
+        }
+    }
+
+    #[test]
+    fn restoring_from_backups_needs_deployed_backups() {
+        let mut game = game();
+        let restore = &Actor::Ransomware.responses()[0];
+
+        assert!(!game.can_respond(restore));
+        game.owned.push(Item::Backups);
+        assert!(!game.can_respond(restore));
+        game.deployed.push(Item::Backups);
+        assert!(game.can_respond(restore));
+    }
+
+    #[test]
+    fn every_condition_has_a_cure_that_clears_it() {
+        for actor in Actor::ALL {
+            let condition = actor.condition();
+            let mut game = game();
+            game.conditions.push(condition);
+
+            assert_eq!(game.actions()[0], Action::Clear(condition));
+            run(&mut game, Action::Clear(condition));
+
+            assert!(game.conditions.is_empty(), "{condition:?}");
+            assert!(game.log.last().unwrap().contains(condition.cure()));
+        }
+    }
+
+    #[test]
+    fn conditions_change_what_the_soc_can_do() {
+        let mut down = game();
+        down.conditions.push(Condition::SystemsDown);
+        assert_eq!(
+            down.actions(),
+            [
+                Action::Clear(Condition::SystemsDown),
+                Action::DayOff,
+                Action::BriefLeadership
+            ]
+        );
+
+        let mut paranoid = game();
+        paranoid.conditions.push(Condition::Paranoia);
+        assert!(
+            !paranoid
+                .actions()
+                .iter()
+                .any(|a| matches!(a, Action::Recruit(_)))
+        );
+    }
+
+    #[test]
+    fn conditions_do_damage_while_they_last() {
+        let mut hurting = game();
+        hurting.day = 6;
+        hurting.conditions = vec![
+            Condition::RegulatorInquiry,
+            Condition::LeakyRoadmap,
+            Condition::Downtime,
+        ];
+        advance_to(&mut hurting, 8);
+
+        assert_eq!(hurting.budget, 500_000 - LEGAL_FEES - 18_000);
+        assert_eq!(hurting.valuation, 1_000_000_000 - 5_000_000);
+        assert!(hurting.brand <= 60 - 4, "two days of downtime");
+
+        let mut infested = game();
+        infested.conditions.push(Condition::PersistentAccess);
+        infested.seed = (0..)
+            .find(|&seed| {
+                let mut g = GameState {
+                    seed,
+                    ..infested.clone()
+                };
+                g.attack();
+                !g.campaigns.is_empty()
+            })
+            .unwrap();
+        infested.attack();
+        assert!(infested.campaigns[0].stage >= Stage::Foothold);
+
+        let mut calm = game();
+        let mut paranoid = game();
+        paranoid.conditions.push(Condition::Paranoia);
+        calm.advance();
+        paranoid.advance();
+        assert!(paranoid.team[0].burnout > calm.team[0].burnout);
+    }
+
+    #[test]
+    fn hunting_finds_more_with_seniors_and_a_siem() {
+        let found = |seniors: usize, siem: bool| -> usize {
+            (0..60)
+                .map(|seed| {
+                    let mut game = GameState { seed, ..game() };
+                    game.team
+                        .extend((0..seniors).map(|_| member("S", Role::Senior, 0, 0)));
+                    if siem {
+                        game.deployed.push(Item::Siem);
+                    }
+                    let i = plant(&mut game, Actor::Apt, Stage::Foothold);
+                    game.hunt();
+                    (game.campaigns[i].end == Some(End::Evicted)) as usize
+                })
+                .sum()
+        };
+
+        assert!(found(0, false) < found(0, true));
+        assert!(found(0, false) < found(4, false));
+    }
+
+    #[test]
+    fn a_fruitless_hunt_says_so() {
+        let mut game = game();
+
+        run(&mut game, Action::ThreatHunt);
+
+        assert!(game.log.iter().any(|e| e.contains("found nothing")));
+    }
+
+    #[test]
+    fn tuning_the_siem_needs_a_deployed_siem_and_happens_once() {
+        let mut game = game();
+        assert!(!game.actions().contains(&Action::TuneSiem));
+        game.deployed.push(Item::Siem);
+        assert!(game.actions().contains(&Action::TuneSiem));
+
+        run(&mut game, Action::TuneSiem);
+
+        assert!(game.siem_tuned);
+        assert!(!game.actions().contains(&Action::TuneSiem));
+    }
+
+    #[test]
+    fn resting_lowers_the_watch() {
+        let mut game = game();
+        let normal = game.watch();
+
+        game.start(Action::Offsite, "");
+        let offsite = game.watch();
+        game.task = None;
+        game.start(Action::DayOff, "");
+        let day_off = game.watch();
+
+        assert!(day_off < offsite && offsite < normal);
+    }
+
+    #[test]
+    fn resilience_and_insurance_soften_incidents() {
+        let damage = |resilience: i32, insured: bool| {
+            let mut game = game();
+            game.posture[Area::Resilience as usize] = resilience;
+            if insured {
+                game.owned.push(Item::Insurance);
+            }
+            game.incident = Some(Actor::Ransomware);
+            game.respond(1);
+            (
+                1_000_000_000 - game.valuation,
+                60 - game.trust,
+                500_000 - game.budget,
+            )
+        };
+
+        let (soft, hard) = (damage(100, false), damage(0, false));
+        assert!(soft.0 < hard.0 && soft.1 < hard.1);
+        assert_eq!(damage(0, true).2, hard.2 / 2);
+    }
+
+    #[test]
+    fn the_after_action_report_waits_for_the_end_and_tells_all() {
+        let mut game = game();
+        let i = plant(&mut game, Actor::Insider, Stage::Foothold);
+        game.campaigns[i].seen = true;
+        plant_alert(&mut game, Some(i));
+        plant_alert(&mut game, None);
+        assert!(game.after_action().is_empty());
+
+        game.outcome = Some(Outcome::Fired);
+        let report = game.after_action();
+
+        assert!(report.contains(
+            &"Day 1: Malicious insider reached Foothold, seen, still at it.".to_string()
+        ));
+        assert!(report.contains(&"Day 1 REAL  Something odd.".to_string()));
+        assert!(report.contains(&"Day 1 FALSE Something odd.".to_string()));
+    }
+
+    #[test]
+    fn a_quiet_game_says_so_in_the_report() {
+        let mut game = game();
+        game.outcome = Some(Outcome::Ipo);
+
+        assert_eq!(game.after_action().len(), 1);
     }
 
     #[test]

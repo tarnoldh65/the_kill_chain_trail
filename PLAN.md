@@ -91,22 +91,22 @@ Tasks:
 - Detection rolls turn campaign steps into alerts; false positives are mixed in, fewer with a tuned SIEM.
 - Threat hunt action (3 days, better with seniors and a deployed SIEM) can find and evict hidden campaigns. Tune the SIEM action (3 days, needs a deployed SIEM) reduces false positives.
 - Days off and offsites reduce Detection while they last.
-- Alert choices: Investigate (1-3 days, better with seniors), Call the IR firm (needs retainer, costs budget), Ignore.
+- Alert choices: Investigate (1-3 days, better with seniors; runs in the background alongside any action, one at a time), Call the IR firm (needs retainer, costs budget), Ignore.
 - A campaign reaching its objective becomes an incident with response choices and a lingering condition (Systems down, Regulator inquiry, Leaky roadmap, Downtime, Persistent access, Paranoia). Conditions show as status tags, change available actions, and are cleared by a specific action.
 - Resilience and cyber insurance reduce incident damage.
 - Every ending shows the after-action report: each campaign, how far it got, whether it was seen, and which alerts were real.
 
 Success criteria:
-- [ ] Each profile's threat mix favors its documented actors across seeds (unit tested).
-- [ ] Higher posture in a campaign's defending areas makes it advance less often across seeds (unit tested).
-- [ ] Higher Detection produces more real alerts; a tuned SIEM produces fewer false positives (unit tested across seeds).
-- [ ] Investigating a real alert can evict its campaign; investigating a false positive only costs days; the IR firm needs a retainer (unit tested).
-- [ ] Every incident type occurs across seeds, applies its responses, and sets and clears its lingering condition (unit tested).
-- [ ] Each lingering condition changes the available actions as documented (unit tested).
-- [ ] Threat hunting finds campaigns more often with seniors and a SIEM, and days off and offsites lower Detection while they last (unit tested).
-- [ ] Resilience and insurance reduce incident damage (unit tested).
-- [ ] The after-action report lists every campaign of the game with its furthest stage and alerts marked real or false (unit tested).
-- [ ] Campaign stages are never shown to the player before the game ends.
+- [x] Each profile's threat mix favors its documented actors across seeds (unit tested).
+- [x] Higher posture in a campaign's defending areas makes it advance less often across seeds (unit tested).
+- [x] Higher Detection produces more real alerts; a tuned SIEM produces fewer false positives (unit tested across seeds).
+- [x] Investigating a real alert can evict its campaign; investigating a false positive only costs days; the IR firm needs a retainer (unit tested).
+- [x] Every incident type occurs across seeds, applies its responses, and sets and clears its lingering condition (unit tested).
+- [x] Each lingering condition changes the available actions as documented (unit tested).
+- [x] Threat hunting finds campaigns more often with seniors and a SIEM, and days off and offsites lower Detection while they last (unit tested).
+- [x] Resilience and insurance reduce incident damage (unit tested).
+- [x] The after-action report lists every campaign of the game with its furthest stage and alerts marked real or false (unit tested).
+- [x] Campaign stages are never shown to the player before the game ends.
 
 ## Phase 16: Random events
 
@@ -199,7 +199,7 @@ Success criteria:
 - [x] Phase 12: Calendar, meters, and endings
 - [x] Phase 13: Setup and the Vendor Hall
 - [x] Phase 14: Defender actions
-- [ ] Phase 15: The attacker
+- [x] Phase 15: The attacker
 - [ ] Phase 16: Random events
 - [ ] Phase 17: Landmarks and IPO delays
 - [ ] Phase 18: The Security Conference

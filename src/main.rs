@@ -1,3 +1,4 @@
+mod attack;
 mod audio;
 mod draw;
 mod game;

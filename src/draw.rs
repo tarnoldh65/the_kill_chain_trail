@@ -3,8 +3,8 @@ use macroquad::prelude::*;
 
 use crate::audio::TRACKS;
 use crate::game::{
-    Action, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IPO_DAY, Item, Outcome, PAYDAYS, Profile,
-    Role, TeamMember, money,
+    Action, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IPO_DAY, IR_FEE, Item, Outcome, PAYDAYS,
+    Profile, Reply, Role, TeamMember, money,
 };
 use crate::street::{self, Leg, Street};
 use crate::ui::{ActionMenu, CoffeeRun, Music, Screen, Shop, wrap};
@@ -114,6 +114,7 @@ pub fn screen(screen: &Screen, font: &Font, music: Music) {
         Screen::Travel(travel) => play(font, &travel.game, true),
         Screen::Team(game) => team_screen(font, game),
         Screen::Coffee(run) => coffee_run(font, run),
+        Screen::Report(game) => after_action(font, game),
     }
 }
 
@@ -460,7 +461,117 @@ fn play(font: &Font, game: &GameState, traveling: bool) {
                 font.text("Press any key to stop", MARGIN, 456.0, 1.0, AMBER);
             }
         }
+        None if game.incident.is_some() => incident_popup(font, game),
+        None if game.pending_alert().is_some() => alert_menu(font, game),
         None => day_menu(font, game),
+    }
+}
+
+fn alert_menu(font: &Font, game: &GameState) {
+    font.text("ALERT! What will you do?", MARGIN, 390.0, 1.0, RED);
+    let investigate = format!("Investigate ({} days)", game.investigation_days());
+    let ir = format!("Call the IR firm ({})", money(IR_FEE));
+    let options = [
+        (investigate.as_str(), Reply::Investigate),
+        (ir.as_str(), Reply::CallIr),
+        ("Ignore it", Reply::Ignore),
+    ];
+    for (i, (label, reply)) in options.iter().enumerate() {
+        let color = if game.can_reply(*reply) { INK } else { DIM };
+        font.text(
+            &format!("{}) {label}", i + 1),
+            MARGIN + 16.0,
+            402.0 + i as f32 * 11.0,
+            1.0,
+            color,
+        );
+    }
+    font.text(
+        "Press 1-3. The alert is in the log. It may be nothing.",
+        MARGIN,
+        462.0,
+        1.0,
+        DIM,
+    );
+}
+
+fn incident_popup(font: &Font, game: &GameState) {
+    let actor = game.incident.expect("an incident");
+    let (x, y, w, h) = (40.0, 96.0, WIDTH - 80.0, 288.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, RED);
+    font.centered("INCIDENT", WIDTH / 2.0, y + 12.0, 2.0, RED);
+    let width = ((w - 32.0) / GLYPH) as usize;
+    let mut line_y = y + 40.0;
+    for line in wrap(actor.incident(), width) {
+        font.text(&line, x + 16.0, line_y, 1.0, INK);
+        line_y += 12.0;
+    }
+    line_y += 12.0;
+    for (i, response) in actor.responses().iter().enumerate() {
+        let color = if game.can_respond(response) {
+            AMBER
+        } else {
+            DIM
+        };
+        font.text(
+            &format!("{}) {}", i + 1, response.label),
+            x + 16.0,
+            line_y,
+            1.0,
+            color,
+        );
+        line_y += 16.0;
+    }
+    let condition = actor.condition();
+    font.text(
+        &format!("Some choices leave {}:", condition.tag()),
+        x + 16.0,
+        y + h - 52.0,
+        1.0,
+        CYAN,
+    );
+    font.text(condition.effect(), x + 16.0, y + h - 40.0, 1.0, CYAN);
+    font.text(
+        &format!(
+            "Press 1-{}. Grey choices are unavailable.",
+            actor.responses().len()
+        ),
+        x + 16.0,
+        y + h - 20.0,
+        1.0,
+        DIM,
+    );
+}
+
+fn after_action(font: &Font, game: &GameState) {
+    font.text("AFTER-ACTION REPORT", MARGIN, 12.0, 2.0, AMBER);
+    font.text(
+        "What the attackers were really doing:",
+        MARGIN,
+        36.0,
+        1.0,
+        INK,
+    );
+    let width = ((WIDTH - 2.0 * MARGIN) / GLYPH) as usize;
+    for (i, line) in game.after_action().iter().take(38).enumerate() {
+        let color = match line.as_str() {
+            "ATTACKERS" | "ALERTS" => CYAN,
+            l if l.contains(" REAL ") => RED,
+            l if l.contains(" FALSE ") => DIM,
+            _ => INK,
+        };
+        let line: String = line.chars().take(width).collect();
+        font.text(&line, MARGIN, 56.0 + i as f32 * 10.0, 1.0, color);
+    }
+    if blink() {
+        font.text(
+            "Press ENTER to return to the title",
+            MARGIN,
+            460.0,
+            1.0,
+            AMBER,
+        );
     }
 }
 
@@ -500,6 +611,8 @@ fn timeline(font: &Font, game: &GameState) {
         44.0,
         AMBER,
     );
+    let tags: Vec<_> = game.conditions.iter().map(|c| c.tag()).collect();
+    font.centered(&tags.join(" "), WIDTH / 2.0, 44.0, 1.0, RED);
     divider(60.0);
 }
 
@@ -542,10 +655,16 @@ fn status_panel(font: &Font, game: &GameState) {
         None => "-".to_string(),
     };
     font.text(&task, value_x, row(6), 1.0, AMBER);
+    font.text("Probe", x, row(7), 1.0, INK);
+    let probe = match &game.investigation {
+        Some(investigation) => format!("Digging {}d", investigation.days_left),
+        None => "-".to_string(),
+    };
+    font.text(&probe, value_x, row(7), 1.0, AMBER);
 
-    font.text("TEAM", x, 192.0, 1.0, CYAN);
+    font.text("TEAM", x, 206.0, 1.0, CYAN);
     for (i, member) in game.team.iter().enumerate() {
-        let y = 208.0 + i as f32 * 14.0;
+        let y = 222.0 + i as f32 * 14.0;
         let name: String = member.name.chars().take(10).collect();
         font.text(
             &format!("{name:<10} {}", short_role(member.role)),
