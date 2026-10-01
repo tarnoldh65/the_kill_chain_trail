@@ -7,7 +7,7 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [x] Company and lead names accept typing and Backspace; empty names are refused.
 - [x] Each profile shows its budget, valuation, and multiplier, and starts with them.
 - [x] The Vendor Hall hires and names analysts, buys tools and services once, stops coffee at 36 pots, and needs an analyst before opening.
-- [ ] Option 6 opens the Vendor Hall any day; hires after day 1 start a week-long search shown on the Hiring line, and the analyst joins with a result card.
+- [x] Option 6 opens the Vendor Hall any day; hires after day 1 start a week-long search shown on the Hiring line, and the analyst joins with a result card.
 - [x] Days pass on Continue and any key stops the clock; the timeline marker moves and the days-to-IPO count drops.
 - [x] Actions start, show in the status panel, pause when interrupted, and resume with option 1.
 - [x] The intern coffee run is playable and fair, and Rush Hour music plays during it.
@@ -18,8 +18,8 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [x] The log groups entries under day headers with space between them, and alerts and incidents stand out.
 - [x] Finished actions, investigations, IR calls, incident responses, event choices, and river crossings show a result card that is also in the log.
 - [x] The team screen lets you choose an analyst and fire them after a Y confirmation, for a week's salary; absent analysts and the last analyst cannot be fired.
-- [ ] D opens the defenses screen from any play screen: each defense shows who it slows, what is helping it (amber for tools not yet deployed), and the pen test grade, which stays after the pen test.
-- [ ] The Vendor Hall and action list light up the defenses the selected item or action improves.
+- [x] D opens the defenses screen from any play screen: each defense shows who it slows, what is helping it (amber for tools not yet deployed), and the pen test grade, which stays after the pen test.
+- [x] The Vendor Hall and action list light up the defenses the selected item or action improves.
 - [x] L opens the full log on its newest page from any play screen; LEFT/RIGHT turn pages back to the first entry, and ENTER returns where you were.
 - [x] Every landmark stops the clock on its day: forts offer the Vendor Hall, rest, and moving on; rivers offer their choices; the pen test shows letter grades.
 - [x] The conference picker, track picker, three days away, and card reveal all work, and perks apply at the Vendor Hall.

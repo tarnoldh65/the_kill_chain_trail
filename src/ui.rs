@@ -1,6 +1,6 @@
 use crate::audio::TRACKS;
 use crate::conference::Track;
-use crate::game::{Action, Entry, GameState, Item, Outcome, Profile, Reply};
+use crate::game::{Action, Area, Entry, GameState, Item, Outcome, Profile, Reply};
 use crate::street::{Hop, Street};
 
 const NAME_LIMIT: usize = 20;
@@ -185,17 +185,54 @@ pub struct Travel {
     elapsed_ms: u32,
 }
 
-/// The Vendor Hall's listing, with a cursor on one row of `Item::ALL` or on the exit below it.
+/// Vendor Hall tabs: staff, one per defense area, then services.
+pub const TABS: usize = 8;
+
+/// The tab an item is listed under.
+fn tab_of(item: Item) -> usize {
+    match (item, item.category()) {
+        (Item::Junior | Item::Senior, _) => 0,
+        (_, Some(area)) => 1 + area as usize,
+        (_, None) => TABS - 1,
+    }
+}
+
+/// The items listed under a tab, in catalog order.
+pub fn tab_items(tab: usize) -> Vec<Item> {
+    Item::ALL
+        .into_iter()
+        .filter(|&i| tab_of(i) == tab)
+        .collect()
+}
+
+pub fn tab_name(tab: usize) -> String {
+    match tab {
+        0 => "Staff".to_string(),
+        t if t == TABS - 1 => "Services".to_string(),
+        t => Area::ALL[t - 1].to_string(),
+    }
+}
+
+/// The Vendor Hall, open on one tab with a cursor on one of its items or on the exit below.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shop {
     pub game: GameState,
+    pub tab: usize,
     pub cursor: usize,
 }
 
 impl Shop {
+    pub fn new(game: GameState) -> Self {
+        Self {
+            game,
+            tab: 0,
+            cursor: 0,
+        }
+    }
+
     /// The item under the cursor, or `None` on the exit row.
     pub fn item(&self) -> Option<Item> {
-        Item::ALL.get(self.cursor).copied()
+        tab_items(self.tab).get(self.cursor).copied()
     }
 }
 
@@ -284,22 +321,27 @@ impl Screen {
             },
             (Self::Profile { company, lead }, Input::Char(c @ '1'..='3')) => {
                 let profile = Profile::ALL[c as usize - '1' as usize];
-                Self::Shop(Shop {
-                    game: GameState::new(
-                        company.trim(),
-                        lead.trim(),
-                        profile,
-                        macroquad::rand::rand(),
-                    ),
-                    cursor: 0,
-                })
+                Self::Shop(Shop::new(GameState::new(
+                    company.trim(),
+                    lead.trim(),
+                    profile,
+                    macroquad::rand::rand(),
+                )))
             }
             (Self::Shop(mut shop), Input::Arrow(Hop::Up)) => {
                 shop.cursor = shop.cursor.saturating_sub(1);
                 Self::Shop(shop)
             }
             (Self::Shop(mut shop), Input::Arrow(Hop::Down)) => {
-                shop.cursor = (shop.cursor + 1).min(Item::ALL.len());
+                shop.cursor = (shop.cursor + 1).min(tab_items(shop.tab).len());
+                Self::Shop(shop)
+            }
+            (Self::Shop(mut shop), Input::Arrow(hop @ (Hop::Left | Hop::Right))) => {
+                shop.tab = match hop {
+                    Hop::Left => shop.tab.saturating_sub(1),
+                    _ => (shop.tab + 1).min(TABS - 1),
+                };
+                shop.cursor = 0;
                 Self::Shop(shop)
             }
             (Self::Shop(mut shop), Input::Enter) => match shop.item() {
@@ -379,7 +421,7 @@ impl Screen {
                     return Self::Play(game);
                 }
                 match input {
-                    Input::Char('1') if fort => return Self::Shop(Shop { game, cursor: 0 }),
+                    Input::Char('1') if fort => return Self::Shop(Shop::new(game)),
                     Input::Char('2') if fort => game.rest_at_fort(),
                     Input::Char('3') if fort => game.leave_fort(),
                     Input::Char(c @ '1'..='9')
@@ -504,7 +546,7 @@ impl Screen {
                     street: Street::new(),
                 })
             }
-            (Self::Play(game), Input::Char('6')) => Self::Shop(Shop { game, cursor: 0 }),
+            (Self::Play(game), Input::Char('6')) => Self::Shop(Shop::new(game)),
             (Self::Travel(travel), _) => Self::Play(travel.game),
             (
                 Self::Team {
@@ -774,19 +816,26 @@ mod tests {
     fn arrows_move_the_cursor_within_the_listing_and_exit() {
         let screen = vendor_hall().update(Input::Arrow(Hop::Up));
         assert_eq!(shop(&screen).cursor, 0);
-
-        let screen = arrows(screen, Hop::Down, 3);
-        assert_eq!(shop(&screen).item(), Some(Item::ALL[3]));
+        assert_eq!(shop(&screen).item(), Some(Item::Junior));
 
         let screen = arrows(screen, Hop::Down, 20);
-        assert_eq!(shop(&screen).cursor, Item::ALL.len());
+        assert_eq!(shop(&screen).cursor, 2, "stops on the exit below the staff");
         assert_eq!(shop(&screen).item(), None);
+
+        let screen = screen.update(Input::Arrow(Hop::Right));
+        assert_eq!(shop(&screen).cursor, 0, "a new tab starts at the top");
+        assert_eq!(shop(&screen).item(), Some(Item::PasswordManager));
+        let screen = arrows(screen, Hop::Right, 20);
+        assert_eq!(tab_name(shop(&screen).tab), "Services");
+        let screen = arrows(screen, Hop::Left, 20);
+        assert_eq!(shop(&screen).tab, 0);
     }
 
     #[test]
     fn enter_buys_the_item_under_the_cursor() {
-        let screen = arrows(vendor_hall(), Hop::Down, 3).update(Input::Enter);
-        let item = Item::ALL[3];
+        let screen = arrows(vendor_hall(), Hop::Right, 1);
+        let screen = arrows(screen, Hop::Down, 1).update(Input::Enter);
+        let item = Item::MfaTokens;
 
         assert_eq!(shop(&screen).game.owned, [item]);
         assert_eq!(
@@ -798,12 +847,30 @@ mod tests {
 
     #[test]
     fn unaffordable_items_are_not_bought() {
-        let mut screen = arrows(vendor_hall(), Hop::Down, 3);
+        let mut screen = arrows(vendor_hall(), Hop::Right, 1);
         if let Screen::Shop(shop) = &mut screen {
             shop.game.budget = 0;
         }
 
         assert_eq!(screen.clone().update(Input::Enter), screen);
+    }
+
+    #[test]
+    fn every_item_sits_on_exactly_one_tab() {
+        let listed: Vec<Item> = (0..TABS).flat_map(tab_items).collect();
+        assert_eq!(listed.len(), Item::ALL.len());
+        for item in Item::ALL {
+            assert!(listed.contains(&item), "{item:?} is unreachable");
+        }
+        for tab in 1..TABS - 1 {
+            assert!(
+                tab_items(tab)
+                    .iter()
+                    .all(|i| i.category() == Some(Area::ALL[tab - 1])),
+                "{}",
+                tab_name(tab)
+            );
+        }
     }
 
     #[test]
@@ -1001,10 +1068,14 @@ mod tests {
         let screen = start.clone().update(Input::Char('6'));
         assert!(matches!(screen, Screen::Shop(_)));
 
-        let screen = arrows(screen, Hop::Down, 3).update(Input::Enter);
-        assert_eq!(game(&screen).owned, [Item::ALL[3]], "bought mid-game");
+        let screen = arrows(screen, Hop::Right, 1).update(Input::Enter);
+        assert_eq!(
+            game(&screen).owned,
+            [Item::PasswordManager],
+            "bought mid-game"
+        );
 
-        let screen = arrows(screen, Hop::Up, 10).update(Input::Enter);
+        let screen = arrows(screen, Hop::Left, 1).update(Input::Enter);
         let screen = type_text(screen, "Priya").update(Input::Enter);
         assert_eq!(
             game(&screen).searches[0].name,

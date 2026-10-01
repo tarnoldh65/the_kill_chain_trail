@@ -196,12 +196,24 @@ impl fmt::Display for Profile {
 pub enum Item {
     Junior,
     Senior,
-    Edr,
-    Siem,
+    PasswordManager,
     MfaTokens,
+    Pam,
+    Antivirus,
+    Allowlisting,
+    Edr,
+    Posters,
     EmailGateway,
+    TrainingPlatform,
+    VulnScanner,
     Waf,
+    Asm,
+    Runbooks,
     Backups,
+    DrSite,
+    LogCollection,
+    Siem,
+    Mdr,
     IrRetainer,
     Insurance,
     Coffee,
@@ -209,15 +221,28 @@ pub enum Item {
 }
 
 impl Item {
-    pub const ALL: [Item; 12] = [
+    /// Staff, then three tools per defense area from cheapest to premium, then services.
+    pub const ALL: [Item; 24] = [
         Self::Junior,
         Self::Senior,
-        Self::Edr,
-        Self::Siem,
+        Self::PasswordManager,
         Self::MfaTokens,
+        Self::Pam,
+        Self::Antivirus,
+        Self::Allowlisting,
+        Self::Edr,
+        Self::Posters,
         Self::EmailGateway,
+        Self::TrainingPlatform,
+        Self::VulnScanner,
         Self::Waf,
+        Self::Asm,
+        Self::Runbooks,
         Self::Backups,
+        Self::DrSite,
+        Self::LogCollection,
+        Self::Siem,
+        Self::Mdr,
         Self::IrRetainer,
         Self::Insurance,
         Self::Coffee,
@@ -229,12 +254,24 @@ impl Item {
         match self {
             Self::Junior => 5_000,
             Self::Senior => 10_000,
-            Self::Edr => 60_000,
-            Self::Siem => 80_000,
+            Self::PasswordManager => 10_000,
             Self::MfaTokens => 20_000,
+            Self::Pam => 70_000,
+            Self::Antivirus => 10_000,
+            Self::Allowlisting => 35_000,
+            Self::Edr => 60_000,
+            Self::Posters => 5_000,
             Self::EmailGateway => 25_000,
+            Self::TrainingPlatform => 45_000,
+            Self::VulnScanner => 15_000,
             Self::Waf => 40_000,
+            Self::Asm => 60_000,
+            Self::Runbooks => 8_000,
             Self::Backups => 30_000,
+            Self::DrSite => 80_000,
+            Self::LogCollection => 15_000,
+            Self::Siem => 80_000,
+            Self::Mdr => 100_000,
             Self::IrRetainer => 50_000,
             Self::Insurance => 40_000,
             Self::Coffee => 100,
@@ -246,12 +283,24 @@ impl Item {
         match self {
             Self::Junior => "Hire a junior analyst",
             Self::Senior => "Hire a senior analyst",
-            Self::Edr => "EDR",
-            Self::Siem => "SIEM",
+            Self::PasswordManager => "Password manager",
             Self::MfaTokens => "MFA tokens",
+            Self::Pam => "Privileged access management",
+            Self::Antivirus => "Antivirus suite",
+            Self::Allowlisting => "Application allowlisting",
+            Self::Edr => "EDR",
+            Self::Posters => "Security awareness posters",
             Self::EmailGateway => "Email security gateway",
+            Self::TrainingPlatform => "Security training platform",
+            Self::VulnScanner => "Vulnerability scanner",
             Self::Waf => "DDoS protection and WAF",
+            Self::Asm => "Attack surface management",
+            Self::Runbooks => "Incident runbooks",
             Self::Backups => "Immutable backups",
+            Self::DrSite => "Disaster recovery site",
+            Self::LogCollection => "Log collection",
+            Self::Siem => "SIEM",
+            Self::Mdr => "Managed detection service",
             Self::IrRetainer => "Incident response retainer",
             Self::Insurance => "Cyber insurance",
             Self::Coffee => "A case of coffee (12 pots)",
@@ -263,12 +312,24 @@ impl Item {
         match self {
             Self::Junior => "Cheap and eager. Slower, and burns out faster.",
             Self::Senior => "Expensive. Faster at everything and harder to burn out.",
-            Self::Edr => "Endpoint protection and detection. Must be deployed to help.",
-            Self::Siem => "Detection across the board. Must be deployed to help.",
-            Self::MfaTokens => "Protects identities. Must be deployed to help.",
-            Self::EmailGateway => "Stops phishing at the door. Must be deployed to help.",
-            Self::Waf => "Shields the perimeter. Must be deployed to help.",
-            Self::Backups => "Ransomware's worst enemy. Must be deployed to help.",
+            Self::PasswordManager => "Fewer sticky notes with passwords. Must be deployed.",
+            Self::MfaTokens => "Protects identities. Employees will complain. Must be deployed.",
+            Self::Pam => "Locks down the admin accounts attackers want. Must be deployed.",
+            Self::Antivirus => "Catches the obvious malware. Must be deployed.",
+            Self::Allowlisting => "Only approved software runs. Must be deployed.",
+            Self::Edr => "Endpoint protection and detection. Must be deployed.",
+            Self::Posters => "\"Think before you click\" on every wall. Must be deployed.",
+            Self::EmailGateway => "Stops phishing at the door. Must be deployed.",
+            Self::TrainingPlatform => "Monthly lessons nobody can skip. Must be deployed.",
+            Self::VulnScanner => "Finds the holes before attackers do. Must be deployed.",
+            Self::Waf => "Shields the perimeter from floods. Must be deployed.",
+            Self::Asm => "Maps everything you forgot was online. Must be deployed.",
+            Self::Runbooks => "Step-by-step plans for the worst day. Must be deployed.",
+            Self::Backups => "Ransomware's worst enemy. Must be deployed.",
+            Self::DrSite => "A whole second data center on standby. Must be deployed.",
+            Self::LogCollection => "Gathers the logs in one place. Must be deployed.",
+            Self::Siem => "Detection across the board. Must be deployed.",
+            Self::Mdr => "Experts watching your alerts around the clock. Must be deployed.",
             Self::IrRetainer => "Lets you call in an incident response firm.",
             Self::Insurance => "Pays for part of the damage when things go wrong.",
             Self::Coffee => "Fuel. The break room holds 36 pots.",
@@ -286,15 +347,40 @@ impl Item {
         }
     }
 
+    /// The defense area a tool belongs to; `None` for staff and services.
+    pub fn category(self) -> Option<Area> {
+        match self {
+            Self::PasswordManager | Self::MfaTokens | Self::Pam => Some(Area::Identity),
+            Self::Antivirus | Self::Allowlisting | Self::Edr => Some(Area::Endpoint),
+            Self::Posters | Self::EmailGateway | Self::TrainingPlatform => Some(Area::People),
+            Self::VulnScanner | Self::Waf | Self::Asm => Some(Area::Perimeter),
+            Self::Runbooks | Self::Backups | Self::DrSite => Some(Area::Resilience),
+            Self::LogCollection | Self::Siem | Self::Mdr => Some(Area::Detection),
+            _ => None,
+        }
+    }
+
     /// Posture each tool adds once deployed; nothing for analysts, services, or coffee.
     pub fn boosts(self) -> &'static [(Area, i32)] {
         match self {
-            Self::Edr => &[(Area::Endpoint, 25), (Area::Detection, 10)],
-            Self::Siem => &[(Area::Detection, 30)],
+            Self::PasswordManager => &[(Area::Identity, 12)],
             Self::MfaTokens => &[(Area::Identity, 30)],
+            Self::Pam => &[(Area::Identity, 25), (Area::Detection, 10)],
+            Self::Antivirus => &[(Area::Endpoint, 12)],
+            Self::Allowlisting => &[(Area::Endpoint, 20)],
+            Self::Edr => &[(Area::Endpoint, 25), (Area::Detection, 10)],
+            Self::Posters => &[(Area::People, 8)],
             Self::EmailGateway => &[(Area::People, 20)],
+            Self::TrainingPlatform => &[(Area::People, 25)],
+            Self::VulnScanner => &[(Area::Perimeter, 12), (Area::Endpoint, 5)],
             Self::Waf => &[(Area::Perimeter, 30)],
+            Self::Asm => &[(Area::Perimeter, 25), (Area::Detection, 5)],
+            Self::Runbooks => &[(Area::Resilience, 10)],
             Self::Backups => &[(Area::Resilience, 25)],
+            Self::DrSite => &[(Area::Resilience, 30)],
+            Self::LogCollection => &[(Area::Detection, 12)],
+            Self::Siem => &[(Area::Detection, 30)],
+            Self::Mdr => &[(Area::Detection, 35)],
             _ => &[],
         }
     }
@@ -385,11 +471,17 @@ impl Action {
     /// Days at Steady tempo with no seniors.
     fn base_days(self) -> u32 {
         match self {
-            Self::Deploy(Item::Edr) => 7,
-            Self::Deploy(Item::Siem) => 10,
-            Self::Deploy(Item::EmailGateway) => 3,
-            Self::Deploy(Item::Waf) => 4,
-            Self::Deploy(_) => 5,
+            Self::Deploy(item) => match item {
+                Item::Posters => 1,
+                Item::PasswordManager | Item::Antivirus | Item::VulnScanner | Item::Runbooks => 2,
+                Item::EmailGateway | Item::LogCollection => 3,
+                Item::Waf | Item::Mdr => 4,
+                Item::MfaTokens | Item::TrainingPlatform | Item::Backups => 5,
+                Item::Allowlisting | Item::Asm => 6,
+                Item::Edr => 7,
+                Item::Pam => 8,
+                _ => 10,
+            },
             Self::PhishingSim | Self::BackupTest => 2,
             Self::PatchSprint => 4,
             Self::Tabletop | Self::DayOff | Self::BriefLeadership => 1,
@@ -957,12 +1049,7 @@ impl GameState {
         let deployable = self
             .owned
             .iter()
-            .filter(|item| {
-                !matches!(
-                    item,
-                    Item::IrRetainer | Item::Insurance | Item::CoffeeSubscription
-                )
-            })
+            .filter(|item| item.category().is_some())
             .filter(|item| !self.deployed.contains(item))
             .map(|&item| Action::Deploy(item));
         let backup_test = self
@@ -4250,6 +4337,60 @@ mod tests {
         );
         game.deployed.push(Item::Edr);
         assert_eq!(game.defenders(Area::Detection), ["EDR"]);
+    }
+
+    #[test]
+    fn every_defense_has_tools_at_different_prices() {
+        for area in Area::ALL {
+            let tools: Vec<Item> = Item::ALL
+                .into_iter()
+                .filter(|i| i.category() == Some(area))
+                .collect();
+            assert!(tools.len() >= 2, "{area}");
+            let mut prices: Vec<i64> = tools.iter().map(|t| t.price()).collect();
+            prices.dedup();
+            assert_eq!(prices.len(), tools.len(), "{area} prices differ");
+            for tool in tools {
+                assert_eq!(
+                    tool.boosts()[0].0,
+                    area,
+                    "{tool:?} improves its own area first"
+                );
+            }
+        }
+        for item in Item::ALL {
+            assert_eq!(
+                item.category().is_some(),
+                !item.boosts().is_empty(),
+                "{item:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn deploying_any_tool_applies_exactly_its_boosts() {
+        for tool in Item::ALL.into_iter().filter(|i| i.category().is_some()) {
+            let mut game = game();
+            game.owned.push(tool);
+            let mut control = game.clone();
+
+            run(&mut game, Action::Deploy(tool));
+            advance_to(&mut control, game.day);
+
+            for area in Area::ALL {
+                let boost: i32 = tool
+                    .boosts()
+                    .iter()
+                    .filter(|(a, _)| *a == area)
+                    .map(|(_, b)| b)
+                    .sum();
+                assert_eq!(
+                    game.level(area),
+                    (control.level(area) + boost).min(100),
+                    "{tool:?} {area}"
+                );
+            }
+        }
     }
 
     #[test]

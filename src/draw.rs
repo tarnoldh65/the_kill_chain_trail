@@ -12,8 +12,8 @@ use crate::landmarks::Landmark;
 use crate::scores::Score;
 use crate::street::{self, Leg, Street};
 use crate::ui::{
-    ActionMenu, CoffeeRun, LOG_LINE, LineKind, LogLine, Music, PAGE_HEIGHT, Screen, Shop, WEEKDAYS,
-    log_lines, log_pages, wrap,
+    ActionMenu, CoffeeRun, LOG_LINE, LineKind, LogLine, Music, PAGE_HEIGHT, Screen, Shop, TABS,
+    WEEKDAYS, log_lines, log_pages, tab_items, tab_name, wrap,
 };
 
 pub const WIDTH: f32 = 640.0;
@@ -352,8 +352,19 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     );
     divider(52.0);
 
-    for (i, item) in Item::ALL.iter().enumerate() {
-        let y = 64.0 + i as f32 * 16.0;
+    // Tabs: staff, the six defense areas, and services.
+    let mut x = MARGIN;
+    for tab in 0..TABS {
+        let name = tab_name(tab).to_uppercase();
+        let color = if tab == shop.tab { AMBER } else { DIM };
+        font.text(&name, x, 62.0, 1.0, color);
+        x += name.len() as f32 * GLYPH + 12.0;
+    }
+
+    let items = tab_items(shop.tab);
+    let row_y = |i: usize| 88.0 + i as f32 * 16.0;
+    for (i, item) in items.iter().enumerate() {
+        let y = row_y(i);
         let owned = game.owned.contains(item);
         let color = if owned {
             GREEN
@@ -363,13 +374,14 @@ fn vendor_hall(font: &Font, shop: &Shop) {
             DIM
         };
         let status = match item {
+            _ if game.deployed.contains(item) => "DEPLOYED".to_string(),
             _ if owned => "OWNED".to_string(),
             Item::Coffee => format!("{}/{COFFEE_CAPACITY} pots", game.coffee),
             _ => String::new(),
         };
         font.text(
             &format!(
-                "{:<28}{:<18}{status}",
+                "{:<30}{:<18}{status}",
                 item.label(),
                 price_text(game, *item)
             ),
@@ -379,7 +391,7 @@ fn vendor_hall(font: &Font, shop: &Shop) {
             color,
         );
     }
-    let exit_y = 64.0 + Item::ALL.len() as f32 * 16.0;
+    let exit_y = row_y(items.len());
     let can_open = game.analysts() > 0;
     let exit = if game.day == 1 {
         "Open for business"
@@ -393,13 +405,7 @@ fn vendor_hall(font: &Font, shop: &Shop) {
         1.0,
         if can_open { AMBER } else { DIM },
     );
-    font.text(
-        ">",
-        MARGIN + 8.0,
-        64.0 + shop.cursor as f32 * 16.0,
-        1.0,
-        AMBER,
-    );
+    font.text(">", MARGIN + 8.0, row_y(shop.cursor), 1.0, AMBER);
     divider(exit_y + 20.0);
 
     let note = match shop.item() {
@@ -427,7 +433,13 @@ fn vendor_hall(font: &Font, shop: &Shop) {
         font.text(line, MARGIN, exit_y + 56.0 + i as f32 * 12.0, 1.0, INK);
     }
     improves_strip(font, shop.item().map_or(&[], |i| i.boosts()), 432.0);
-    font.text("UP/DOWN to choose, ENTER to buy.", MARGIN, 460.0, 1.0, DIM);
+    font.text(
+        "LEFT/RIGHT for categories, UP/DOWN to choose, ENTER to buy.",
+        MARGIN,
+        460.0,
+        1.0,
+        DIM,
+    );
 }
 
 fn name_popup(font: &Font, prompt: &str, name: &str) {

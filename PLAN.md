@@ -193,6 +193,81 @@ Success criteria:
 - [x] README is accurate and minimal, with no unused code or clippy warnings.
 - [x] The Pages URL serves the redesigned game after the merge.
 
+## Phase 21: Tool tiers
+
+Goal: two or three tools per defense category at different price points, so spending is a real choice. All prices and boosts below are starting points for Phase 24.
+
+Tasks:
+- Replace the six tools with a catalog of 18, three per category. Each tool improves its own category and may add a smaller boost elsewhere:
+
+| Category | Budget tier | Mid tier | Premium tier |
+| --- | --- | --- | --- |
+| Identity | Password manager ($10K, +12) | MFA tokens ($20K, +30) | Privileged access management ($70K, +25, Detection +10) |
+| Endpoint | Antivirus suite ($10K, +12) | Application allowlisting ($35K, +20) | EDR ($60K, +25, Detection +10) |
+| People | Awareness posters ($5K, +8) | Email security gateway ($25K, +20) | Training platform ($45K, +25) |
+| Perimeter | Vulnerability scanner ($15K, +12, Endpoint +5) | DDoS protection and WAF ($40K, +30) | Attack surface management ($60K, +25, Detection +5) |
+| Resilience | Incident runbooks ($8K, +10) | Immutable backups ($30K, +25) | Disaster recovery site ($80K, +30) |
+| Detection | Log collection ($15K, +12) | SIEM ($80K, +30) | Managed detection service ($100K, +35) |
+
+- Boosts stack within a category, still capped at 100.
+- Existing dependencies keep their tools: SIEM tuning and the threat-hunt bonus need the SIEM, restore tests and restoring from backups need immutable backups, and enforcing MFA is how MFA tokens deploy.
+- Vendor Hall gets category tabs: Staff, the six defense categories, and Services (IR retainer, insurance, coffee, subscription). Left/Right switch tabs, Up/Down choose within a tab, and the IMPROVES strip and spare-after-costs header stay.
+- The Defenses screen, action list, and balance strategies use the new catalog.
+
+Success criteria:
+- [x] Every defense category offers at least two tools at different prices, and every tool improves its own category (unit tested).
+- [x] Each tool's deployment applies exactly its listed boosts (unit tested over the whole catalog).
+- [x] Existing dependencies still require their tool (unit tested).
+- [x] Left/Right switch Vendor Hall tabs, Up/Down stay within a tab, and every item is reachable (unit tested).
+- [x] Every tab fits on the 640x480 screen.
+
+## Phase 22: Tool upkeep
+
+Goal: deployed tools need regular maintenance, so there is always meaningful work in the late game.
+
+Tasks:
+- Tool boosts stop being added to posture permanently. Instead each deployed tool has a condition from 0 to 100 and contributes its boosts times condition / 100 on top of base posture and expertise.
+- Condition drops 8 per week, so an untended tool falls to half strength in about six weeks.
+- One maintenance action per category restores every deployed tool in it to full: Run an access review (Identity), Update endpoint policies (Endpoint), Refresh email filters (People), Update firewall and WAF rules (Perimeter), Rehearse disaster recovery (Resilience, replacing the backup restore test), Tune detections (Detection, replacing Tune the SIEM). Each takes 2 days, is free, and is offered only when a deployed tool in that category is below 80.
+- False positives follow the SIEM's condition instead of a one-time tuned flag.
+- The Defenses screen shows each tool's state: Fresh, Aging (below 80), or Stale (below 50), in green, amber, or red.
+
+Success criteria:
+- [ ] A deployed tool's contribution scales with its condition, and condition drops 8 every Monday (unit tested).
+- [ ] Each maintenance action restores every deployed tool in its category and is offered only when one needs it (unit tested).
+- [ ] An unmaintained SIEM raises more false positives than a maintained one (unit tested across seeds).
+- [ ] Pen test grades, attacker odds, and result cards all count tool contributions (unit tested).
+- [ ] The Defenses screen shows every deployed tool's state.
+
+## Phase 23: Quarterly board funding
+
+Goal: money keeps arriving, scaled by how much the board trusts the SOC, so trust matters and there is always something to spend late.
+
+Tasks:
+- Every sixth Monday (days 43, 85, 127, 169, and on through any delays), the board releases a grant: the profile's quarterly amount (Fintech $200K, Healthtech $160K, Gaming startup $120K) times trust / 60, so trust 60 gets the full grant, 30 gets half, 90 gets one and a half.
+- The grant appears in the log and as a result card, and the next funding day shows on the SOC Status panel.
+- The Public S-1 Flip top-up is removed; the random "board approves $100K" event stays.
+- Starting budgets are reduced so total money over a game is similar, then tuned in Phase 24.
+
+Success criteria:
+- [ ] Grants arrive only on funding days, keep coming after IPO delays, and scale with trust as documented (unit tested).
+- [ ] Each profile's grant matches its documented amount at trust 60 (unit tested).
+- [ ] The Flip no longer adds budget (unit tested).
+- [ ] The next funding day shows on the SOC Status panel.
+
+## Phase 24: Rebalance and release
+
+Tasks:
+- Update the balance strategies: Sensible buys tiers it can afford, keeps tools maintained, and protects trust; Random buys and maintains at random.
+- Tune prices, boosts, decay, grants, and starting budgets until the Phase 20 targets hold again.
+- Update REDESIGN.md, README, and PLAYTEST.md; playtest natively and in the browser; deploy.
+
+Success criteria:
+- [ ] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile (unit tested).
+- [ ] Every ending is still reachable, and Sensible skipping any one purchase or action still wins some games (unit tested).
+- [ ] In a playtest, the last eight weeks still offer meaningful choices every week.
+- [ ] Every item in PLAYTEST.md passes, and the Pages URL serves the new version.
+
 ## Current status
 
 - [x] MVP (Phases 1-11)
@@ -205,3 +280,7 @@ Success criteria:
 - [x] Phase 18: The Security Conference
 - [x] Phase 19: Presentation
 - [x] Phase 20: Balance, playtest, and release
+- [x] Phase 21: Tool tiers
+- [ ] Phase 22: Tool upkeep
+- [ ] Phase 23: Quarterly board funding
+- [ ] Phase 24: Rebalance and release
