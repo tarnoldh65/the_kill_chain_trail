@@ -118,6 +118,19 @@ Success criteria:
 - [x] Cost, once-per-stage limit, coffee capacity, and coffee restock are unit tested.
 - [x] Rush Hour music is four whole bars and never clips (unit tested).
 
+## Phase 9: Variety
+
+Tasks:
+- Six choices per landmark; each game offers a seeded random three of them.
+- Four random events per landmark (good, bad, or neutral), one applied after each decision and shown in the log and incident report.
+- Bankruptcy considers only the offered choices.
+- Rebalance so random play still wins about a third of the time.
+
+Success criteria:
+- [x] Offered choices are three different choices from the landmark and stable within a game (unit tested).
+- [x] Every choice is offered and every event happens across seeds (unit tested).
+- [x] Across 40 seeds of exhaustive play, every outcome is reachable, every choice is part of a win, and the win rate is 25-40% (unit tested).
+
 ## Current status
 
 - [x] Phase 1: Project scaffolding
@@ -128,3 +141,4 @@ Success criteria:
 - [ ] Phase 6: Polish and playtest
 - [x] Phase 7: Incident reports and music selection
 - [x] Phase 8: Intern coffee run
+- [x] Phase 9: Variety

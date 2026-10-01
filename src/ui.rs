@@ -126,16 +126,16 @@ impl Screen {
                 lead: String::new(),
             },
             (Self::Company(company), input) => Self::Company(edit(company, input)),
-            (Self::Lead { company, lead }, Input::Enter) if !lead.trim().is_empty() => {
-                Self::Play(GameState::new(company.trim(), lead.trim()))
-            }
+            (Self::Lead { company, lead }, Input::Enter) if !lead.trim().is_empty() => Self::Play(
+                GameState::new(company.trim(), lead.trim(), macroquad::rand::rand()),
+            ),
             (Self::Lead { company, lead }, input) => Self::Lead {
                 company,
                 lead: edit(lead, input),
             },
             (Self::Play(game), Input::Enter) if game.outcome.is_some() => Self::Title,
             (Self::Play(mut game), Input::Char(c @ '1'..='3')) if game.outcome.is_none() => {
-                let choice = game.stage.choices()[c as usize - '1' as usize];
+                let choice = game.options()[c as usize - '1' as usize];
                 if !game.can_afford(&choice) {
                     return Self::Play(game);
                 }
@@ -202,7 +202,7 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::{Outcome, Setback, Stage};
+    use crate::game::{Outcome, Stage};
 
     fn type_text(mut screen: Screen, text: &str) -> Screen {
         for c in text.chars() {
@@ -217,10 +217,10 @@ mod tests {
         type_text(screen, "Alex").update(Input::Enter)
     }
 
-    /// Makes each choice and dismisses its report.
-    fn choose(mut screen: Screen, choices: &str) -> Screen {
-        for c in choices.chars() {
-            screen = screen.update(Input::Char(c)).update(Input::Enter);
+    /// Changes the game behind a play screen.
+    fn with_game(mut screen: Screen, change: impl FnOnce(&mut GameState)) -> Screen {
+        if let Screen::Play(game) = &mut screen {
+            change(game);
         }
         screen
     }
@@ -261,23 +261,27 @@ mod tests {
     }
 
     #[test]
-    fn number_keys_play_the_matching_choice() {
-        let screen = new_game().update(Input::Char('2'));
-
-        assert_eq!(game(&screen).stage, Stage::Weaponization);
-        assert_eq!(game(&screen).budget, 120);
-    }
-
-    #[test]
-    fn a_decision_shows_its_report_until_enter() {
-        let screen = new_game().update(Input::Char('3'));
+    fn number_keys_play_the_matching_offered_choice() {
+        let before = new_game();
+        let second = game(&before).options()[1];
+        let screen = before.update(Input::Char('2'));
         let Screen::Report(report) = &screen else {
             panic!("expected Report, got {screen:?}");
         };
 
-        assert_eq!(report.choice.label, "Ignore the noise and rest up");
-        assert_eq!(report.setback, Some(Setback::Behind));
-        assert!(report.game.log[report.news].contains("attackers are ahead"));
+        assert_eq!(report.choice, second);
+        assert_eq!(game(&screen).stage, Stage::Weaponization);
+    }
+
+    #[test]
+    fn a_decision_shows_its_report_until_enter() {
+        let screen = new_game().update(Input::Char('1'));
+        let Screen::Report(report) = &screen else {
+            panic!("expected Report, got {screen:?}");
+        };
+
+        assert!(report.game.log[report.news - 1].contains(report.choice.label));
+        assert!(report.game.log[report.news].starts_with("Meanwhile"));
         assert_eq!(screen.clone().update(Input::Char('1')), screen);
         assert_eq!(
             screen.clone().update(Input::Enter),
@@ -364,20 +368,23 @@ mod tests {
 
     #[test]
     fn unaffordable_and_invalid_choices_are_ignored() {
-        let mut screen = new_game();
-        if let Screen::Play(game) = &mut screen {
-            game.budget = 0;
-        }
+        let screen = with_game(new_game(), |game| game.budget = 0);
+        let paid = game(&screen)
+            .options()
+            .iter()
+            .position(|c| c.cost > 0)
+            .unwrap();
 
-        let screen = screen.update(Input::Char('2')).update(Input::Char('7'));
+        let screen = screen
+            .update(Input::Char(char::from(b'1' + paid as u8)))
+            .update(Input::Char('7'));
 
         assert_eq!(game(&screen).stage, Stage::Reconnaissance);
     }
 
     #[test]
     fn enter_after_the_outcome_returns_to_title() {
-        let screen = choose(new_game(), "333");
-        assert_eq!(game(&screen).outcome, Some(Outcome::Fired));
+        let screen = with_game(new_game(), |game| game.outcome = Some(Outcome::Fired));
 
         assert_eq!(screen.update(Input::Enter), Screen::Title);
     }
@@ -403,10 +410,7 @@ mod tests {
 
     #[test]
     fn losing_a_team_member_cues_the_alarm() {
-        let mut before = new_game();
-        if let Screen::Play(game) = &mut before {
-            game.team[0].burnout = 95;
-        }
+        let before = with_game(new_game(), |game| game.team[0].burnout = 120);
         let after = before.clone().update(Input::Char('1'));
 
         assert_eq!(cue(&before, &after), Some(Cue::Alarm));
@@ -414,15 +418,20 @@ mod tests {
 
     #[test]
     fn outcomes_cue_win_or_lose() {
-        let won = choose(new_game(), "312312");
-        let lost = choose(new_game(), "33");
+        let final_stage = |containment| {
+            with_game(new_game(), |game| {
+                game.stage = Stage::ActionsOnObjectives;
+                game.containment = containment;
+            })
+        };
+        let (won, lost) = (final_stage(100), final_stage(0));
 
         assert_eq!(
-            cue(&won, &won.clone().update(Input::Char('2'))),
+            cue(&won, &won.clone().update(Input::Char('1'))),
             Some(Cue::Win)
         );
         assert_eq!(
-            cue(&lost, &lost.clone().update(Input::Char('3'))),
+            cue(&lost, &lost.clone().update(Input::Char('1'))),
             Some(Cue::Lose)
         );
     }

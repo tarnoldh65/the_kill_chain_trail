@@ -370,8 +370,7 @@ fn choices(font: &Font, game: &GameState) {
         game.can_send_intern(),
     ));
     let options: Vec<_> = game
-        .stage
-        .choices()
+        .options()
         .map(|c| (c.label, c.cost, game.can_afford(&c)))
         .into_iter()
         .chain(intern)
@@ -527,7 +526,7 @@ fn report_popup(font: &Font, report: &Report) {
             report.game.log[report.news..]
                 .iter()
                 .flat_map(|entry| wrap(entry, width))
-                .map(|line| (line, RED)),
+                .map(|line| (line, AMBER)),
         );
     for (i, (line, color)) in lines.take(15).enumerate() {
         font.text(&line, x + 16.0, 216.0 + i as f32 * 12.0, 1.0, color);
