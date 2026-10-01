@@ -233,11 +233,11 @@ Tasks:
 - The Defenses screen shows each tool's state: Fresh, Aging (below 80), or Stale (below 50), in green, amber, or red.
 
 Success criteria:
-- [ ] A deployed tool's contribution scales with its condition, and condition drops 8 every Monday (unit tested).
-- [ ] Each maintenance action restores every deployed tool in its category and is offered only when one needs it (unit tested).
-- [ ] An unmaintained SIEM raises more false positives than a maintained one (unit tested across seeds).
-- [ ] Pen test grades, attacker odds, and result cards all count tool contributions (unit tested).
-- [ ] The Defenses screen shows every deployed tool's state.
+- [x] A deployed tool's contribution scales with its condition, and condition drops 8 every Monday (unit tested).
+- [x] Each maintenance action restores every deployed tool in its category and is offered only when one needs it (unit tested).
+- [x] An unmaintained SIEM raises more false positives than a maintained one (unit tested across seeds).
+- [x] Pen test grades, attacker odds, and result cards all count tool contributions (unit tested).
+- [x] The Defenses screen shows every deployed tool's state.
 
 ## Phase 23: Quarterly board funding
 
@@ -281,6 +281,6 @@ Success criteria:
 - [x] Phase 19: Presentation
 - [x] Phase 20: Balance, playtest, and release
 - [x] Phase 21: Tool tiers
-- [ ] Phase 22: Tool upkeep
+- [x] Phase 22: Tool upkeep
 - [ ] Phase 23: Quarterly board funding
 - [ ] Phase 24: Rebalance and release

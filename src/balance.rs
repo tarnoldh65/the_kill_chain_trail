@@ -330,7 +330,7 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
     first(|a| matches!(a, Action::Clear(_)))
         .or_else(|| (tired >= 55).then(|| offered(Action::DayOff)).flatten())
         .or_else(|| first(|a| matches!(a, Action::Deploy(_))))
-        .or_else(|| offered(Action::TuneSiem))
+        .or_else(|| first(|a| matches!(a, Action::Maintain(_))))
         .or_else(|| {
             if tired >= 35 {
                 return None;
@@ -340,7 +340,6 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
                 Action::PatchSprint,
                 Action::PhishingSim,
                 Action::Tabletop,
-                Action::BackupTest,
                 Action::BriefLeadership,
             ];
             // Each start is logged, so counting them walks the rotation.
@@ -432,11 +431,10 @@ fn no_single_action_or_purchase_is_required_to_win() {
             Action::PhishingSim,
             Action::PatchSprint,
             Action::Tabletop,
-            Action::BackupTest,
             Action::DayOff,
             Action::BriefLeadership,
             Action::ThreatHunt,
-            Action::TuneSiem,
+            Action::Maintain(crate::game::Area::Detection),
             Action::Clear(crate::attack::Condition::SystemsDown),
         ]
         .map(Skip::Start),

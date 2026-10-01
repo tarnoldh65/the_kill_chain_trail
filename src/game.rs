@@ -46,6 +46,10 @@ const SENIOR_REST: i32 = 2;
 /// Weekly pay for each analyst level.
 const JUNIOR_SALARY: i64 = 4_000;
 const SENIOR_SALARY: i64 = 8_000;
+/// Condition every deployed tool loses each Monday without maintenance.
+const TOOL_WEAR: i32 = 8;
+/// Condition below which a category's maintenance action is offered.
+const MAINTAIN_BELOW: i32 = 80;
 /// Days a search for a new analyst takes.
 const SEARCH_DAYS: u32 = 7;
 /// Most analysts the SOC has desks for.
@@ -391,6 +395,41 @@ impl Item {
     }
 }
 
+/// Each area on its own, for naming the area a maintenance action restores.
+const AREA_TAGS: [(Area, i32); 6] = [
+    (Area::Identity, 0),
+    (Area::Endpoint, 0),
+    (Area::People, 0),
+    (Area::Perimeter, 0),
+    (Area::Resilience, 0),
+    (Area::Detection, 0),
+];
+
+/// A deployed tool and how well maintained it is, from 0 to 100.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tool {
+    pub item: Item,
+    pub condition: i32,
+}
+
+impl Tool {
+    pub fn new(item: Item) -> Self {
+        Self {
+            item,
+            condition: 100,
+        }
+    }
+
+    /// How the tool's condition reads on the defenses screen.
+    pub fn state(self) -> &'static str {
+        match self.condition {
+            80.. => "fresh",
+            50.. => "aging",
+            _ => "stale",
+        }
+    }
+}
+
 /// Something the SOC spends days (and sometimes money) on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -399,12 +438,12 @@ pub enum Action {
     PhishingSim,
     PatchSprint,
     Tabletop,
-    BackupTest,
     DayOff,
     Offsite,
     BriefLeadership,
     ThreatHunt,
-    TuneSiem,
+    /// Restores every deployed tool in an area to full condition.
+    Maintain(Area),
     /// Ends a lingering condition left by an incident.
     Clear(Condition),
 }
@@ -417,12 +456,19 @@ impl Action {
             Self::PhishingSim => "Run a phishing simulation".to_string(),
             Self::PatchSprint => "Patch sprint".to_string(),
             Self::Tabletop => "Tabletop exercise".to_string(),
-            Self::BackupTest => "Backup restore test".to_string(),
             Self::DayOff => "Give everyone the day off".to_string(),
             Self::Offsite => "Team offsite".to_string(),
             Self::BriefLeadership => "Brief leadership".to_string(),
             Self::ThreatHunt => "Threat hunt".to_string(),
-            Self::TuneSiem => "Tune the SIEM".to_string(),
+            Self::Maintain(area) => match area {
+                Area::Identity => "Run an access review",
+                Area::Endpoint => "Update endpoint policies",
+                Area::People => "Refresh email filters",
+                Area::Perimeter => "Update firewall and WAF rules",
+                Area::Resilience => "Rehearse disaster recovery",
+                Area::Detection => "Tune detections",
+            }
+            .to_string(),
             Self::Clear(condition) => condition.cure().to_string(),
         }
     }
@@ -434,14 +480,13 @@ impl Action {
             Self::PhishingSim => "Teaches people to spot phishing. Executives hate it.",
             Self::PatchSprint => "Hardens endpoints and the perimeter. Tiring.",
             Self::Tabletop => "Practice for the worst day. Leadership likes it.",
-            Self::BackupTest => "Proves the backups actually restore.",
             Self::DayOff => "Everyone recovers. Nobody is watching for a day.",
             Self::Offsite => "A week of trust falls. Large burnout recovery.",
             Self::BriefLeadership => "Tell the board what the SOC is doing.",
             Self::ThreatHunt => {
                 "Look for attackers already inside. Better with seniors and a SIEM."
             }
-            Self::TuneSiem => "Teach the SIEM to cry wolf less often.",
+            Self::Maintain(_) => "Brings this area's tools back to full strength.",
             Self::Clear(condition) => condition.effect(),
         }
     }
@@ -456,14 +501,22 @@ impl Action {
         }
     }
 
-    /// Posture the action adds when it finishes.
-    pub fn boosts(self) -> &'static [(Area, i32)] {
+    /// The areas an action helps, for the IMPROVES strip: a tool's boosts, the area a
+    /// maintenance action restores, or the posture an action adds.
+    pub fn improves(self) -> &'static [(Area, i32)] {
         match self {
             Self::Deploy(item) => item.boosts(),
+            Self::Maintain(area) => std::slice::from_ref(&AREA_TAGS[area as usize]),
+            _ => self.boosts(),
+        }
+    }
+
+    /// Posture the action adds when it finishes. Tools help through their condition instead.
+    pub fn boosts(self) -> &'static [(Area, i32)] {
+        match self {
             Self::PhishingSim => &[(Area::People, 8)],
             Self::PatchSprint => &[(Area::Endpoint, 8), (Area::Perimeter, 5)],
-            Self::Tabletop | Self::BackupTest => &[(Area::Resilience, 6)],
-            Self::TuneSiem => &[(Area::Detection, 5)],
+            Self::Tabletop => &[(Area::Resilience, 6)],
             _ => &[],
         }
     }
@@ -482,11 +535,11 @@ impl Action {
                 Item::Pam => 8,
                 _ => 10,
             },
-            Self::PhishingSim | Self::BackupTest => 2,
+            Self::PhishingSim | Self::Maintain(_) => 2,
             Self::PatchSprint => 4,
             Self::Tabletop | Self::DayOff | Self::BriefLeadership => 1,
             Self::Offsite => 5,
-            Self::ThreatHunt | Self::TuneSiem => 3,
+            Self::ThreatHunt => 3,
             Self::Clear(Condition::SystemsDown) => 7,
             Self::Clear(Condition::RegulatorInquiry) => 5,
             Self::Clear(Condition::LeakyRoadmap | Condition::Paranoia) => 4,
@@ -794,12 +847,11 @@ pub struct GameState {
     pub team: Vec<TeamMember>,
     /// Tools and services bought at the Vendor Hall. Tools need deploying before they help.
     pub owned: Vec<Item>,
-    pub deployed: Vec<Item>,
+    pub deployed: Vec<Tool>,
     pub task: Option<Task>,
     pub investigation: Option<Investigation>,
     /// Analysts being recruited; they join when their search ends.
     pub searches: Vec<Search>,
-    pub siem_tuned: bool,
     pub conditions: Vec<Condition>,
     /// Hidden from the player until the after-action report.
     campaigns: Vec<Campaign>,
@@ -857,7 +909,6 @@ impl GameState {
             task: None,
             investigation: None,
             searches: Vec::new(),
-            siem_tuned: false,
             conditions: Vec::new(),
             campaigns: Vec::new(),
             alerts: Vec::new(),
@@ -1024,14 +1075,30 @@ impl GameState {
         });
     }
 
-    /// Posture plus the expertise of analysts on the team.
+    pub fn is_deployed(&self, item: Item) -> bool {
+        self.deployed.iter().any(|t| t.item == item)
+    }
+
+    /// Posture plus the expertise of analysts on the team and the deployed tools' condition.
     fn level(&self, area: Area) -> i32 {
         let experts = self
             .team
             .iter()
             .filter(|m| m.expertise == Some(area))
             .count() as i32;
-        (self.posture[area as usize] + EXPERTISE_BONUS * experts).min(100)
+        let tools: i32 = self
+            .deployed
+            .iter()
+            .flat_map(|t| {
+                t.item
+                    .boosts()
+                    .iter()
+                    .map(move |&(a, b)| (a, b * t.condition / 100))
+            })
+            .filter(|&(a, _)| a == area)
+            .map(|(_, b)| b)
+            .sum();
+        (self.posture[area as usize] + EXPERTISE_BONUS * experts + tools).min(100)
     }
 
     /// Actions the SOC can start now: prerequisites met, affordable, and nothing else under way.
@@ -1050,14 +1117,16 @@ impl GameState {
             .owned
             .iter()
             .filter(|item| item.category().is_some())
-            .filter(|item| !self.deployed.contains(item))
+            .filter(|&&item| !self.is_deployed(item))
             .map(|&item| Action::Deploy(item));
-        let backup_test = self
-            .deployed
-            .contains(&Item::Backups)
-            .then_some(Action::BackupTest);
-        let tune =
-            (self.deployed.contains(&Item::Siem) && !self.siem_tuned).then_some(Action::TuneSiem);
+        let upkeep = Area::ALL
+            .into_iter()
+            .filter(|&area| {
+                self.deployed
+                    .iter()
+                    .any(|t| t.item.category() == Some(area) && t.condition < MAINTAIN_BELOW)
+            })
+            .map(Action::Maintain);
         cures
             .chain(deployable)
             .chain([
@@ -1066,8 +1135,7 @@ impl GameState {
                 Action::Tabletop,
                 Action::ThreatHunt,
             ])
-            .chain(tune)
-            .chain(backup_test)
+            .chain(upkeep)
             .chain([Action::DayOff, Action::Offsite, Action::BriefLeadership])
             .filter(|action| self.affords(action.cost()))
             .collect()
@@ -1210,7 +1278,7 @@ impl GameState {
         }
         let message = match task.action {
             Action::Deploy(item) => {
-                self.deployed.push(item);
+                self.deployed.push(Tool::new(item));
                 if item == Item::MfaTokens {
                     self.trust -= 3;
                     "MFA is enforced everywhere. The help desk is drowning in \"I lost my phone\" tickets.".to_string()
@@ -1242,10 +1310,6 @@ impl GameState {
                 self.trust += 2;
                 "The tabletop exercise went well. The CEO learned what ransomware is.".to_string()
             }
-            Action::BackupTest => {
-                "Backup restore test passed. Someone finally knows where the backups are."
-                    .to_string()
-            }
             Action::DayOff => "The team is back from a day off, slightly less haunted.".to_string(),
             Action::Offsite => {
                 "The team offsite is over. Trust falls were had. Nobody was dropped.".to_string()
@@ -1255,9 +1319,27 @@ impl GameState {
                 "You briefed leadership. The board nodded at all the right moments.".to_string()
             }
             Action::ThreatHunt => self.hunt(),
-            Action::TuneSiem => {
-                self.siem_tuned = true;
-                "The SIEM is tuned. It now cries wolf only occasionally.".to_string()
+            Action::Maintain(area) => {
+                for tool in &mut self.deployed {
+                    if tool.item.category() == Some(area) {
+                        tool.condition = 100;
+                    }
+                }
+                match area {
+                    Area::Identity => {
+                        "Access review done. Fourteen former employees still had accounts. Not anymore."
+                    }
+                    Area::Endpoint => "Endpoint policies updated. Only one laptop bricked itself.",
+                    Area::People => {
+                        "Email filters refreshed. The CEO's newsletter is no longer flagged as spam."
+                    }
+                    Area::Perimeter => {
+                        "Firewall and WAF rules updated. Someone finally closed port 23."
+                    }
+                    Area::Resilience => "Disaster recovery rehearsed. Everything came back, eventually.",
+                    Area::Detection => "Detections tuned. The SIEM cries wolf less often.",
+                }
+                .to_string()
             }
             Action::Clear(condition) => {
                 self.conditions.retain(|&c| c != condition);
@@ -1655,11 +1737,7 @@ impl GameState {
     }
 
     fn hunt(&mut self) -> String {
-        let siem = if self.deployed.contains(&Item::Siem) {
-            25
-        } else {
-            0
-        };
+        let siem = if self.is_deployed(Item::Siem) { 25 } else { 0 };
         let mut found = Vec::new();
         for i in 0..self.campaigns.len() {
             if self.campaigns[i].end.is_none() && self.chance() < self.find_odds(25 + siem) {
@@ -1768,7 +1846,7 @@ impl GameState {
 
     /// Whether a response is possible: backups deployed if needed, and the money for it.
     pub fn can_respond(&self, response: &Response) -> bool {
-        (!response.needs_backups || self.deployed.contains(&Item::Backups))
+        (!response.needs_backups || self.is_deployed(Item::Backups))
             && self.affords(self.incident_cost(response))
     }
 
@@ -1915,10 +1993,10 @@ impl GameState {
             }
         }
 
-        let noise = match (self.deployed.contains(&Item::Siem), self.siem_tuned) {
-            (false, _) => 30,
-            (true, false) => 50,
-            (true, true) => 15,
+        // A well-kept SIEM is quiet; a neglected one cries wolf more than no SIEM at all.
+        let noise = match self.deployed.iter().find(|t| t.item == Item::Siem) {
+            None => 30,
+            Some(siem) => 15 + 35 * (100 - siem.condition) as u32 / 100,
         };
         if self.chance() < noise {
             stop |= self.raise(None);
@@ -1951,13 +2029,12 @@ impl GameState {
             .owned
             .iter()
             .filter(|item| item.boosts().iter().any(|&(a, _)| a == area))
-            .map(|item| {
-                if self.deployed.contains(item) {
-                    item.label().to_string()
-                } else {
-                    format!("{} (not deployed)", item.label())
-                }
-            });
+            .map(
+                |&item| match self.deployed.iter().find(|t| t.item == item) {
+                    Some(tool) => format!("{} ({})", item.label(), tool.state()),
+                    None => format!("{} (not deployed)", item.label()),
+                },
+            );
         let experts = self
             .team
             .iter()
@@ -2101,6 +2178,9 @@ impl GameState {
     /// Weekly upkeep: posture drift, brand drag, and payroll.
     fn monday(&mut self) -> bool {
         self.coffee_run_made = false;
+        for tool in &mut self.deployed {
+            tool.condition = (tool.condition - TOOL_WEAR).max(0);
+        }
 
         for value in &mut self.posture {
             *value = (*value - POSTURE_DECAY).clamp(0, 100);
@@ -2786,39 +2866,7 @@ mod tests {
 
         run(&mut game, Action::Deploy(Item::Siem));
         assert!(!game.actions().contains(&Action::Deploy(Item::Siem)));
-        assert_eq!(game.deployed, [Item::Siem]);
-    }
-
-    #[test]
-    fn deploying_each_tool_raises_its_posture_areas() {
-        let expected: [(Item, &[(Area, i32)]); 6] = [
-            (Item::Edr, &[(Area::Endpoint, 25), (Area::Detection, 10)]),
-            (Item::Siem, &[(Area::Detection, 30)]),
-            (Item::MfaTokens, &[(Area::Identity, 30)]),
-            (Item::EmailGateway, &[(Area::People, 20)]),
-            (Item::Waf, &[(Area::Perimeter, 30)]),
-            (Item::Backups, &[(Area::Resilience, 25)]),
-        ];
-        for (tool, boosts) in expected {
-            let mut game = game();
-            game.owned.push(tool);
-            let mut control = game.clone();
-
-            run(&mut game, Action::Deploy(tool));
-            advance_to(&mut control, game.day);
-
-            for area in Area::ALL {
-                let boost = boosts
-                    .iter()
-                    .find(|(a, _)| *a == area)
-                    .map_or(0, |(_, b)| *b);
-                assert_eq!(
-                    game.posture[area as usize],
-                    control.posture[area as usize] + boost,
-                    "{tool:?} {area:?}"
-                );
-            }
-        }
+        assert_eq!(game.deployed, [Tool::new(Item::Siem)]);
     }
 
     #[test]
@@ -2835,7 +2883,7 @@ mod tests {
     #[test]
     fn each_action_applies_its_cost_duration_and_effects() {
         let mut game = game();
-        game.deployed.push(Item::Backups);
+        game.deployed.push(Tool::new(Item::Backups));
         let posture = |g: &GameState, area: Area| g.posture[area as usize];
 
         let start = game.clone();
@@ -2856,11 +2904,6 @@ mod tests {
         assert_eq!(game.day, start.day + 1);
         assert_eq!(posture(&game, Area::Resilience), 36);
         assert_eq!(game.trust, 62);
-
-        let mut game = start.clone();
-        run(&mut game, Action::BackupTest);
-        assert_eq!(game.day, start.day + 2);
-        assert_eq!(posture(&game, Area::Resilience), 36);
 
         let mut game = start.clone();
         run(&mut game, Action::BriefLeadership);
@@ -2950,14 +2993,9 @@ mod tests {
     #[test]
     fn unaffordable_actions_and_unmet_prerequisites_are_not_offered() {
         let mut game = game();
-        assert!(!game.actions().contains(&Action::BackupTest));
+        assert!(!game.actions().contains(&Action::Deploy(Item::Backups)));
         game.owned.push(Item::Backups);
-        assert!(
-            !game.actions().contains(&Action::BackupTest),
-            "owned but not deployed"
-        );
-        game.deployed.push(Item::Backups);
-        assert!(game.actions().contains(&Action::BackupTest));
+        assert!(game.actions().contains(&Action::Deploy(Item::Backups)));
 
         game.budget = 4_999;
         let offered = game.actions();
@@ -3193,14 +3231,24 @@ mod tests {
     }
 
     #[test]
-    fn a_tuned_siem_cries_wolf_less_often() {
-        let false_alarms = |tuned| -> usize {
+    fn a_neglected_siem_cries_wolf_more_often() {
+        let false_alarms = |maintained: bool| -> usize {
             (0..40)
                 .map(|seed| {
                     let mut game = with_posture(seed, 100);
-                    game.deployed.push(Item::Siem);
-                    game.siem_tuned = tuned;
-                    idle(&mut game, 120, &mut Vec::new());
+                    game.deployed.push(Tool::new(Item::Siem));
+                    for _ in 0..120 {
+                        if !maintained {
+                            game.deployed[0].condition = 0;
+                        }
+                        game.coffee = COFFEE_CAPACITY;
+                        game.team.iter_mut().for_each(|m| m.burnout = 0);
+                        game.advance();
+                        game.reply(Reply::Ignore);
+                        game.deployed[0].condition = game.deployed[0]
+                            .condition
+                            .max(if maintained { 100 } else { 0 });
+                    }
                     game.alerts.iter().filter(|a| a.campaign.is_none()).count()
                 })
                 .sum()
@@ -3330,14 +3378,14 @@ mod tests {
         for actor in Actor::ALL {
             for (i, response) in actor.responses().iter().enumerate() {
                 let mut game = game();
-                game.deployed.push(Item::Backups);
+                game.deployed.push(Tool::new(Item::Backups));
                 game.incident = Some(actor);
                 assert!(game.can_respond(response), "{}", response.label);
 
+                // Resilience 30 plus fresh backups' 25 scales damage to 145/200.
+                assert_eq!(game.level(Area::Resilience), 55);
                 game.respond(i);
-
-                // Resilience 30 scales damage to 170/200.
-                let scale = 170;
+                let scale = 145;
                 assert_eq!(
                     game.valuation,
                     1_000_000_000 - 1_000_000_000 * response.valuation * scale / 200_000
@@ -3365,7 +3413,7 @@ mod tests {
         assert!(!game.can_respond(restore));
         game.owned.push(Item::Backups);
         assert!(!game.can_respond(restore));
-        game.deployed.push(Item::Backups);
+        game.deployed.push(Tool::new(Item::Backups));
         assert!(game.can_respond(restore));
     }
 
@@ -3449,7 +3497,7 @@ mod tests {
                     game.team
                         .extend((0..seniors).map(|_| member("S", Role::Senior, 0, 0)));
                     if siem {
-                        game.deployed.push(Item::Siem);
+                        game.deployed.push(Tool::new(Item::Siem));
                     }
                     let i = plant(&mut game, Actor::Apt, Stage::Foothold);
                     game.hunt();
@@ -3472,16 +3520,67 @@ mod tests {
     }
 
     #[test]
-    fn tuning_the_siem_needs_a_deployed_siem_and_happens_once() {
+    fn tools_wear_each_monday_and_count_by_their_condition() {
         let mut game = game();
-        assert!(!game.actions().contains(&Action::TuneSiem));
-        game.deployed.push(Item::Siem);
-        assert!(game.actions().contains(&Action::TuneSiem));
+        let base = game.level(Area::Perimeter);
+        game.deployed.push(Tool::new(Item::Waf));
+        assert_eq!(game.level(Area::Perimeter), base + 30);
 
-        run(&mut game, Action::TuneSiem);
+        game.day = 7;
+        game.advance();
+        assert_eq!(game.deployed[0].condition, 100 - TOOL_WEAR);
+        assert_eq!(
+            game.level(Area::Perimeter),
+            base - POSTURE_DECAY + 30 * (100 - TOOL_WEAR) / 100
+        );
 
-        assert!(game.siem_tuned);
-        assert!(!game.actions().contains(&Action::TuneSiem));
+        game.deployed[0].condition = 50;
+        assert_eq!(game.level(Area::Perimeter), base - POSTURE_DECAY + 15);
+        game.deployed[0].condition = 0;
+        assert_eq!(game.level(Area::Perimeter), base - POSTURE_DECAY);
+    }
+
+    #[test]
+    fn pen_test_grades_count_a_tools_condition() {
+        let mut game = game();
+        game.posture = [50; 6];
+        game.deployed.push(Tool::new(Item::Waf));
+        assert_eq!(game.report_card()[3], (Area::Perimeter, 'A'));
+
+        game.deployed[0].condition = 0;
+        assert_eq!(game.report_card()[3], (Area::Perimeter, 'C'));
+    }
+
+    #[test]
+    fn maintenance_is_offered_when_needed_and_restores_the_whole_area() {
+        let mut game = game();
+        game.deployed = vec![
+            Tool::new(Item::Backups),
+            Tool::new(Item::Runbooks),
+            Tool::new(Item::Siem),
+        ];
+        let maintain = Action::Maintain(Area::Resilience);
+        assert!(!game.actions().contains(&maintain), "all fresh");
+
+        game.deployed[0].condition = 79;
+        game.deployed[1].condition = 40;
+        game.deployed[2].condition = 40;
+        assert!(game.actions().contains(&maintain));
+        assert!(game.actions().contains(&Action::Maintain(Area::Detection)));
+        assert!(!game.actions().contains(&Action::Maintain(Area::Identity)));
+
+        run(&mut game, maintain);
+
+        assert_eq!(game.deployed[0].condition, 100);
+        assert_eq!(game.deployed[1].condition, 100);
+        assert_eq!(game.deployed[2].condition, 40, "other areas untouched");
+        assert!(
+            game.cards
+                .last()
+                .unwrap()
+                .effect
+                .contains("Resilience improved")
+        );
     }
 
     #[test]
@@ -4335,8 +4434,12 @@ mod tests {
             game.defenders(Area::Endpoint),
             ["EDR (not deployed)", "Maya's expertise"]
         );
-        game.deployed.push(Item::Edr);
-        assert_eq!(game.defenders(Area::Detection), ["EDR"]);
+        game.deployed.push(Tool::new(Item::Edr));
+        assert_eq!(game.defenders(Area::Detection), ["EDR (fresh)"]);
+        game.deployed[0].condition = 60;
+        assert_eq!(game.defenders(Area::Detection), ["EDR (aging)"]);
+        game.deployed[0].condition = 30;
+        assert_eq!(game.defenders(Area::Detection), ["EDR (stale)"]);
     }
 
     #[test]

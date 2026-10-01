@@ -374,7 +374,7 @@ fn vendor_hall(font: &Font, shop: &Shop) {
             DIM
         };
         let status = match item {
-            _ if game.deployed.contains(item) => "DEPLOYED".to_string(),
+            _ if game.is_deployed(*item) => "DEPLOYED".to_string(),
             _ if owned => "OWNED".to_string(),
             Item::Coffee => format!("{}/{COFFEE_CAPACITY} pots", game.coffee),
             _ => String::new(),
@@ -492,7 +492,7 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
         .action()
         .map_or("Return to the day menu.", |a| a.description());
     font.text(note, MARGIN, 396.0, 1.0, CYAN);
-    improves_strip(font, menu.action().map_or(&[], |a| a.boosts()), 424.0);
+    improves_strip(font, menu.action().map_or(&[], |a| a.improves()), 424.0);
     font.text(
         "UP/DOWN to choose, ENTER to start. Days pass while the SOC works.",
         MARGIN,
@@ -554,10 +554,16 @@ fn defenses(font: &Font, game: &GameState) {
             INK,
         );
         let helping = game.defenders(*area);
-        // Amber when a tool is bought but still waiting to be deployed.
+        // Red when a tool has gone stale; amber when one is aging or still waiting to be deployed.
         let color = match &helping {
             h if h.is_empty() => DIM,
-            h if h.iter().any(|d| d.ends_with("(not deployed)")) => AMBER,
+            h if h.iter().any(|d| d.ends_with("(stale)")) => RED,
+            h if h
+                .iter()
+                .any(|d| d.ends_with("(aging)") || d.ends_with("(not deployed)")) =>
+            {
+                AMBER
+            }
             _ => GREEN,
         };
         let helping = if helping.is_empty() {
@@ -575,7 +581,7 @@ fn defenses(font: &Font, game: &GameState) {
     }
     divider(448.0);
     font.text(
-        "Tools, actions, and expertise build these up. ENTER to return.",
+        "Tools lose strength each week until maintained. ENTER to return.",
         MARGIN,
         460.0,
         1.0,
