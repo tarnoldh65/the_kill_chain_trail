@@ -13,9 +13,10 @@ const DELAY_DAYS: u32 = 14;
 const MAX_DELAY: u32 = 42;
 /// Extra daily odds of new attackers, in thousandths, once the S-1 is public.
 const FLIP_THREAT: u32 = 20;
-/// Trust needed at the Flip for a budget top-up.
-const TOP_UP_TRUST: i32 = 60;
-const TOP_UP: i64 = 100_000;
+/// Days between the board's funding releases, starting from day 1.
+const FUNDING_INTERVAL: u32 = 42;
+/// Trust at which the board releases its full quarterly grant.
+const FUNDING_TRUST: i64 = 60;
 /// What each analyst's conference expertise adds to their area.
 const EXPERTISE_BONUS: i32 = 10;
 /// Extra daily burnout for analysts left holding the fort during the conference.
@@ -144,9 +145,18 @@ impl Profile {
 
     pub fn budget(self) -> i64 {
         match self {
-            Self::Fintech => 900_000,
-            Self::Healthtech => 700_000,
-            Self::Gaming => 500_000,
+            Self::Fintech => 600_000,
+            Self::Healthtech => 450_000,
+            Self::Gaming => 300_000,
+        }
+    }
+
+    /// What the board releases every six weeks at trust 60.
+    pub fn quarterly(self) -> i64 {
+        match self {
+            Self::Fintech => 180_000,
+            Self::Healthtech => 160_000,
+            Self::Gaming => 120_000,
         }
     }
 
@@ -1479,13 +1489,6 @@ impl GameState {
             Landmark::PenTest => self.pen_test = Some((self.day, self.report_card())),
             Landmark::Flip => {
                 self.threat += FLIP_THREAT;
-                if self.trust >= TOP_UP_TRUST {
-                    self.budget += TOP_UP;
-                    self.note(format!(
-                        "The board is confident in the SOC and adds {} to the budget.",
-                        money(TOP_UP)
-                    ));
-                }
                 self.surface();
             }
             Landmark::Roadshow => {
@@ -2094,9 +2097,53 @@ impl GameState {
         (self.day - 1) % 7
     }
 
-    /// Mondays left before IPO day, each one a payday.
-    pub fn paydays_left(&self) -> i64 {
-        ((self.ipo_day - 1) / 7 - (self.day - 1) / 7) as i64
+    /// The board's grant at today's trust: the full quarterly amount at trust 60.
+    pub fn grant(&self) -> i64 {
+        self.profile.quarterly() * self.trust as i64 / FUNDING_TRUST
+    }
+
+    /// The board's funding days still ahead, before IPO day.
+    fn funding_days(&self) -> impl Iterator<Item = u32> {
+        let (day, ipo_day) = (self.day, self.ipo_day);
+        (1..)
+            .map(|n| 1 + n * FUNDING_INTERVAL)
+            .take_while(move |&d| d < ipo_day)
+            .filter(move |&d| d > day)
+    }
+
+    /// The next day the board releases funding, if one comes before the IPO.
+    pub fn next_funding(&self) -> Option<u32> {
+        self.funding_days().next()
+    }
+
+    /// What can be spent now without missing a payday: the lowest the budget gets before the
+    /// IPO if weekly costs stay the same and the board keeps funding at today's trust.
+    pub fn spare(&self) -> i64 {
+        let (mut cash, mut lowest) = (self.budget, self.budget);
+        let mut monday = self.day + 7 - self.weekday();
+        while monday < self.ipo_day {
+            if (monday - 1).is_multiple_of(FUNDING_INTERVAL) {
+                cash += self.grant();
+            }
+            cash -= self.weekly_costs();
+            lowest = lowest.min(cash);
+            monday += 7;
+        }
+        lowest
+    }
+
+    fn fund(&mut self) {
+        let before = self.glance();
+        let grant = self.grant();
+        self.budget += grant;
+        let message = format!(
+            "The board releases {} for the quarter. Trust at {} earned {}% of the grant.",
+            money(grant),
+            self.trust,
+            self.trust as i64 * 100 / FUNDING_TRUST
+        );
+        self.note(message.clone());
+        self.card("Board funding", &message, &before);
     }
 
     pub fn days_to_ipo(&self) -> u32 {
@@ -2178,6 +2225,9 @@ impl GameState {
     /// Weekly upkeep: posture drift, brand drag, and payroll.
     fn monday(&mut self) -> bool {
         self.coffee_run_made = false;
+        if (self.day - 1).is_multiple_of(FUNDING_INTERVAL) {
+            self.fund();
+        }
         for tool in &mut self.deployed {
             tool.condition = (tool.condition - TOOL_WEAR).max(0);
         }
@@ -2394,9 +2444,9 @@ mod tests {
     #[test]
     fn each_profile_sets_its_budget_valuation_and_multiplier() {
         let expected = [
-            (Profile::Fintech, 900_000, 1_500_000_000, 1),
-            (Profile::Healthtech, 700_000, 1_000_000_000, 2),
-            (Profile::Gaming, 500_000, 600_000_000, 3),
+            (Profile::Fintech, 600_000, 1_500_000_000, 1),
+            (Profile::Healthtech, 450_000, 1_000_000_000, 2),
+            (Profile::Gaming, 300_000, 600_000_000, 3),
         ];
         for (profile, budget, valuation, multiplier) in expected {
             let mut game = GameState::new("Acme", "Alex", profile, 1);
@@ -2465,16 +2515,17 @@ mod tests {
             member("Marcus", Role::Senior, 0, SENIOR_SALARY)
         );
         assert_eq!(game.payroll(), JUNIOR_SALARY + SENIOR_SALARY);
+        let start = Profile::Gaming.budget();
         assert_eq!(
             game.budget,
-            500_000 - Item::Junior.price() - Item::Senior.price()
+            start - Item::Junior.price() - Item::Senior.price()
         );
 
         game.day = 7;
         game.advance();
         assert_eq!(
             game.budget,
-            500_000 - Item::Junior.price() - Item::Senior.price() - game.payroll()
+            start - Item::Junior.price() - Item::Senior.price() - game.payroll()
         );
     }
 
@@ -4026,20 +4077,86 @@ mod tests {
     }
 
     #[test]
-    fn the_flip_raises_the_threat_and_rewards_trust() {
-        for (trust, top_up) in [(60, TOP_UP), (59, 0)] {
-            let mut game = game();
-            game.trust = trust;
-            game.day = Landmark::Flip.day() - 1;
-            game.next_landmark = 5;
-            let (budget, odds) = (game.budget, game.spawn_odds());
+    fn the_flip_raises_the_threat_but_adds_no_budget() {
+        let mut game = game();
+        game.day = Landmark::Flip.day() - 1;
+        game.next_landmark = 5;
+        let (budget, odds) = (game.budget, game.spawn_odds());
 
-            game.advance();
+        game.advance();
 
-            assert_eq!(game.stop.as_ref().unwrap().landmark, Landmark::Flip);
-            assert_eq!(game.budget, budget + top_up - 18_000, "Monday payroll too");
-            assert!(game.spawn_odds() >= odds + FLIP_THREAT);
+        assert_eq!(game.stop.as_ref().unwrap().landmark, Landmark::Flip);
+        assert_eq!(game.budget, budget - 18_000, "only Monday payroll");
+        assert!(game.spawn_odds() >= odds + FLIP_THREAT);
+    }
+
+    #[test]
+    fn the_board_funds_every_sixth_monday_by_trust() {
+        let mut calendar = game();
+        let mut funded = Vec::new();
+        while calendar.outcome.is_none() {
+            calendar.coffee = COFFEE_CAPACITY;
+            calendar.team.iter_mut().for_each(|m| m.burnout = 0);
+            calendar.trust = 60;
+            calendar.budget = 500_000;
+            calendar.advance();
+            if calendar.budget > 500_000 {
+                funded.push(calendar.day);
+            }
         }
+        assert_eq!(funded, [43, 85, 127, 169]);
+
+        for (trust, grant) in [(60, 160_000), (30, 80_000), (90, 240_000)] {
+            let mut game = GameState { trust, ..game() };
+            game.day = 42;
+            game.advance();
+            assert_eq!(game.budget, 500_000 - 18_000 + grant, "trust {trust}");
+            assert_eq!(game.cards.last().unwrap().title, "BOARD FUNDING");
+        }
+    }
+
+    #[test]
+    fn each_profile_has_its_quarterly_grant() {
+        for (profile, grant) in [
+            (Profile::Fintech, 180_000),
+            (Profile::Healthtech, 160_000),
+            (Profile::Gaming, 120_000),
+        ] {
+            let game = GameState::new("Acme", "Alex", profile, 1);
+            assert_eq!(game.grant(), grant, "{profile}");
+        }
+    }
+
+    #[test]
+    fn spare_is_the_lowest_the_budget_gets_before_the_ipo() {
+        let mut game = game();
+        game.team.truncate(1);
+        game.budget = 40_000;
+
+        // $6K a week; five paydays (days 8-36) before the first $160K grant on day 43.
+        assert_eq!(game.spare(), 40_000 - 5 * 6_000);
+        game.budget = 20_000;
+        assert_eq!(game.spare(), 20_000 - 5 * 6_000, "short before the grant");
+
+        game.trust = 0;
+        assert_eq!(game.spare(), 20_000 - 25 * 6_000, "no grants at zero trust");
+    }
+
+    #[test]
+    fn funding_keeps_coming_through_ipo_delays() {
+        let mut game = game();
+        assert_eq!(game.next_funding(), Some(43));
+
+        for _ in 0..3 {
+            game.slip();
+        }
+        game.day = 170;
+        assert_eq!(game.ipo_day, IPO_DAY + 42);
+        assert_eq!(
+            game.next_funding(),
+            Some(211),
+            "a fifth grant before the late IPO"
+        );
     }
 
     #[test]
@@ -4053,16 +4170,6 @@ mod tests {
 
         game.leave_fort();
         assert_eq!(game.stop, None);
-    }
-
-    #[test]
-    fn paydays_left_count_the_mondays_before_the_ipo() {
-        let mut game = game();
-        assert_eq!(game.paydays_left(), 25);
-        game.day = 8;
-        assert_eq!(game.paydays_left(), 24);
-        game.slip();
-        assert_eq!(game.paydays_left(), 26);
     }
 
     /// Sends `picks` to the conference and plays until everyone is back.

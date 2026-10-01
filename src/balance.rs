@@ -65,9 +65,17 @@ fn average_burnout(game: &GameState) -> i32 {
     analysts.iter().map(|&i| game.team[i].burnout).sum::<i32>() / analysts.len().max(1) as i32
 }
 
-/// Money the rest of the payroll needs, plus a cushion.
-fn reserve(game: &GameState) -> i64 {
-    game.weekly_costs() * game.paydays_left() + 200_000
+/// Money kept spare for incidents and surprises on top of every payday.
+const CUSHION: i64 = 150_000;
+
+/// Mondays left before IPO day, each one a payday.
+fn paydays_left(game: &GameState) -> i64 {
+    ((game.ipo_day - 1) / 7 - (game.day - 1) / 7) as i64
+}
+
+/// Whether spending `cost` now and `weekly` more each week still leaves the cushion.
+fn affordable(game: &GameState, cost: i64, weekly: i64) -> bool {
+    game.spare() - cost - weekly * paydays_left(game) > CUSHION
 }
 
 fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
@@ -93,18 +101,14 @@ fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
             }
         }
         Style::Sensible(_) => {
-            // A team whose payroll through the IPO takes at most 60% of the budget.
-            let budget = game.budget;
-            let affordable = |g: &GameState, level: Item| {
-                (g.payroll() + level.weekly()) * g.paydays_left() <= budget * 60 / 100
+            // A team the budget and the board's funding can carry to the IPO.
+            let hireable = |g: &GameState, level: Item| {
+                may_buy(style, level) && affordable(g, level.price(), level.weekly())
             };
-            if may_buy(style, Item::Senior) && affordable(game, Item::Senior) {
+            if hireable(game, Item::Senior) {
                 game.hire(Item::Senior, "Sensible");
             }
-            while analysts(game).len() < 4
-                && may_buy(style, Item::Junior)
-                && affordable(game, Item::Junior)
-            {
+            while analysts(game).len() < 4 && hireable(game, Item::Junior) {
                 game.hire(Item::Junior, "Sensible");
             }
             if analysts(game).is_empty() {
@@ -131,7 +135,7 @@ fn shop(game: &mut GameState, style: Style) {
     for item in wanted {
         if may_buy(style, item)
             && game.can_buy(item)
-            && game.budget - game.price(item) > reserve(game)
+            && affordable(game, game.price(item), item.weekly())
         {
             game.buy(item);
         }
@@ -158,7 +162,7 @@ fn resolve(game: &mut GameState, style: Style, rng: &mut Rng) {
                     .min_by_key(|&&i| {
                         let r = actor.responses()[i];
                         let cost = game.incident_cost(&r);
-                        let broke = cost > 0 && game.budget - cost < reserve(game);
+                        let broke = cost > 0 && !affordable(game, cost, 0);
                         r.valuation * 10 - r.trust as i64 * 3 - r.brand as i64 * 3
                             + cost / 10_000
                             + if r.lingers { 30 } else { 0 }
@@ -183,8 +187,7 @@ fn resolve(game: &mut GameState, style: Style, rng: &mut Rng) {
                 Style::Sensible(_) => {
                     if game.can_reply(Reply::Investigate) {
                         Reply::Investigate
-                    } else if game.can_reply(Reply::CallIr) && game.budget - IR_FEE > reserve(game)
-                    {
+                    } else if game.can_reply(Reply::CallIr) && affordable(game, IR_FEE, 0) {
                         Reply::CallIr
                     } else {
                         Reply::Ignore
@@ -239,7 +242,7 @@ fn landmark(game: &mut GameState, style: Style, rng: &mut Rng, at: Landmark, att
             game.rest_at_fort();
             while analysts(game).len() < 4
                 && may_buy(style, Item::Junior)
-                && game.budget - game.price(Item::Junior) > reserve(game) + 30 * 4_000
+                && affordable(game, game.price(Item::Junior), Item::Junior.weekly())
             {
                 game.hire(Item::Junior, "Sensible");
             }
@@ -306,7 +309,7 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
                 if short
                     && may_buy(style, Item::Junior)
                     && game.can_buy(Item::Junior)
-                    && game.budget - game.price(Item::Junior) > reserve(game) + 25 * 4_000
+                    && affordable(game, game.price(Item::Junior), Item::Junior.weekly())
                 {
                     game.hire(Item::Junior, "Sensible");
                 }

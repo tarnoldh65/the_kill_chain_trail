@@ -244,16 +244,17 @@ Success criteria:
 Goal: money keeps arriving, scaled by how much the board trusts the SOC, so trust matters and there is always something to spend late.
 
 Tasks:
-- Every sixth Monday (days 43, 85, 127, 169, and on through any delays), the board releases a grant: the profile's quarterly amount (Fintech $200K, Healthtech $160K, Gaming startup $120K) times trust / 60, so trust 60 gets the full grant, 30 gets half, 90 gets one and a half.
+- Every sixth Monday (days 43, 85, 127, 169, and on through any delays), the board releases a grant: the profile's quarterly amount (Fintech $180K, Healthtech $160K, Gaming startup $120K) times trust / 60, so trust 60 gets the full grant, 30 gets half, 90 gets one and a half.
 - The grant appears in the log and as a result card, and the next funding day shows on the SOC Status panel.
 - The Public S-1 Flip top-up is removed; the random "board approves $100K" event stays.
-- Starting budgets are reduced so total money over a game is similar, then tuned in Phase 24.
+- Starting budgets drop to $600K, $450K, and $300K; with grants, total money over a game is about 50% higher than before.
+- The Vendor Hall's spare after costs becomes the lowest the budget reaches before the IPO, stepping through each week's costs and each grant at today's trust.
 
 Success criteria:
-- [ ] Grants arrive only on funding days, keep coming after IPO delays, and scale with trust as documented (unit tested).
-- [ ] Each profile's grant matches its documented amount at trust 60 (unit tested).
-- [ ] The Flip no longer adds budget (unit tested).
-- [ ] The next funding day shows on the SOC Status panel.
+- [x] Grants arrive only on funding days, keep coming after IPO delays, and scale with trust as documented (unit tested).
+- [x] Each profile's grant matches its documented amount at trust 60 (unit tested).
+- [x] The Flip no longer adds budget (unit tested).
+- [x] The next funding day shows on the SOC Status panel.
 
 ## Phase 24: Rebalance and release
 
@@ -282,5 +283,5 @@ Success criteria:
 - [x] Phase 20: Balance, playtest, and release
 - [x] Phase 21: Tool tiers
 - [x] Phase 22: Tool upkeep
-- [ ] Phase 23: Quarterly board funding
+- [x] Phase 23: Quarterly board funding
 - [ ] Phase 24: Rebalance and release

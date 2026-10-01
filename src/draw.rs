@@ -336,8 +336,8 @@ fn vendor_hall(font: &Font, shop: &Shop) {
         money(game.weekly_costs())
     );
     font.text(&costs, MARGIN, 36.0, 1.0, INK);
-    // What is left once every payday through the IPO is covered; red if overcommitted.
-    let spare = game.budget - game.weekly_costs() * game.paydays_left();
+    // What can be spent without missing a payday before the IPO; red if overcommitted.
+    let spare = game.spare();
     let (spare, color) = if spare < 0 {
         (format!("-{}", money(-spare)), RED)
     } else {
@@ -1056,6 +1056,12 @@ fn status_panel(font: &Font, game: &GameState) {
         None => "-".to_string(),
     };
     font.text(&investigating, value_x, row(4), 1.0, AMBER);
+    font.text("Board funding", x, row(6), 1.0, INK);
+    let funding = match game.next_funding() {
+        Some(day) => format!("day {day} ~{}", money(game.grant())),
+        None => "-".to_string(),
+    };
+    font.text(&funding, value_x, row(6), 1.0, INK);
     font.text("Hiring", x, row(5), 1.0, INK);
     let hiring = match game.searches.as_slice() {
         [] => "-".to_string(),
@@ -1071,9 +1077,9 @@ fn status_panel(font: &Font, game: &GameState) {
     );
 
     // Morale: each person's burnout.
-    font.text("MORALE", x, 246.0, 1.0, CYAN);
+    font.text("MORALE", x, 260.0, 1.0, CYAN);
     for (i, member) in game.team.iter().enumerate() {
-        let y = 262.0 + i as f32 * 12.0;
+        let y = 276.0 + i as f32 * 12.0;
         let name: String = member.name.chars().take(10).collect();
         font.text(
             &format!("{name:<10} {}", short_role(member.role)),
