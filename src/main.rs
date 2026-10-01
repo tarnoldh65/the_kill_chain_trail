@@ -1,5 +1,6 @@
 mod attack;
 mod audio;
+mod conference;
 mod draw;
 mod events;
 mod game;

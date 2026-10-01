@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::attack::{Actor, Alert, Campaign, Condition, End, Response, Stage};
+use crate::conference::{CONFERENCE_DAYS, Card, LEAD_CARDS, TICKET, Track};
 use crate::events::{Choice, EVENTS, Effect, PET_PROJECT};
 use crate::landmarks::{Landmark, Odds};
 
@@ -15,6 +16,12 @@ const FLIP_THREAT: u32 = 20;
 /// Trust needed at the Flip for a budget top-up.
 const TOP_UP_TRUST: i32 = 60;
 const TOP_UP: i64 = 100_000;
+/// What each analyst's conference expertise adds to their area.
+const EXPERTISE_BONUS: i32 = 10;
+/// Extra daily burnout for analysts left holding the fort during the conference.
+const STAY_HOME_BURNOUT: i32 = 2;
+/// Percent of list price at the Vendor Hall with the conference badge-scan discount.
+const DISCOUNT_PERCENT: i64 = 80;
 /// Posture below this is a weak area on the pen test report.
 const WEAK_POSTURE: i32 = 40;
 
@@ -387,6 +394,8 @@ pub struct Stop {
     pub landmark: Landmark,
     /// Whether the team has already rested at this fort.
     pub rested: bool,
+    /// Whether the conference is over (or skipped), opening the fort.
+    pub attended: bool,
 }
 
 /// A random event waiting for a choice.
@@ -530,6 +539,27 @@ pub struct TeamMember {
     pub burnout: i32,
     /// Weekly pay from the SOC budget; leadership is paid by the company.
     pub salary: i64,
+    /// A posture area this analyst picked up at the conference.
+    pub expertise: Option<Area>,
+    /// The track they are on while away at the conference.
+    pub track: Option<Track>,
+}
+
+impl TeamMember {
+    /// How a departure message ends: expertise leaves with the person.
+    fn farewell(&self) -> String {
+        match self.expertise {
+            Some(area) => format!(" They took their {area} expertise with them."),
+            None => String::new(),
+        }
+    }
+}
+
+/// A conference card shown to the player when the team gets back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Revealed {
+    pub text: String,
+    pub effect: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -560,6 +590,14 @@ pub struct GameState {
     delay: u32,
     /// Incidents left out of the S-1, waiting to surface.
     hidden: u32,
+    /// Days left at the conference.
+    pub conference_days: u32,
+    /// Conference cards waiting to be revealed.
+    pub cards: Vec<Revealed>,
+    /// Badge-scan discount at this conference's Vendor Hall.
+    discount: bool,
+    /// A senior analyst from the after-party, hired with no fee.
+    free_senior: bool,
     pub base_valuation: i64,
     pub valuation: i64,
     pub trust: i32,
@@ -607,6 +645,8 @@ impl GameState {
             role,
             burnout: 10,
             salary: 0,
+            expertise: None,
+            track: None,
         };
         Self {
             company: company.to_string(),
@@ -619,6 +659,10 @@ impl GameState {
             stop: None,
             delay: 0,
             hidden: 0,
+            conference_days: 0,
+            cards: Vec::new(),
+            discount: false,
+            free_senior: false,
             base_valuation: profile.valuation(),
             valuation: profile.valuation(),
             trust: 60,
@@ -665,8 +709,19 @@ impl GameState {
         self.team.iter().filter(|m| m.role == Role::Senior).count() as u32
     }
 
+    /// What an item costs right now, after any conference perks.
+    pub fn price(&self, item: Item) -> i64 {
+        if item == Item::Senior && self.free_senior {
+            0
+        } else if self.discount {
+            item.price() * DISCOUNT_PERCENT / 100
+        } else {
+            item.price()
+        }
+    }
+
     pub fn can_buy(&self, item: Item) -> bool {
-        item.price() <= self.budget
+        self.price(item) <= self.budget
             && !(item.once() && self.owned.contains(&item))
             && match item {
                 Item::Junior | Item::Senior => self.analysts() < MAX_ANALYSTS,
@@ -677,7 +732,7 @@ impl GameState {
 
     /// Buys a tool, service, or coffee. Analysts are hired by name with `hire`.
     pub fn buy(&mut self, item: Item) {
-        self.budget -= item.price();
+        self.budget -= self.price(item);
         match item {
             Item::Coffee => self.coffee = (self.coffee + COFFEE_RUN_POTS).min(COFFEE_CAPACITY),
             Item::Junior | Item::Senior => unreachable!("analysts are hired by name"),
@@ -687,18 +742,37 @@ impl GameState {
 
     /// Hires an analyst from the Vendor Hall's `Junior` or `Senior` listing.
     pub fn hire(&mut self, item: Item, name: &str) {
+        self.budget -= self.price(item);
+        if item == Item::Senior {
+            self.free_senior = false;
+        }
+        self.add_analyst(item, name);
+    }
+
+    fn add_analyst(&mut self, item: Item, name: &str) {
         let role = match item {
             Item::Junior => Role::Junior,
             Item::Senior => Role::Senior,
             _ => unreachable!("only analysts are hired"),
         };
-        self.budget -= item.price();
         self.team.push(TeamMember {
             name: name.to_string(),
             role,
             burnout: 0,
             salary: item.salary(),
+            expertise: None,
+            track: None,
         });
+    }
+
+    /// Posture plus the expertise of analysts on the team.
+    fn level(&self, area: Area) -> i32 {
+        let experts = self
+            .team
+            .iter()
+            .filter(|m| m.expertise == Some(area))
+            .count() as i32;
+        (self.posture[area as usize] + EXPERTISE_BONUS * experts).min(100)
     }
 
     /// Actions the SOC can start now: prerequisites met, affordable, and nothing else under way.
@@ -838,9 +912,8 @@ impl GameState {
                     .to_string()
             }
             Action::Recruit(level) => {
-                self.hire(level, &task.name);
                 // The recruiter's fee was paid when the search started.
-                self.budget += level.price();
+                self.add_analyst(level, &task.name);
                 let role = self.team.last().unwrap().role;
                 format!("{} the {role} joins the SOC.", task.name)
             }
@@ -953,7 +1026,7 @@ impl GameState {
 
     /// Chance in thousandths of making it across a river.
     pub fn crossing_odds(&self, odds: &Odds) -> u32 {
-        let average = self.posture.iter().sum::<i32>() as u32 / self.posture.len() as u32;
+        let average = Area::ALL.iter().map(|&a| self.level(a)).sum::<i32>() as u32 / 6;
         (odds.base + odds.posture * average / 100)
             .saturating_sub(odds.per_incident * self.incidents())
             .min(1000)
@@ -962,7 +1035,7 @@ impl GameState {
     /// Letter grades for each posture area, as the pen testers see it.
     pub fn report_card(&self) -> [(Area, char); 6] {
         Area::ALL.map(|area| {
-            let grade = match self.posture[area as usize] {
+            let grade = match self.level(area) {
                 80.. => 'A',
                 60.. => 'B',
                 40.. => 'C',
@@ -1021,6 +1094,7 @@ impl GameState {
             self.stop = Some(Stop {
                 landmark,
                 rested: false,
+                attended: false,
             });
         }
         true
@@ -1051,7 +1125,10 @@ impl GameState {
             }
             Landmark::S1Filing => self.hidden = self.incidents(),
             Landmark::PenTest => {
-                let weak = self.posture.iter().filter(|&&p| p < WEAK_POSTURE).count() as i64;
+                let weak = Area::ALL
+                    .iter()
+                    .filter(|&&a| self.level(a) < WEAK_POSTURE)
+                    .count() as i64;
                 let cost = self.base_valuation * 10 * weak / 1000 / (index as i64 + 1);
                 if cost > 0 {
                     self.valuation -= cost;
@@ -1084,6 +1161,115 @@ impl GameState {
 
     pub fn leave_fort(&mut self) {
         self.stop = None;
+        self.discount = false;
+        self.free_senior = false;
+    }
+
+    /// Ticket and travel for the lead plus `analysts` attendees.
+    pub fn conference_cost(&self, analysts: usize) -> i64 {
+        TICKET * (analysts as i64 + 1)
+    }
+
+    /// Opens the conference fort without anyone going.
+    pub fn skip_conference(&mut self) {
+        if let Some(stop) = &mut self.stop {
+            stop.attended = true;
+        }
+    }
+
+    /// Sends the lead and the picked analysts (team index and track) to the conference.
+    pub fn attend(&mut self, picks: &[(usize, Track)]) {
+        self.budget -= self.conference_cost(picks.len());
+        for &(i, track) in picks {
+            self.team[i].track = Some(track);
+        }
+        self.conference_days = CONFERENCE_DAYS;
+        self.stop = None;
+        self.log.push(format!(
+            "You and {} analysts head to the conference. The rest hold the fort.",
+            picks.len()
+        ));
+    }
+
+    /// Counts down the conference and brings everyone back with their cards on the last day.
+    fn conferencing(&mut self) -> bool {
+        if self.conference_days == 0 {
+            return false;
+        }
+        self.conference_days -= 1;
+        if self.conference_days > 0 {
+            return false;
+        }
+        self.return_from_conference();
+        true
+    }
+
+    fn return_from_conference(&mut self) {
+        let mut used: Vec<&str> = Vec::new();
+        for i in 0..self.team.len() {
+            let Some(track) = self.team[i].track.take() else {
+                continue;
+            };
+            let mut pool: Vec<Card> = track
+                .cards()
+                .iter()
+                .filter(|c| !used.contains(&c.text))
+                .copied()
+                .collect();
+            if pool.is_empty() {
+                pool = Track::ALL
+                    .iter()
+                    .flat_map(|t| t.cards())
+                    .filter(|c| !used.contains(&c.text))
+                    .copied()
+                    .collect();
+            }
+            let card = pool[self.chance() as usize % pool.len()];
+            used.push(card.text);
+            let member = &mut self.team[i];
+            member.burnout = (member.burnout - card.relief).max(0);
+            if card.expertise.is_some() {
+                member.expertise = card.expertise;
+            }
+            let effect = match card.expertise {
+                Some(area) => format!("{area} expertise, burnout -{}", card.relief),
+                None => format!("Burnout -{}", card.relief),
+            };
+            let text = card.text.replace("{name}", &member.name);
+            self.log.push(text.clone());
+            self.cards.push(Revealed { text, effect });
+        }
+
+        let lead = LEAD_CARDS[self.chance() as usize % LEAD_CARDS.len()];
+        self.trust = (self.trust + lead.trust).clamp(0, 100);
+        self.discount = lead.discount;
+        self.free_senior = lead.recruit;
+        let effect = if lead.trust != 0 {
+            format!("Trust +{}", lead.trust)
+        } else if lead.discount {
+            "20% off at the Vendor Hall".to_string()
+        } else if lead.recruit {
+            "A senior hire with no fee at the Vendor Hall".to_string()
+        } else {
+            "No effect".to_string()
+        };
+        self.log.push(lead.text.to_string());
+        self.cards.push(Revealed {
+            text: lead.text.to_string(),
+            effect,
+        });
+        self.stop = Some(Stop {
+            landmark: Landmark::Conference,
+            rested: false,
+            attended: true,
+        });
+    }
+
+    /// Shows the next conference card, removing it from the queue.
+    pub fn reveal_next(&mut self) {
+        if !self.cards.is_empty() {
+            self.cards.remove(0);
+        }
     }
 
     /// The choices for the event waiting on the player, if any.
@@ -1258,7 +1444,7 @@ impl GameState {
     pub fn respond(&mut self, index: usize) {
         let actor = self.incident.take().expect("an incident to respond to");
         let response = actor.responses()[index];
-        let scale = 200 - self.posture[Area::Resilience as usize] as i64;
+        let scale = 200 - self.level(Area::Resilience) as i64;
         self.valuation -= self.base_valuation * response.valuation * scale / 200_000;
         self.trust = (self.trust + response.trust * scale as i32 / 200).clamp(0, 100);
         self.brand = (self.brand + response.brand * scale as i32 / 200).clamp(0, 100);
@@ -1278,9 +1464,18 @@ impl GameState {
 
     /// Effective Detection: lower while the team is resting.
     fn watch(&self) -> i32 {
-        let mut detection = self.posture[Area::Detection as usize];
+        let mut detection = self.level(Area::Detection);
         if self.holiday > 0 {
             detection /= 2;
+        }
+        let analysts = self.analysts();
+        if self.conference_days > 0 && analysts > 0 {
+            let home = self
+                .team
+                .iter()
+                .filter(|m| m.role.is_analyst() && m.track.is_none())
+                .count() as i32;
+            detection = detection * home / analysts;
         }
         match self.task.as_ref().map(|t| t.action) {
             Some(Action::DayOff) => detection / 4,
@@ -1292,7 +1487,7 @@ impl GameState {
     /// Average posture across the areas that defend against an actor.
     fn defense(&self, actor: Actor) -> u32 {
         let areas = actor.defenses();
-        let total: i32 = areas.iter().map(|&a| self.posture[a as usize]).sum();
+        let total: i32 = areas.iter().map(|&a| self.level(a)).sum();
         (total / areas.len() as i32) as u32
     }
 
@@ -1521,6 +1716,7 @@ impl GameState {
             stop |= self.work();
             stop |= self.progress();
             stop |= self.investigate();
+            stop |= self.conferencing();
             self.linger();
             stop |= self.attack();
             stop |= self.maybe_event();
@@ -1575,8 +1771,10 @@ impl GameState {
                 .unwrap();
             let analyst = self.team.remove(i);
             self.log.push(format!(
-                "Payroll came up short. {} the {} was laid off and walked out holding a cardboard box.",
-                analyst.name, analyst.role
+                "Payroll came up short. {} the {} was laid off and walked out holding a cardboard box.{}",
+                analyst.name,
+                analyst.role,
+                analyst.farewell()
             ));
             stop = true;
         }
@@ -1614,9 +1812,20 @@ impl GameState {
                 member.burnout = (member.burnout - rest).max(0);
             }
         } else if analysts > 0 {
+            // Analysts away at the conference leave the workload to the ones at home.
+            let home = self
+                .team
+                .iter()
+                .filter(|m| m.role.is_analyst() && m.track.is_none())
+                .count() as i32;
             let paranoia = self.conditions.contains(&Condition::Paranoia) as i32;
-            let share = self.tempo.workload() / analysts + paranoia;
-            for member in self.team.iter_mut() {
+            let stay_home = if self.conference_days > 0 {
+                STAY_HOME_BURNOUT
+            } else {
+                0
+            };
+            let share = self.tempo.workload() / home.max(1) + paranoia + stay_home;
+            for member in self.team.iter_mut().filter(|m| m.track.is_none()) {
                 let rest = match member.role {
                     Role::Junior => JUNIOR_REST,
                     Role::Senior => SENIOR_REST,
@@ -1632,7 +1841,12 @@ impl GameState {
         self.team.retain(|m| {
             if m.burnout >= 100 {
                 let reason = BURNOUT_EXITS[exit % BURNOUT_EXITS.len()];
-                log.push(format!("{} the {} {reason}", m.name, m.role));
+                log.push(format!(
+                    "{} the {} {reason}{}",
+                    m.name,
+                    m.role,
+                    m.farewell()
+                ));
                 exit += 1;
             }
             m.burnout < 100
@@ -1695,6 +1909,8 @@ mod tests {
             role,
             burnout,
             salary,
+            expertise: None,
+            track: None,
         }
     }
 
@@ -2492,6 +2708,7 @@ mod tests {
             stop: Some(Stop {
                 landmark,
                 rested: false,
+                attended: false,
             }),
             ..game()
         }
@@ -3362,6 +3579,210 @@ mod tests {
         assert_eq!(game.paydays_left(), 24);
         game.slip();
         assert_eq!(game.paydays_left(), 26);
+    }
+
+    /// Sends `picks` to the conference and plays until everyone is back.
+    fn conference(seed: u32, picks: &[(usize, Track)]) -> GameState {
+        let mut game = at(Landmark::Conference, seed, 30);
+        game.attend(picks);
+        while game.conference_days > 0 {
+            game.coffee = COFFEE_CAPACITY;
+            game.advance();
+        }
+        game
+    }
+
+    fn all_cards() -> Vec<Card> {
+        Track::ALL.iter().flat_map(|t| t.cards()).copied().collect()
+    }
+
+    #[test]
+    fn everyone_who_goes_pays_once_including_the_lead() {
+        let mut game = at(Landmark::Conference, 1, 30);
+        assert_eq!(game.conference_cost(0), TICKET);
+        assert_eq!(game.conference_cost(2), 3 * TICKET);
+
+        game.attend(&[(0, Track::Talks), (1, Track::Expo)]);
+
+        assert_eq!(game.budget, 500_000 - 3 * TICKET);
+        assert_eq!(game.stop, None, "away at the conference");
+        assert_eq!(game.conference_days, CONFERENCE_DAYS);
+    }
+
+    #[test]
+    fn the_conference_takes_three_days_and_reopens_the_fort() {
+        let start = at(Landmark::Conference, 1, 30).day;
+        let game = conference(1, &[(0, Track::Hallway)]);
+
+        assert_eq!(game.day, start + CONFERENCE_DAYS);
+        let stop = game.stop.as_ref().unwrap();
+        assert_eq!(stop.landmark, Landmark::Conference);
+        assert!(stop.attended);
+        assert_eq!(game.cards.len(), 2, "one analyst card and the lead's");
+        assert!(
+            game.team.iter().all(|m| m.track.is_none()),
+            "everyone is back"
+        );
+    }
+
+    #[test]
+    fn conference_cards_never_lower_posture() {
+        for card in all_cards() {
+            assert!(card.relief > 0, "{}", card.text);
+            let mut game = game();
+            let before = Area::ALL.map(|a| game.level(a));
+            game.team[0].expertise = card.expertise;
+
+            for (area, old) in Area::ALL.iter().zip(before) {
+                assert!(game.level(*area) >= old, "{}", card.text);
+            }
+        }
+    }
+
+    #[test]
+    fn every_card_turns_up_and_never_twice_in_one_conference() {
+        let mut seen = Vec::new();
+        for seed in 0..40 {
+            for track in Track::ALL {
+                let mut game = at(Landmark::Conference, seed, 30);
+                game.team
+                    .extend((0..5).map(|i| member(&format!("A{i}"), Role::Junior, 0, 0)));
+                let picks: Vec<_> = (0..game.team.len())
+                    .filter(|&i| game.team[i].role.is_analyst())
+                    .map(|i| (i, track))
+                    .collect();
+                game.attend(&picks);
+                while game.conference_days > 0 {
+                    game.advance();
+                }
+
+                let texts: Vec<_> = game.cards.iter().map(|c| c.text.clone()).collect();
+                for (i, text) in texts.iter().enumerate() {
+                    assert!(!texts[i + 1..].contains(text), "duplicate: {text}");
+                }
+                seen.extend(texts);
+            }
+        }
+
+        for card in all_cards() {
+            let tail = card.text.split("{name}").last().unwrap();
+            assert!(
+                seen.iter().any(|t| t.ends_with(tail)),
+                "never drawn: {}",
+                card.text
+            );
+        }
+        for lead in LEAD_CARDS {
+            assert!(
+                seen.iter().any(|t| t == lead.text),
+                "never drawn: {}",
+                lead.text
+            );
+        }
+    }
+
+    #[test]
+    fn expertise_lasts_while_the_analyst_stays() {
+        let mut game = game();
+        let base = game.level(Area::Perimeter);
+
+        game.team[0].expertise = Some(Area::Perimeter);
+        assert_eq!(game.level(Area::Perimeter), base + EXPERTISE_BONUS);
+        advance_to(&mut game, 9);
+        assert_eq!(
+            game.level(Area::Perimeter),
+            base - POSTURE_DECAY + EXPERTISE_BONUS,
+            "only the raw posture decays"
+        );
+
+        game.team[0].burnout = 99;
+        game.advance();
+        assert_eq!(game.level(Area::Perimeter), base - POSTURE_DECAY);
+        assert!(
+            game.log.iter().any(|e| e.contains("Maya")
+                && e.ends_with("They took their Perimeter expertise with them."))
+        );
+    }
+
+    #[test]
+    fn attending_analysts_come_back_with_their_card() {
+        let game = conference(3, &[(0, Track::Talks)]);
+        let card = &game.cards[0];
+
+        assert!(card.text.starts_with("Maya"));
+        assert!(card.effect.ends_with("expertise, burnout -5"));
+        assert!(
+            game.team[0].expertise.is_some(),
+            "every talk teaches something"
+        );
+        assert_eq!(game.team[0].burnout, 20 - 5);
+    }
+
+    #[test]
+    fn the_watch_thins_and_the_home_team_works_harder_during_the_conference() {
+        let mut game = game();
+        game.team.push(member("Ann", Role::Junior, 20, 0));
+        let normal = game.watch();
+        let mut stayed = game.clone();
+        stayed.day = 2;
+        stayed.advance();
+
+        game.day = 2;
+        game.attend(&[(0, Track::Hallway), (1, Track::Hallway)]);
+        assert_eq!(game.watch(), normal * 2 / 4);
+        game.advance();
+
+        assert_eq!(game.team[0].burnout, 20, "away analysts do not work");
+        assert!(game.team[2].burnout > stayed.team[2].burnout);
+    }
+
+    #[test]
+    fn every_lead_card_pays_off_as_promised() {
+        for (i, lead) in LEAD_CARDS.iter().enumerate() {
+            let mut game = (0..)
+                .map(|seed| conference(seed, &[]))
+                .find(|g| g.cards[0].text == lead.text)
+                .unwrap();
+            let trust_before = 60;
+            assert_eq!(game.trust, trust_before + lead.trust, "card {i}");
+
+            let edr = if lead.discount { 48_000 } else { 60_000 };
+            assert_eq!(game.price(Item::Edr), edr, "card {i}");
+            let fee = match (lead.recruit, lead.discount) {
+                (true, _) => 0,
+                (false, true) => Item::Senior.price() * 80 / 100,
+                (false, false) => Item::Senior.price(),
+            };
+            assert_eq!(game.price(Item::Senior), fee, "card {i}");
+
+            let budget = game.budget;
+            game.hire(Item::Senior, "Priya");
+            assert_eq!(game.budget, budget - fee);
+            assert_ne!(game.price(Item::Senior), 0, "only one free hire");
+
+            game.leave_fort();
+            assert_eq!(game.price(Item::Edr), 60_000, "perks end with the visit");
+        }
+    }
+
+    #[test]
+    fn skipping_the_conference_opens_the_fort() {
+        let mut game = at(Landmark::Conference, 1, 30);
+
+        game.skip_conference();
+
+        assert!(game.stop.as_ref().unwrap().attended);
+        assert_eq!(game.budget, 500_000);
+    }
+
+    #[test]
+    fn cards_are_revealed_one_at_a_time() {
+        let mut game = conference(1, &[(0, Track::Villages)]);
+
+        game.reveal_next();
+        assert_eq!(game.cards.len(), 1);
+        game.reveal_next();
+        assert!(game.cards.is_empty());
     }
 
     #[test]

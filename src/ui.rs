@@ -1,4 +1,5 @@
 use crate::audio::TRACKS;
+use crate::conference::Track;
 use crate::game::{Action, GameState, Item, Outcome, Profile, Reply};
 use crate::street::{Hop, Street};
 
@@ -104,6 +105,17 @@ pub enum Screen {
         menu: ActionMenu,
         name: String,
     },
+    /// Picking who goes to the conference, as team indices.
+    Attendees {
+        game: GameState,
+        picked: Vec<usize>,
+    },
+    /// Picking a track for each attendee in turn.
+    Tracks {
+        game: GameState,
+        picked: Vec<usize>,
+        tracks: Vec<Track>,
+    },
     /// The day menu, with the clock stopped.
     Play(GameState),
     /// Days passing on their own until something happens or a key is pressed.
@@ -162,6 +174,8 @@ impl Screen {
             Self::Play(game)
             | Self::Team(game)
             | Self::Report(game)
+            | Self::Attendees { game, .. }
+            | Self::Tracks { game, .. }
             | Self::Shop(Shop { game, .. })
             | Self::Actions(ActionMenu { game, .. })
             | Self::Recruit {
@@ -266,6 +280,12 @@ impl Screen {
             (Self::Play(game), Input::Enter) if game.outcome.is_some() => Self::Report(game),
             (Self::Play(game), _) if game.outcome.is_some() => Self::Play(game),
             (Self::Report(_), Input::Enter) => Self::Title,
+            (Self::Play(mut game), input) if !game.cards.is_empty() => {
+                if input == Input::Enter {
+                    game.reveal_next();
+                }
+                Self::Play(game)
+            }
             (Self::Play(mut game), input) if game.incident.is_some() => {
                 let responses = game.incident.unwrap().responses();
                 if let Input::Char(c @ '1'..='9') = input
@@ -287,7 +307,21 @@ impl Screen {
             (Self::Play(mut game), input)
                 if game.pending_alert().is_none() && game.stop.is_some() =>
             {
-                let fort = game.stop.as_ref().unwrap().landmark.is_fort();
+                let stop = game.stop.as_ref().unwrap();
+                let fort = stop.landmark.is_fort();
+                if stop.landmark == crate::landmarks::Landmark::Conference && !stop.attended {
+                    match input {
+                        Input::Char('1') => {
+                            return Self::Attendees {
+                                game,
+                                picked: Vec::new(),
+                            };
+                        }
+                        Input::Char('2') => game.skip_conference(),
+                        _ => {}
+                    }
+                    return Self::Play(game);
+                }
                 match input {
                     Input::Char('1') if fort => return Self::Shop(Shop { game, cursor: 0 }),
                     Input::Char('2') if fort => game.rest_at_fort(),
@@ -300,6 +334,54 @@ impl Screen {
                     _ => {}
                 }
                 Self::Play(game)
+            }
+            (Self::Attendees { game, mut picked }, Input::Char(c @ '1'..='9')) => {
+                let analysts: Vec<usize> = (0..game.team.len())
+                    .filter(|&i| game.team[i].role.is_analyst())
+                    .collect();
+                if let Some(&i) = analysts.get(c as usize - '1' as usize) {
+                    if let Some(at) = picked.iter().position(|&p| p == i) {
+                        picked.remove(at);
+                    } else if game.conference_cost(picked.len() + 1) <= game.budget {
+                        picked.push(i);
+                    }
+                }
+                Self::Attendees { game, picked }
+            }
+            (Self::Attendees { mut game, picked }, Input::Enter) if picked.is_empty() => {
+                game.attend(&[]);
+                Self::Travel(Travel {
+                    game,
+                    elapsed_ms: 0,
+                })
+            }
+            (Self::Attendees { game, picked }, Input::Enter) => Self::Tracks {
+                game,
+                picked,
+                tracks: Vec::new(),
+            },
+            (
+                Self::Tracks {
+                    mut game,
+                    picked,
+                    mut tracks,
+                },
+                Input::Char(c @ '1'..='4'),
+            ) => {
+                tracks.push(Track::ALL[c as usize - '1' as usize]);
+                if tracks.len() < picked.len() {
+                    return Self::Tracks {
+                        game,
+                        picked,
+                        tracks,
+                    };
+                }
+                let picks: Vec<_> = picked.into_iter().zip(tracks).collect();
+                game.attend(&picks);
+                Self::Travel(Travel {
+                    game,
+                    elapsed_ms: 0,
+                })
             }
             (Self::Play(mut game), input) if game.pending_alert().is_some() => {
                 let reply = match input {
@@ -946,6 +1028,7 @@ mod tests {
             game.stop = Some(crate::game::Stop {
                 landmark,
                 rested: false,
+                attended: true,
             })
         })
     }
@@ -969,6 +1052,93 @@ mod tests {
             moved_on.update(Input::Char('1')),
             Screen::Travel(_)
         ));
+    }
+
+    /// The conference fort on arrival, before anyone has picked who goes.
+    fn conference() -> Screen {
+        with_game(new_game(), |game| {
+            game.stop = Some(crate::game::Stop {
+                landmark: crate::landmarks::Landmark::Conference,
+                rested: false,
+                attended: false,
+            })
+        })
+    }
+
+    #[test]
+    fn the_conference_starts_with_picking_who_goes() {
+        let screen = conference().update(Input::Char('1'));
+        assert!(matches!(screen, Screen::Attendees { .. }));
+
+        let skipped = conference().update(Input::Char('2'));
+        assert!(game(&skipped).stop.as_ref().unwrap().attended);
+    }
+
+    #[test]
+    fn number_keys_toggle_attendees_within_the_budget() {
+        let screen = conference().update(Input::Char('1'));
+        let picked = |s: &Screen| match s {
+            Screen::Attendees { picked, .. } => picked.clone(),
+            other => panic!("expected Attendees, got {other:?}"),
+        };
+
+        let screen = screen.update(Input::Char('2'));
+        assert_eq!(picked(&screen), [4], "Dev is the second analyst");
+        let screen = screen.update(Input::Char('1')).update(Input::Char('2'));
+        assert_eq!(picked(&screen), [3]);
+        assert_eq!(picked(&screen.clone().update(Input::Char('9'))), [3]);
+
+        let broke = match conference().update(Input::Char('1')) {
+            Screen::Attendees { mut game, picked } => {
+                game.budget = game.conference_cost(1);
+                Screen::Attendees { game, picked }
+            }
+            other => panic!("expected Attendees, got {other:?}"),
+        };
+        let broke = broke.update(Input::Char('1')).update(Input::Char('2'));
+        assert_eq!(picked(&broke).len(), 1, "cannot afford a second ticket");
+    }
+
+    #[test]
+    fn each_attendee_picks_a_track_then_the_clock_runs() {
+        let screen = conference()
+            .update(Input::Char('1'))
+            .update(Input::Char('1'))
+            .update(Input::Char('2'))
+            .update(Input::Enter);
+        assert!(matches!(screen, Screen::Tracks { .. }));
+
+        let screen = screen.update(Input::Char('1'));
+        assert!(matches!(screen, Screen::Tracks { .. }));
+        let screen = screen.update(Input::Char('4'));
+
+        let Screen::Travel(travel) = &screen else {
+            panic!("expected Travel, got {screen:?}");
+        };
+        assert_eq!(travel.game.team[3].track, Some(Track::Talks));
+        assert_eq!(travel.game.team[4].track, Some(Track::Hallway));
+    }
+
+    #[test]
+    fn going_alone_skips_the_tracks() {
+        let screen = conference().update(Input::Char('1')).update(Input::Enter);
+
+        assert!(matches!(screen, Screen::Travel(_)));
+        assert!(game(&screen).conference_days > 0);
+    }
+
+    #[test]
+    fn conference_cards_are_revealed_with_enter() {
+        let screen = conference().update(Input::Char('1')).update(Input::Enter);
+        let screen = screen.tick(DAY_SECONDS * 3.0);
+        assert!(matches!(screen, Screen::Play(_)));
+        assert_eq!(game(&screen).cards.len(), 1, "the lead's card");
+        assert_eq!(screen.clone().update(Input::Char('1')), screen);
+
+        let screen = screen.update(Input::Enter);
+
+        assert!(game(&screen).cards.is_empty());
+        assert!(game(&screen).stop.as_ref().unwrap().attended);
     }
 
     #[test]

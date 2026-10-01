@@ -150,12 +150,12 @@ Tasks:
 - Afterwards the Vendor Hall and the job fair open.
 
 Success criteria:
-- [ ] Each attendee, including the lead, is charged once, and the picker cannot exceed the budget (unit tested).
-- [ ] No conference card ever lowers posture (unit tested over every card).
-- [ ] Every card in every track occurs across seeds, and no two attendees get the same card in one conference (unit tested).
-- [ ] Expertise raises its posture area while the analyst stays and is removed when they leave (unit tested).
-- [ ] Detection drops during the conference in proportion to analysts away, and stay-home analysts gain burnout (unit tested).
-- [ ] Every lead card applies its effect, including the discount and the no-fee senior hire (unit tested).
+- [x] Each attendee, including the lead, is charged once, and the picker cannot exceed the budget (unit tested).
+- [x] No conference card ever lowers posture (unit tested over every card).
+- [x] Every card in every track occurs across seeds, and no two attendees get the same card in one conference (unit tested).
+- [x] Expertise raises its posture area while the analyst stays and is removed when they leave (unit tested).
+- [x] Detection drops during the conference in proportion to analysts away, and stay-home analysts gain burnout (unit tested).
+- [x] Every lead card applies its effect, including the discount and the no-fee senior hire (unit tested).
 
 ## Phase 19: Presentation
 
@@ -202,6 +202,6 @@ Success criteria:
 - [x] Phase 15: The attacker
 - [x] Phase 16: Random events
 - [x] Phase 17: Landmarks and IPO delays
-- [ ] Phase 18: The Security Conference
+- [x] Phase 18: The Security Conference
 - [ ] Phase 19: Presentation
 - [ ] Phase 20: Balance, playtest, and release

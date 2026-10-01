@@ -2,6 +2,7 @@ use font8x8::legacy::BASIC_LEGACY;
 use macroquad::prelude::*;
 
 use crate::audio::TRACKS;
+use crate::conference::Track;
 use crate::game::{
     Action, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Outcome, Profile, Reply,
     Role, TeamMember, money,
@@ -116,6 +117,12 @@ pub fn screen(screen: &Screen, font: &Font, music: Music) {
         Screen::Team(game) => team_screen(font, game),
         Screen::Coffee(run) => coffee_run(font, run),
         Screen::Report(game) => after_action(font, game),
+        Screen::Attendees { game, picked } => attendees(font, game, picked),
+        Screen::Tracks {
+            game,
+            picked,
+            tracks,
+        } => track_picker(font, game, &game.team[picked[tracks.len()]].name),
     }
 }
 
@@ -247,10 +254,10 @@ fn profile_choice(font: &Font, company: &str) {
 }
 
 /// Price column text: the recruiter's fee plus weekly salary for analysts.
-fn price_text(item: Item) -> String {
+fn price_text(game: &GameState, item: Item) -> String {
     match item.salary() {
-        0 => money(item.price()),
-        salary => format!("{} + {}/wk", money(item.price()), money(salary)),
+        0 => money(game.price(item)),
+        salary => format!("{} + {}/wk", money(game.price(item)), money(salary)),
     }
 }
 
@@ -288,7 +295,11 @@ fn vendor_hall(font: &Font, shop: &Shop) {
             _ => String::new(),
         };
         font.text(
-            &format!("{:<28}{:<18}{status}", item.label(), price_text(*item)),
+            &format!(
+                "{:<28}{:<18}{status}",
+                item.label(),
+                price_text(game, *item)
+            ),
             MARGIN + 24.0,
             y,
             1.0,
@@ -468,6 +479,7 @@ fn play(font: &Font, game: &GameState, traveling: bool) {
             }
         }
         None if game.incident.is_some() => incident_popup(font, game),
+        None if !game.cards.is_empty() => card_popup(font, game),
         None if game.event.is_some() => event_menu(font, game),
         None if game.pending_alert().is_none() && game.stop.is_some() => landmark_popup(font, game),
         None if game.pending_alert().is_some() => alert_menu(font, game),
@@ -508,7 +520,12 @@ fn landmark_popup(font: &Font, game: &GameState) {
         }
         line_y += 8.0;
     }
-    let options: Vec<(String, bool)> = if landmark.is_fort() {
+    let options: Vec<(String, bool)> = if landmark == Landmark::Conference && !stop.attended {
+        vec![
+            ("Choose who goes with you".to_string(), true),
+            ("Skip the conference".to_string(), true),
+        ]
+    } else if landmark.is_fort() {
         vec![
             ("Visit the Vendor Hall".to_string(), true),
             ("Rest (no time passes)".to_string(), !stop.rested),
@@ -534,6 +551,99 @@ fn landmark_popup(font: &Font, game: &GameState) {
         1.0,
         DIM,
     );
+}
+
+fn attendees(font: &Font, game: &GameState, picked: &[usize]) {
+    timeline(font, game);
+    font.text("THE SECURITY CONFERENCE", MARGIN, 72.0, 2.0, AMBER);
+    font.text(
+        "You always go. Who goes with you? Whoever stays holds the fort.",
+        MARGIN,
+        96.0,
+        1.0,
+        INK,
+    );
+    let analysts = game
+        .team
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.role.is_analyst());
+    for (n, (i, member)) in analysts.enumerate() {
+        let going = picked.contains(&i);
+        let mark = if going { "X" } else { " " };
+        let y = 120.0 + n as f32 * 16.0;
+        font.text(
+            &format!(
+                "{}) [{mark}] {:<20} {:<8}",
+                n + 1,
+                member.name,
+                short_role(member.role)
+            ),
+            MARGIN + 16.0,
+            y,
+            1.0,
+            if going { GREEN } else { INK },
+        );
+        font.text(
+            condition(member.burnout),
+            MARGIN + 376.0,
+            y,
+            1.0,
+            burnout_color(member.burnout),
+        );
+    }
+    divider(384.0);
+    font.text(
+        &format!(
+            "Tickets for you and {}: {}   Budget {}",
+            picked.len(),
+            money(game.conference_cost(picked.len())),
+            money(game.budget)
+        ),
+        MARGIN,
+        396.0,
+        1.0,
+        INK,
+    );
+    font.text(
+        "Press a number to toggle, ENTER to go.",
+        MARGIN,
+        460.0,
+        1.0,
+        DIM,
+    );
+}
+
+fn track_picker(font: &Font, game: &GameState, name: &str) {
+    timeline(font, game);
+    font.text("THE SECURITY CONFERENCE", MARGIN, 72.0, 2.0, AMBER);
+    font.text(&format!("Which track for {name}?"), MARGIN, 104.0, 1.0, INK);
+    for (i, track) in Track::ALL.iter().enumerate() {
+        let y = 128.0 + i as f32 * 32.0;
+        font.text(&format!("{}) {track}", i + 1), MARGIN + 16.0, y, 1.0, AMBER);
+        font.text(track.blurb(), MARGIN + 40.0, y + 12.0, 1.0, DIM);
+    }
+    font.text("Press 1-4.", MARGIN, 460.0, 1.0, DIM);
+}
+
+fn card_popup(font: &Font, game: &GameState) {
+    let card = &game.cards[0];
+    let (x, y, w, h) = (40.0, 96.0, WIDTH - 80.0, 240.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, GREEN);
+    font.centered("CONFERENCE REPORT", WIDTH / 2.0, y + 12.0, 2.0, AMBER);
+    let width = ((w - 32.0) / GLYPH) as usize;
+    let mut line_y = y + 48.0;
+    for line in wrap(&card.text, width) {
+        font.text(&line, x + 16.0, line_y, 1.0, INK);
+        line_y += 12.0;
+    }
+    font.text(&card.effect, x + 16.0, line_y + 12.0, 1.0, GREEN);
+    let more = match game.cards.len() - 1 {
+        0 => "Press ENTER to finish the report".to_string(),
+        n => format!("Press ENTER for the next card ({n} more)"),
+    };
+    font.text(&more, x + 16.0, y + h - 20.0, 1.0, DIM);
 }
 
 fn event_menu(font: &Font, game: &GameState) {
