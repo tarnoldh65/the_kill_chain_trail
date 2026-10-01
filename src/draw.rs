@@ -450,6 +450,13 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
     font.text("TAKE AN ACTION", MARGIN, 72.0, 2.0, AMBER);
     right(font, &format!("Budget {}", money(game.budget)), 76.0, INK);
     font.text(
+        &format!("Tempo: {} (T to change)", game.tempo),
+        MARGIN,
+        100.0,
+        1.0,
+        AMBER,
+    );
+    font.text(
         &format!("{:<38}{:<8}COST", "", "DAYS"),
         MARGIN + 24.0,
         100.0,
@@ -496,7 +503,7 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
     font.text(note, MARGIN, 396.0, 1.0, CYAN);
     improves_strip(font, menu.action().map_or(&[], |a| a.improves()), 424.0);
     font.text(
-        "UP/DOWN to choose, ENTER to start. Days pass while the SOC works.",
+        "UP/DOWN to choose, T for tempo, ENTER to start. Days pass while you work.",
         MARGIN,
         460.0,
         1.0,

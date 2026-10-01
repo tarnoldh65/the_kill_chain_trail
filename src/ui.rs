@@ -509,6 +509,10 @@ impl Screen {
                 game.tempo = game.tempo.next();
                 Self::Play(game)
             }
+            (Self::Actions(mut menu), Input::Char('t' | 'T')) => {
+                menu.game.tempo = menu.game.tempo.next();
+                Self::Actions(menu)
+            }
             (Self::Actions(mut menu), Input::Arrow(Hop::Up)) => {
                 menu.cursor = menu.cursor.saturating_sub(1);
                 Self::Actions(menu)
@@ -1025,6 +1029,28 @@ mod tests {
         let screen = arrows(screen, Hop::Down, count + 3);
         assert_eq!(action_menu(&screen).cursor, count);
         assert_eq!(screen.update(Input::Enter), start);
+    }
+
+    #[test]
+    fn t_changes_the_tempo_from_the_action_list() {
+        let screen = choose(new_game(), Action::PatchSprint);
+        let days = |s: &Screen| action_menu(s).game.duration(Action::PatchSprint);
+        assert_eq!(days(&screen), 4);
+
+        let screen = screen.update(Input::Char('t'));
+        assert_eq!(action_menu(&screen).game.tempo, Tempo::Crunch);
+        assert_eq!(days(&screen), 3);
+        assert_eq!(
+            action_menu(&screen).action(),
+            Some(Action::PatchSprint),
+            "cursor stays"
+        );
+
+        let screen = screen.update(Input::Char('T'));
+        assert_eq!(days(&screen), 6, "Relaxed");
+
+        let screen = screen.update(Input::Enter);
+        assert_eq!(game(&screen).tempo, Tempo::Relaxed, "the tempo sticks");
     }
 
     #[test]
