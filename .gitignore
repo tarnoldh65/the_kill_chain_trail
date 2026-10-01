@@ -22,3 +22,6 @@ target
 
 # Web build output copied next to index.html
 web/*.wasm
+
+# Playwright MCP screenshots and logs from browser playtests
+.playwright-mcp/
