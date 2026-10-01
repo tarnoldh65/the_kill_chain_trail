@@ -152,6 +152,19 @@ Success criteria:
 - [ ] The dev container opens on a host without X11 and serves the game on forwarded port 8000.
 - [x] In the dev container, Claude Code's Playwright MCP server loads the web build and returns a screenshot of the game.
 
+## Phase 11: GitHub Pages
+
+Tasks:
+- `.github/workflows/pages.yml` runs on push to `main` and on manual dispatch: install stable Rust with the wasm target, run the Phase 10 release build, copy the wasm into `web/`, and deploy `web/` with GitHub's official Pages actions (latest major versions).
+- Repository Settings > Pages > Source is set to "GitHub Actions" (manual, one time).
+- `web/` already uses relative paths, so it works under the `/the_kill_chain_trail/` subpath unchanged.
+- README: link to https://lehmanrd.github.io/the_kill_chain_trail/.
+
+Success criteria:
+- [ ] The workflow passes on push to `main`.
+- [ ] The Pages URL loads the title screen with no console errors other than a missing favicon.
+- [ ] A push to `main` redeploys the game without manual steps.
+
 ## Current status
 
 - [x] Phase 1: Project scaffolding
@@ -164,3 +177,4 @@ Success criteria:
 - [x] Phase 8: Intern coffee run
 - [x] Phase 9: Variety
 - [ ] Phase 10: Web build
+- [ ] Phase 11: GitHub Pages
