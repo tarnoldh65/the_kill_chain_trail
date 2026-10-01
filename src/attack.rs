@@ -358,6 +358,15 @@ pub enum Condition {
 }
 
 impl Condition {
+    pub const ALL: [Condition; 6] = [
+        Self::SystemsDown,
+        Self::RegulatorInquiry,
+        Self::LeakyRoadmap,
+        Self::Downtime,
+        Self::PersistentAccess,
+        Self::Paranoia,
+    ];
+
     /// Status tag shown on screen.
     pub fn tag(self) -> &'static str {
         match self {

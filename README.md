@@ -6,7 +6,7 @@ Run the SOC at a company racing toward its IPO, 26 weeks away. Attackers you can
 
 ## How to play
 
-- Title screen: 1-3 picks a music track, 4 turns music off, ENTER starts.
+- Title screen: 1-3 picks a music track, 4 turns music off, M opens the instruction manual, ENTER starts. M opens the manual during play too; LEFT/RIGHT turn its pages.
 - Name your company and yourself, then pick a profile (1-3). Harder profiles multiply your score.
 - Procurement: LEFT/RIGHT switch between staff, the six defense categories (three tools each, from cheap to premium), and services; UP/DOWN and ENTER hire and name analysts and buy. Leftover budget pays the payroll every Monday, and every six weeks the board adds funding scaled by its trust in you. Open it again any day with 6; after day 1, hiring starts a week-long search.
 - Day menu: 1 lets the days pass (any key stops the clock), 2 starts an action (deploy a tool, patch, rest, and more; T there cycles the tempo to compare how long each takes), 3 shows the team (UP/DOWN and F let an analyst go for a week's salary in severance), 4 changes the tempo, 5 sends the intern for fancy coffee once a week (arrow keys across four lanes of traffic and back) for a burnout boost, 6 opens Procurement. Sign up for the coffee subscription ($2K a week) through Procurement or the break room runs dry.

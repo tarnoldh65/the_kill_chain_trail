@@ -30,6 +30,8 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [x] An IPO delay moves IPO day and later landmarks on the timeline.
 - [x] Each ending shows its message, ENTER shows the after-action report, and ENTER returns to the title.
 
+- [ ] M opens the instruction manual from the title screen and during play; LEFT/RIGHT turn its pages and ENTER returns where you were.
+
 ## Quality
 - [x] Every screen is readable at 640x480 and scales cleanly when resized.
 - [x] The flow is understandable without extra explanation.

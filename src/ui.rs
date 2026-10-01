@@ -169,6 +169,11 @@ pub enum Screen {
     Coffee(CoffeeRun),
     /// The six defense areas, what helps each, and the pen test grades.
     Defenses(GameState),
+    /// The instruction manual, open on a page, over the screen it was opened from.
+    Manual {
+        back: Box<Screen>,
+        page: usize,
+    },
     /// The whole log, one page at a time; page 0 is the oldest.
     Log {
         game: GameState,
@@ -260,6 +265,7 @@ pub struct CoffeeRun {
 impl Screen {
     pub fn game(&self) -> Option<&GameState> {
         match self {
+            Self::Manual { back, .. } => back.game(),
             Self::Play(game)
             | Self::Team { game, .. }
             | Self::Report(game)
@@ -304,7 +310,32 @@ impl Screen {
         }
     }
 
+    /// Screens where M opens the manual: everywhere but typing names and dodging traffic.
+    fn opens_manual(&self) -> bool {
+        matches!(
+            self,
+            Self::Title
+                | Self::Play(_)
+                | Self::Actions(_)
+                | Self::Shop(_)
+                | Self::Defenses(_)
+                | Self::Log { .. }
+                | Self::Team {
+                    confirming: false,
+                    ..
+                }
+        )
+    }
+
     pub fn update(self, input: Input) -> Self {
+        if let Input::Char('m' | 'M') = input
+            && self.opens_manual()
+        {
+            return Self::Manual {
+                back: Box::new(self),
+                page: 0,
+            };
+        }
         match (self, input) {
             (Self::Title, Input::Enter) => Self::Company(String::new()),
             (Self::Company(company), Input::Enter) if !company.trim().is_empty() => Self::Lead {
@@ -543,6 +574,15 @@ impl Screen {
                 }
             }
             (Self::Log { game, .. }, Input::Enter) => Self::Play(game),
+            (Self::Manual { back, page }, Input::Arrow(Hop::Left)) => Self::Manual {
+                back,
+                page: page.saturating_sub(1),
+            },
+            (Self::Manual { back, page }, Input::Arrow(Hop::Right)) => Self::Manual {
+                back,
+                page: (page + 1).min(crate::manual::pages().len() - 1),
+            },
+            (Self::Manual { back, .. }, Input::Enter) => *back,
             (Self::Play(mut game), Input::Char('5')) if game.can_send_intern() => {
                 game.send_intern();
                 Self::Coffee(CoffeeRun {
@@ -1205,6 +1245,51 @@ mod tests {
         assert_eq!(page(&screen), 1);
 
         assert_eq!(screen.update(Input::Enter), start);
+    }
+
+    fn manual_page(screen: &Screen) -> usize {
+        match screen {
+            Screen::Manual { page, .. } => *page,
+            other => panic!("expected Manual, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m_opens_the_manual_and_enter_returns_where_you_were() {
+        for start in [
+            Screen::Title,
+            new_game(),
+            alerted(),
+            new_game().update(Input::Char('2')),
+            new_game().update(Input::Char('6')),
+            new_game().update(Input::Char('3')),
+            new_game().update(Input::Char('d')),
+        ] {
+            let screen = start.clone().update(Input::Char('m'));
+            assert_eq!(manual_page(&screen), 0, "{start:?}");
+            assert_eq!(screen.update(Input::Enter), start);
+        }
+    }
+
+    #[test]
+    fn arrows_turn_the_manual_pages() {
+        let last = crate::manual::pages().len() - 1;
+        let screen = Screen::Title.update(Input::Char('M'));
+
+        let screen = screen.update(Input::Arrow(Hop::Left));
+        assert_eq!(manual_page(&screen), 0);
+        let screen = arrows(screen, Hop::Right, 3);
+        assert_eq!(manual_page(&screen), 3);
+        let screen = arrows(screen, Hop::Right, 100);
+        assert_eq!(manual_page(&screen), last);
+        assert_eq!(screen.clone().update(Input::Char('1')), screen);
+    }
+
+    #[test]
+    fn m_is_just_a_letter_while_typing_a_name() {
+        let screen = type_text(Screen::Company(String::new()), "Mm");
+
+        assert_eq!(screen, Screen::Company("Mm".to_string()));
     }
 
     #[test]

@@ -127,6 +127,7 @@ pub fn screen(screen: &Screen, font: &Font, music: Music, scores: &[Score]) {
         Screen::Report(game) => after_action(font, game),
         Screen::Log { game, page } => full_log(font, game, *page),
         Screen::Defenses(game) => defenses(font, game),
+        Screen::Manual { page, .. } => manual(font, *page),
         Screen::Attendees { game, picked } => attendees(font, game, picked),
         Screen::Tracks {
             game,
@@ -193,6 +194,7 @@ fn title(font: &Font, music: Music, scores: &[Score]) {
     if blink() {
         font.centered("PRESS ENTER TO BEGIN", WIDTH / 2.0, 400.0, 2.0, AMBER);
     }
+    font.centered("M for the instruction manual", WIDTH / 2.0, 428.0, 1.0, DIM);
     binary_band(font, 456.0);
 }
 
@@ -592,6 +594,48 @@ fn defenses(font: &Font, game: &GameState) {
     font.text(
         "Tools lose strength each week until maintained. ENTER to return.",
         MARGIN,
+        460.0,
+        1.0,
+        DIM,
+    );
+}
+
+/// A page of the instruction manual, printed in dark ink on an off-white page.
+fn manual(font: &Font, page: usize) {
+    let pages = crate::manual::pages();
+    let current = &pages[page];
+    let (x, y, w, h) = (32.0, 12.0, WIDTH - 64.0, 436.0);
+    draw_rectangle(x, y, w, h, INK);
+    draw_rectangle_lines(x + 4.0, y + 4.0, w - 8.0, h - 8.0, 2.0, BG);
+    font.centered("THE KILL CHAIN TRAIL", WIDTH / 2.0, y + 14.0, 1.0, DIM);
+    font.centered(current.title, WIDTH / 2.0, y + 30.0, 2.0, BG);
+    draw_line(x + 24.0, y + 52.0, x + w - 24.0, y + 52.0, 2.0, BG);
+
+    let mut line_y = y + 64.0;
+    for paragraph in &current.paragraphs {
+        match paragraph.strip_prefix("# ") {
+            Some(heading) => {
+                font.text(heading, x + 24.0, line_y, 1.0, RED);
+                line_y += 11.0;
+            }
+            None => {
+                for line in wrap(paragraph, 68) {
+                    font.text(&line, x + 24.0, line_y, 1.0, BG);
+                    line_y += 11.0;
+                }
+            }
+        }
+    }
+    font.centered(
+        &format!("- {} -", page + 1),
+        WIDTH / 2.0,
+        y + h - 20.0,
+        1.0,
+        DIM,
+    );
+    font.centered(
+        "LEFT/RIGHT to turn pages, ENTER to close",
+        WIDTH / 2.0,
         460.0,
         1.0,
         DIM,

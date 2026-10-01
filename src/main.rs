@@ -8,6 +8,7 @@ mod draw;
 mod events;
 mod game;
 mod landmarks;
+mod manual;
 mod scores;
 mod street;
 mod ui;
