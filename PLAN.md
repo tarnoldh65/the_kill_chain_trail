@@ -163,7 +163,7 @@ Tasks:
 Success criteria:
 - [x] The workflow passes on push to `main`.
 - [x] The Pages URL loads the title screen with no console errors other than a missing favicon.
-- [ ] A push to `main` redeploys the game without manual steps.
+- [x] A push to `main` redeploys the game without manual steps.
 
 ## Current status
 
@@ -177,4 +177,4 @@ Success criteria:
 - [x] Phase 8: Intern coffee run
 - [x] Phase 9: Variety
 - [ ] Phase 10: Web build
-- [ ] Phase 11: GitHub Pages
+- [x] Phase 11: GitHub Pages
