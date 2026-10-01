@@ -1,180 +1,201 @@
 # Plan for The Kill Chain Trail
 
-MVP plan based on [AGENTS.md](AGENTS.md). A phase is complete only when every success criterion is checked and `cargo test` and `cargo clippy` are clean.
+Plan for the redesign in [REDESIGN.md](REDESIGN.md), based on [AGENTS.md](AGENTS.md). A phase is complete only when every success criterion is checked and `cargo test` and `cargo clippy` are clean for native, and the wasm release build succeeds.
 
 ## Libraries
 
 - Rust 2024 edition, latest stable toolchain.
 - [macroquad](https://crates.io/crates/macroquad) for window, scaling, 2D drawing, input, and audio.
 - [font8x8](https://crates.io/crates/font8x8) for a public domain 8x8 pixel font.
-- Sound effects and music are synthesized in code (square/triangle/noise waves) so no external audio assets are required.
+- [quad-storage](https://crates.io/crates/quad-storage) for the top-ten scoreboard (a file natively, localStorage in the browser). Added in Phase 19 only.
+- Sound effects and music are synthesized in code, so no external audio assets are required.
 
-## Phase 1: Project scaffolding
+## Approach
 
-Tasks:
-- Cargo project, `.gitignore`, minimal README.
+- Work happens on a `redesign` branch. GitHub Pages deploys `main`, so the live MVP stays up until Phase 20 merges.
+- Game logic stays independent of input, rendering, and audio, and is deterministic for a given seed, so every rule can be unit tested and whole games can be simulated.
+- The game stays playable start to finish in the window at the end of every phase. Each phase adds only the screens its rules need; Phase 19 polishes them.
+- All numbers in REDESIGN.md are starting points. Phases 12-18 use them as given; Phase 20 tunes them.
+- Game content (actions, events, campaigns, incidents, landmarks, conference cards) is plain `const` data, like the MVP's choices and events.
+- Kill chain stages, landmark choices, and stage events from the MVP are removed in Phase 12, along with their tests. The intern coffee run, music, sprites, font, scaling, and web build are kept.
 
-Success criteria:
-- [x] `cargo build`, `cargo test`, and `cargo clippy` run clean.
-- [x] `.gitignore` covers build output and editor noise without duplicates.
-- [x] Cargo edition is 2024.
-- [x] README describes only what exists.
+## MVP (complete)
 
-## Phase 2: Core game rules
+Phases 1-11 delivered a playable MVP and are collapsed here. It has project scaffolding and a `.gitignore`; seven kill chain landmarks with seeded choices and random events; a roster with burnout, firings, and Oregon Trail-style departure messages; a 640x480 macroquad front end that scales; synthesized sound effects and three techno tracks; illustrated incident reports; the intern coffee run minigame; a wasm build; and GitHub Pages deployment from `main`.
 
-Tasks:
-- Seven kill chain landmarks played in order: Reconnaissance, Weaponization, Delivery, Exploitation, Installation, Command and Control (C2), Actions on Objectives.
-- Each landmark offers its own choices trading budget, coffee, fatigue, containment, trust, and brand.
-- Budget limits which choices are available; coffee is consumed each stage and running out hurts the team.
-- Falling behind the attacker each stage costs corporate trust and brand loyalty.
-- Outcomes: Contained, Breached, Team Collapsed, Fired, Bankrupt (no affordable choice left at a stage).
-- Game logic is independent of input and output so it can be driven by the terminal now and the graphical front end later.
+Unfinished MVP items, carried into Phase 20:
+- Sound effects audibly play for major events, and music loops during play.
+- The PLAYTEST.md walkthrough passes, and a thoughtful player usually wins while a careless one usually loses.
 
-Success criteria:
-- [x] A decision is made at all seven landmarks, including Actions on Objectives.
-- [x] Each landmark has distinct choices.
-- [x] Budget, coffee, trust, brand, and containment all affect the outcome.
-- [x] A test exhaustively plays every choice path and proves all four outcomes are reachable.
-- [x] Invalid input re-prompts instead of silently picking a choice.
-
-## Phase 3: Crew and consequences
+## Phase 12: Calendar, meters, and endings
 
 Tasks:
-- Roster of analysts, a manager, a CISO, and a CIO, each with individual burnout.
-- Members who reach full burnout leave in humorous ways (quitting, heart attack, stroke, dysentery); low trust gets the CISO fired; low budget makes the Manager redundant.
-- Losing analysts reduces containment progress; losing all analysts collapses the team.
-- Narrative log of decisions, departures, firings, and warnings shown to the player each turn.
+- Replace the kill chain stages with a day counter running from day 1 (a Monday) to IPO day (day 182).
+- Visible meters: valuation, corporate trust, brand loyalty, budget, coffee. Hidden posture: Identity, Endpoint, People, Perimeter, Resilience, Detection (0-100), decaying slowly each day.
+- Day menu: Continue, Check the team, Set the tempo, Send the intern for coffee (once per week). Continue advances one day at a time until something stops the clock or the player presses a key.
+- Tempo (Relaxed, Steady, Crunch) changes burnout and coffee use per day.
+- Every Monday: payroll and upkeep come out of the budget; if short, the most expensive analyst is laid off with a log message.
+- Low brand loyalty drags valuation down weekly.
+- Burnout, departure messages, CISO firing, and SOC Manager redundancy carry over from the MVP.
+- Endings: IPO, IPO pulled (valuation below 40% of base), Shut down, Fired, Team collapsed, Bankrupt. Only IPO has a score.
+- Persistent timeline bar along the top: today's marker, IPO day at the end, `DAY n` and `n DAYS TO IPO`.
+- Temporary fixed starting roster, budget, and valuation until Phase 13.
 
 Success criteria:
-- [x] The player enters a company name and incident lead name at startup.
-- [x] Roster and burnout are shown each turn and affect gameplay.
-- [x] Burnout departures, firings, and redundancies produce Oregon Trail-style messages.
-- [x] Unit tests cover departures, firing, coffee shortage, and each outcome trigger.
+- [ ] Continue advances exactly one day per tick, and the game ends as IPO on day 182 if nothing else ends it first (unit tested).
+- [ ] Payroll is taken only on Mondays, and a short budget lays off the most expensive analyst before ending in Bankrupt (unit tested).
+- [ ] Each tempo changes burnout and coffee use in the documented direction (unit tested).
+- [ ] Posture decays daily, never leaves 0-100, and is not shown anywhere on screen (unit tested for range and decay).
+- [ ] Each of the six endings is triggered by its condition, and only IPO produces a score (unit tested).
+- [ ] The intern can be sent at most once per week; coffee capacity and restock rules still hold (unit tested).
+- [ ] No kill chain stage, landmark choice, or stage event code remains.
+- [ ] The timeline bar shows on every gameplay screen and the marker moves as days pass.
 
-## Phase 4: Graphical front end
+## Phase 13: Setup and the Vendor Hall
 
 Tasks:
-- macroquad window at 640x480 logical resolution, scaled with integer steps to larger windows.
-- Limited 8-bit palette and pixel font.
-- Screens: title ("The Kill Chain Trail"), name entry, landmark decision, status panel with roster, event log, end summary.
-- Remove the terminal front end once the graphical one covers the same flow.
+- After naming the company and lead, pick a company profile: Fintech, Healthtech, or Gaming startup, each with its starting budget, base valuation, score multiplier, and threat mix.
+- Vendor Hall shop screen: hire and name junior and senior analysts; buy tools (EDR, SIEM, MFA tokens, email security gateway, DDoS protection/WAF, immutable backups); buy services (IR retainer, cyber insurance) and coffee.
+- Purchased tools are owned but not deployed, so they do not affect posture yet.
+- Leftover budget carries into the game.
 
 Success criteria:
-- [x] Opening screen displays "The Kill Chain Trail".
-- [x] The full game is playable start to finish in the window with keyboard input.
-- [x] Layout is readable at 640x480 and scales cleanly when resized.
+- [ ] Each profile sets its documented budget, valuation, multiplier, and threat mix (unit tested).
+- [ ] Purchases cannot exceed the budget, each tool can be bought once, and coffee cannot exceed capacity (unit tested).
+- [ ] Hired analysts keep their entered names, levels, and salaries; payroll reflects them (unit tested).
+- [ ] Owned tools do not change posture until deployed (unit tested).
+- [ ] The setup flow (names, profile, Vendor Hall) is playable with the keyboard and leads into day 1.
 
-## Phase 5: Audio
+## Phase 14: Defender actions
 
 Tasks:
-- Synthesized 8-bit sound effects for choices, departures, and outcomes.
-- Original synthesized cyber-techno music loop.
+- "Take an action" in the day menu lists the actions in REDESIGN.md section 7 that are currently available.
+- Actions cost budget, days, or both; tempo shortens or lengthens their duration; seniors speed them up.
+- Days pass during an action and the world keeps moving; an interruption pauses it and the player can resume it.
+- Prerequisites: deployment needs an owned tool, MFA enforcement needs MFA tokens, SIEM tuning needs a SIEM, backup tests need backups.
+- Effects on posture, burnout, trust, and roster (recruiting) as documented, with log messages.
 
 Success criteria:
-- [ ] Sound effects play for major events.
-- [ ] Background music loops during play.
-- [x] No external or proprietary audio assets are used.
+- [ ] Every action applies its documented cost, duration, and effects (unit tested per action).
+- [ ] Actions with unmet prerequisites or unaffordable costs are not offered (unit tested).
+- [ ] Tempo and seniors change action duration in the documented direction (unit tested).
+- [ ] An interrupted action resumes with its remaining days, not from the start (unit tested).
+- [ ] A recruited analyst is named by the player and joins the roster and payroll (unit tested).
 
-## Phase 6: Polish and playtest
+## Phase 15: The attacker
 
 Tasks:
-- Tune balance so a thoughtful player usually wins and a careless one usually loses.
-- Walk through [PLAYTEST.md](PLAYTEST.md).
-- Remove unused code; finalize README.
+- Campaigns start at random, more often as IPO day approaches, weighted by the company profile's threat mix. Each has an actor, an objective, and hidden progress: Reconnaissance, Initial access, Foothold, Objective.
+- Each day every campaign rolls to advance against the posture areas that defend it; a failed advance can end it.
+- Detection rolls turn campaign steps into alerts; false positives are mixed in, fewer with a tuned SIEM.
+- Alert choices: Investigate (1-3 days, better with seniors), Call the IR firm (needs retainer, costs budget), Ignore.
+- A campaign reaching its objective becomes an incident with response choices and a lingering condition (Systems down, Regulator inquiry, Leaky roadmap, Downtime, Persistent access, Paranoia). Conditions show as status tags, change available actions, and are cleared by a specific action.
+- Resilience and cyber insurance reduce incident damage.
+- Every ending shows the after-action report: each campaign, how far it got, whether it was seen, and which alerts were real.
 
 Success criteria:
+- [ ] Higher posture in a campaign's defending areas makes it advance less often across seeds (unit tested).
+- [ ] Higher Detection produces more real alerts; a tuned SIEM produces fewer false positives (unit tested across seeds).
+- [ ] Investigating a real alert can evict its campaign; investigating a false positive only costs days; the IR firm needs a retainer (unit tested).
+- [ ] Every incident type occurs across seeds, applies its responses, and sets and clears its lingering condition (unit tested).
+- [ ] Each lingering condition changes the available actions as documented (unit tested).
+- [ ] Resilience and insurance reduce incident damage (unit tested).
+- [ ] The after-action report lists every campaign of the game with its furthest stage and alerts marked real or false (unit tested).
+- [ ] Campaign stages are never shown to the player before the game ends.
+
+## Phase 16: Random events
+
+Tasks:
+- Non-attacker events from REDESIGN.md section 10 interrupt the clock; some ask for a decision.
+- Events are seeded and can be good, bad, or neutral.
+
+Success criteria:
+- [ ] Every event occurs across seeds and applies its documented effects (unit tested).
+- [ ] Every decision option in an event is reachable and applies its effects (unit tested).
+- [ ] Events stop the clock and appear in the log.
+
+## Phase 17: Landmarks and IPO delays
+
+Tasks:
+- Landmarks on fixed dates: Board Security Briefing, Security Conference (placeholder fort until Phase 18), SOC 2 Type II Audit, Confidential S-1 Filing, Third-Party Pen Test, Public S-1 Flip, Roadshow, IPO Day.
+- Forts stop the clock and offer the Vendor Hall, hiring, and rest without time passing, as documented per landmark.
+- Rivers are a single decision with a risky outcome based on hidden posture and resources.
+- The pen test shows posture as letter grades once, then never again.
+- The Public S-1 Flip raises the threat level and offers a budget top-up when trust is high.
+- IPO delays: failing the audit, a PII breach or insider leak after the Flip, or Systems down at the Roadshow pushes IPO day and later landmarks back 2 weeks, costs valuation and trust, and redraws the timeline. Delays past 6 weeks end the game as IPO pulled.
+- Landmark icons appear on the timeline bar.
+
+Success criteria:
+- [ ] Every landmark triggers on its date, and every river outcome is reachable across seeds (unit tested).
+- [ ] Each delay trigger moves IPO day and all later landmarks by 2 weeks and costs valuation and trust (unit tested).
+- [ ] A delay past 6 weeks total ends the game as IPO pulled with no score (unit tested).
+- [ ] The pen test report card matches hidden posture as grades and is not shown afterward (unit tested for grades).
+- [ ] Hiding a past incident at the S-1 filing can surface later for a larger valuation hit (unit tested).
+- [ ] The timeline shows every landmark and rescales after a delay.
+
+## Phase 18: The Security Conference
+
+Tasks:
+- Attendee picker: the lead always goes; number keys toggle analysts; ENTER confirms; the total cost is shown.
+- Track picker for each attendee: Talks, Villages, Expo floor, Hallway track and parties.
+- The conference lasts 3 days on the clock; Detection drops in proportion to analysts away and the stay-home crew gains burnout.
+- Conference report: one illustrated card per attendee drawn from the chosen track's pool, revealed with ENTER, no duplicates within a conference. Lead cards affect trust, the Vendor Hall discount, or a free senior hire.
+- Analyst expertise adds a non-decaying bonus to one posture area while that analyst stays; their departure message mentions it.
+- Afterwards the Vendor Hall and the job fair open.
+
+Success criteria:
+- [ ] Each attendee, including the lead, is charged once, and the picker cannot exceed the budget (unit tested).
+- [ ] No conference card ever lowers posture (unit tested over every card).
+- [ ] Every card in every track occurs across seeds, and no two attendees get the same card in one conference (unit tested).
+- [ ] Expertise raises its posture area while the analyst stays and is removed when they leave (unit tested).
+- [ ] Detection drops during the conference in proportion to analysts away, and stay-home analysts gain burnout (unit tested).
+- [ ] Every lead card applies its effect, including the discount and the no-fee senior hire (unit tested).
+
+## Phase 19: Presentation
+
+Tasks:
+- Final 640x480 layout from REDESIGN.md section 13: timeline, status panel with status tags and roster, log, numbered options.
+- Sprites in the existing palette: timeline marker (an analyst pushing a server rack), landmark icons, one illustration per incident type, one per conference track, the IPO bell.
+- New sound cues: day tick, payday, alert klaxon, incident sting, landmark fanfare, IPO bell.
+- Top-ten scoreboard of IPO scores on the title screen, saved with quad-storage natively and in the browser.
+
+Success criteria:
+- [ ] Every new sprite fits its size and uses only the game palette (unit tested).
+- [ ] Every new sound cue is synthesized and never clips (unit tested).
+- [ ] The scoreboard keeps the ten best IPO scores in order and ignores other endings (unit tested).
+- [ ] The scoreboard survives restarting the game natively and reloading the page in the browser.
+- [ ] Every screen is readable at 640x480 and scales cleanly when resized, natively and in the browser.
+
+## Phase 20: Balance, playtest, and release
+
+Tasks:
+- Simulated strategies in tests: Idle, Random, and Sensible scripted.
+- Tune numbers until the targets below hold.
+- Rewrite PLAYTEST.md for the redesign and walk through it natively and in Chrome and Firefox.
+- Update README for the redesign; keep it minimal.
+- Merge `redesign` into `main` so GitHub Pages deploys it.
+
+Success criteria:
+- [ ] Across 100 seeds per profile, Idle reaches the IPO under 10% of the time (unit tested).
+- [ ] Across 100 seeds per profile, Random reaches the IPO 25-40% of the time (unit tested).
+- [ ] Across 100 seeds per profile, Sensible reaches the IPO over 70% of the time (unit tested).
+- [ ] Every ending is reached by some strategy and seed (unit tested).
+- [ ] Sensible skipping any one action or purchase still reaches the IPO in some seeds (unit tested).
+- [ ] A full game takes about 20-30 minutes.
+- [ ] Sound effects play for major events and music loops during play.
 - [ ] Every item in PLAYTEST.md passes.
-- [x] No unused code or clippy warnings.
-- [x] README is accurate and minimal.
-
-## Phase 7: Incident reports and music selection
-
-Tasks:
-- After each decision, an incident report pop-up shows a pixel-art illustration of the activity and of the worst setback (falling behind, firing or redundancy, departure), with flavor text and that turn's consequences.
-- Two more original synthesized techno tracks.
-- Title screen menu to pick a track or turn music off, remembered across games.
-
-Success criteria:
-- [x] Every choice has report text and an illustration; ENTER dismisses the report.
-- [x] Sprites are 24x16 and use only the game palette (unit tested).
-- [x] Three tracks, each four whole bars that never clip (unit tested).
-- [x] Music choice keys work only on the title screen (unit tested).
-
-## Phase 8: Intern coffee run
-
-Tasks:
-- Option 4 at every stage sends the intern for coffee for $10, once per stage, without using the stage's turn.
-- Frogger-style street: four lanes (two each way) with different random speeds and randomly spaced cars and trucks; faster lanes send cars less often.
-- The intern must reach the coffee shop door, then the office door, using the arrow keys.
-- The break room holds 36 pots; option 4 is hidden while coffee is full.
-- Surviving restocks 12 pots of coffee (up to capacity); getting hit loses the $10 with a humorous log message.
-- Original chaotic "Rush Hour" techno plays during the run unless music is off.
-
-Success criteria:
-- [x] Lanes run both ways at distinct speeds with non-overlapping, randomly spaced traffic, sparser in faster lanes (unit tested).
-- [x] Running out of money with no affordable choice ends the game as Bankrupt (unit tested).
-- [x] Hopping into a car or a car driving into the intern ends the run (unit tested).
-- [x] Only a round trip through both doors succeeds (unit tested).
-- [x] Cost, once-per-stage limit, coffee capacity, and coffee restock are unit tested.
-- [x] Rush Hour music is four whole bars and never clips (unit tested).
-
-## Phase 9: Variety
-
-Tasks:
-- Six choices per landmark; each game offers a seeded random three of them.
-- Four random events per landmark (good, bad, or neutral), one applied after each decision and shown in the log and incident report.
-- Bankruptcy considers only the offered choices.
-- Rebalance so random play still wins about a third of the time.
-
-Success criteria:
-- [x] Offered choices are three different choices from the landmark and stable within a game (unit tested).
-- [x] Every choice is offered and every event happens across seeds (unit tested).
-- [x] Across 40 seeds of exhaustive play, every outcome is reachable, every choice is part of a win, and the win rate is 25-40% (unit tested).
-
-## Phase 10: Web build
-
-Tasks:
-- Build for `wasm32-unknown-unknown` using macroquad's built-in web support; no new crates.
-- `.cargo/config.toml` passes `-C link-arg=--allow-undefined` for wasm so macroquad's JavaScript audio imports link on current Rust.
-- `web/index.html` with a full-window canvas, plus macroquad's `mq_js_bundle.js` vendored to match the macroquad version in `Cargo.lock`.
-- The build copies `the_kill_chain_trail.wasm` into `web/`; the copied wasm is ignored by git.
-- Browsers block audio until the player interacts; the bundle resumes audio on the first key press or click.
-- Dev container: add the wasm target, forward port 8000, and remove the X11 mount so it works on any host.
-- Dev container includes Claude Code, headless Chromium with chromedriver, and a Playwright MCP server so agents can playtest the web build.
-- README: commands to build and serve locally.
-
-Success criteria:
-- [x] `cargo build --release --target wasm32-unknown-unknown` succeeds, and `cargo test` and `cargo clippy` stay clean for native.
-- [ ] Served with `python3 -m http.server -d web 8000`, the game plays start to finish in Chrome and Firefox, including the intern coffee run.
-- [x] The 640x480 frame scales and letterboxes when the browser window is resized.
-- [ ] Music and sound effects play in the browser after the first key press.
-- [x] Name entry accepts typing and Backspace in the browser.
-- [ ] The dev container opens on a host without X11 and serves the game on forwarded port 8000.
-- [x] In the dev container, Claude Code's Playwright MCP server loads the web build and returns a screenshot of the game.
-
-## Phase 11: GitHub Pages
-
-Tasks:
-- `.github/workflows/pages.yml` runs on push to `main` and on manual dispatch: install stable Rust with the wasm target, run the Phase 10 release build, copy the wasm into `web/`, and deploy `web/` with GitHub's official Pages actions (latest major versions).
-- Repository Settings > Pages > Source is set to "GitHub Actions" (manual, one time).
-- `web/` already uses relative paths, so it works under the `/the_kill_chain_trail/` subpath unchanged.
-- README: link to https://lehmanrd.github.io/the_kill_chain_trail/.
-
-Success criteria:
-- [x] The workflow passes on push to `main`.
-- [x] The Pages URL loads the title screen with no console errors other than a missing favicon.
-- [x] A push to `main` redeploys the game without manual steps.
+- [ ] README is accurate and minimal, with no unused code or clippy warnings.
+- [ ] The Pages URL serves the redesigned game after the merge.
 
 ## Current status
 
-- [x] Phase 1: Project scaffolding
-- [x] Phase 2: Core game rules
-- [x] Phase 3: Crew and consequences
-- [x] Phase 4: Graphical front end
-- [ ] Phase 5: Audio
-- [ ] Phase 6: Polish and playtest
-- [x] Phase 7: Incident reports and music selection
-- [x] Phase 8: Intern coffee run
-- [x] Phase 9: Variety
-- [ ] Phase 10: Web build
-- [x] Phase 11: GitHub Pages
+- [x] MVP (Phases 1-11)
+- [ ] Phase 12: Calendar, meters, and endings
+- [ ] Phase 13: Setup and the Vendor Hall
+- [ ] Phase 14: Defender actions
+- [ ] Phase 15: The attacker
+- [ ] Phase 16: Random events
+- [ ] Phase 17: Landmarks and IPO delays
+- [ ] Phase 18: The Security Conference
+- [ ] Phase 19: Presentation
+- [ ] Phase 20: Balance, playtest, and release
