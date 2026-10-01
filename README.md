@@ -2,9 +2,9 @@
 
 A cyber security operations game inspired by Oregon Trail, written in Rust.
 
-Lead a SOC team through the seven landmarks of the cyber kill chain (Reconnaissance, Weaponization, Delivery, Exploitation, Installation, Command and Control, Actions on Objectives), spending budget, coffee, and your team's sleep to contain the attacker before trust, brand loyalty, or your analysts run out.
+Run the SOC at a company racing toward its IPO, 26 weeks away. Keep corporate trust, brand loyalty, the valuation, the budget, and your team's sanity intact until the bell rings. The game is mid-redesign; see [REDESIGN.md](REDESIGN.md) and [PLAN.md](PLAN.md).
 
-Pick a music track (1-3) or turn music off (4) on the title screen. Enter your company and name, then press 1-3 to pick one of three choices drawn at random from six for each landmark (a random event also strikes each turn); an illustrated incident report shows what happened before the next stage. Once per stage, unless the 36-pot break room is full, press 4 to send the intern for coffee ($10): use the arrow keys to cross four lanes of traffic to the coffee shop door and back to the office door. The window renders at 640x480 and scales when resized. Sound effects and techno music are synthesized in code; see [PLAN.md](PLAN.md).
+Pick a music track (1-3) or turn music off (4) on the title screen, then name your company and yourself. From the day menu, press 1 to let the days pass (any key stops the clock), 2 to check the team, 3 to change the tempo (Relaxed, Steady, Crunch), or 4 once a week to send the intern for coffee ($10): use the arrow keys to cross four lanes of traffic to the coffee shop door and back to the office door. Payroll comes out every Monday. The window renders at 640x480 and scales when resized. Sound effects and techno music are synthesized in code.
 
 ## Run
 

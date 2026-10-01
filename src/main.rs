@@ -1,4 +1,3 @@
-mod art;
 mod audio;
 mod draw;
 mod game;

@@ -31,7 +31,7 @@ Unfinished MVP items, carried into Phase 20:
 
 Tasks:
 - Replace the kill chain stages with a day counter running from day 1 (a Monday) to IPO day (day 182).
-- Visible meters: valuation, corporate trust, brand loyalty, budget, coffee. Hidden posture: Identity, Endpoint, People, Perimeter, Resilience, Detection (0-100), decaying slowly each day.
+- Visible meters: valuation, corporate trust, brand loyalty, budget, coffee. Hidden posture: Identity, Endpoint, People, Perimeter, Resilience, Detection (0-100), decaying every Monday.
 - Day menu: Continue, Check the team, Set the tempo, Send the intern for coffee (once per week). Continue advances one day at a time until something stops the clock or the player presses a key.
 - Tempo (Relaxed, Steady, Crunch) changes burnout and coffee use per day.
 - Every Monday: payroll and upkeep come out of the budget; if short, the most expensive analyst is laid off with a log message.
@@ -42,14 +42,14 @@ Tasks:
 - Temporary fixed starting roster, budget, and valuation until Phase 13.
 
 Success criteria:
-- [ ] Continue advances exactly one day per tick, and the game ends as IPO on day 182 if nothing else ends it first (unit tested).
-- [ ] Payroll is taken only on Mondays, and a short budget lays off the most expensive analyst before ending in Bankrupt (unit tested).
-- [ ] Each tempo changes burnout and coffee use in the documented direction (unit tested).
-- [ ] Posture decays daily, never leaves 0-100, and is not shown anywhere on screen (unit tested for range and decay).
-- [ ] Each of the six endings is triggered by its condition, and only IPO produces a score (unit tested).
-- [ ] The intern can be sent at most once per week; coffee capacity and restock rules still hold (unit tested).
-- [ ] No kill chain stage, landmark choice, or stage event code remains.
-- [ ] The timeline bar shows on every gameplay screen and the marker moves as days pass.
+- [x] Continue advances exactly one day per tick, and the game ends as IPO on day 182 if nothing else ends it first (unit tested).
+- [x] Payroll is taken only on Mondays, and a short budget lays off the most expensive analyst before ending in Bankrupt (unit tested).
+- [x] Each tempo changes burnout and coffee use in the documented direction (unit tested).
+- [x] Posture decays every Monday, never leaves 0-100, and is not shown anywhere on screen (unit tested for range and decay).
+- [x] Each of the six endings is triggered by its condition, and only IPO produces a score (unit tested).
+- [x] The intern can be sent at most once per week; coffee capacity and restock rules still hold (unit tested).
+- [x] No kill chain stage, landmark choice, or stage event code remains.
+- [x] The timeline bar shows on the day menu, while days pass, and on the team screen, and the marker moves as days pass.
 
 ## Phase 13: Setup and the Vendor Hall
 
@@ -190,7 +190,7 @@ Success criteria:
 ## Current status
 
 - [x] MVP (Phases 1-11)
-- [ ] Phase 12: Calendar, meters, and endings
+- [x] Phase 12: Calendar, meters, and endings
 - [ ] Phase 13: Setup and the Vendor Hall
 - [ ] Phase 14: Defender actions
 - [ ] Phase 15: The attacker

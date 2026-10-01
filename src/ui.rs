@@ -1,8 +1,10 @@
 use crate::audio::TRACKS;
-use crate::game::{Choice, GameState, Outcome, Setback};
+use crate::game::{GameState, Outcome};
 use crate::street::{Hop, Street};
 
 const NAME_LIMIT: usize = 20;
+/// Real seconds each day takes while the clock is running.
+pub const DAY_SECONDS: f32 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cue {
@@ -49,7 +51,7 @@ pub fn cue(before: &Screen, after: &Screen) -> Option<Cue> {
         if old.outcome.is_none()
             && let Some(outcome) = new.outcome
         {
-            return Some(if outcome == Outcome::Contained {
+            return Some(if outcome == Outcome::Ipo {
                 Cue::Win
             } else {
                 Cue::Lose
@@ -58,6 +60,9 @@ pub fn cue(before: &Screen, after: &Screen) -> Option<Cue> {
         if new.team.len() < old.team.len() {
             return Some(Cue::Alarm);
         }
+    }
+    if let (Screen::Travel(_), Screen::Travel(_)) = (before, after) {
+        return None;
     }
     (before != after).then_some(Cue::Select)
 }
@@ -74,10 +79,23 @@ pub enum Input {
 pub enum Screen {
     Title,
     Company(String),
-    Lead { company: String, lead: String },
+    Lead {
+        company: String,
+        lead: String,
+    },
+    /// The day menu, with the clock stopped.
     Play(GameState),
-    Report(Report),
+    /// Days passing on their own until something happens or a key is pressed.
+    Travel(Travel),
+    Team(GameState),
     Coffee(CoffeeRun),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Travel {
+    pub game: GameState,
+    /// Seconds since the last day passed, kept in milliseconds so screens stay comparable.
+    elapsed_ms: u32,
 }
 
 /// The intern's trip across the street, with the game waiting on the result.
@@ -87,32 +105,37 @@ pub struct CoffeeRun {
     pub street: Street,
 }
 
-/// What happened after a decision, shown before play continues.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Report {
-    pub game: GameState,
-    pub choice: Choice,
-    pub setback: Option<Setback>,
-    /// Index of the first log entry caused by the decision.
-    pub news: usize,
-}
-
 impl Screen {
     pub fn game(&self) -> Option<&GameState> {
         match self {
             Self::Play(game)
-            | Self::Report(Report { game, .. })
+            | Self::Team(game)
+            | Self::Travel(Travel { game, .. })
             | Self::Coffee(CoffeeRun { game, .. }) => Some(game),
             _ => None,
         }
     }
 
-    /// Advances anything that moves on its own, like traffic.
+    /// Advances anything that moves on its own, like traffic and the calendar.
     pub fn tick(self, dt: f32) -> Self {
         match self {
             Self::Coffee(mut run) => {
                 run.street.tick(dt);
                 Self::Coffee(run)
+            }
+            Self::Travel(Travel {
+                mut game,
+                mut elapsed_ms,
+            }) => {
+                elapsed_ms += (dt * 1000.0) as u32;
+                let day_ms = (DAY_SECONDS * 1000.0) as u32;
+                while elapsed_ms >= day_ms {
+                    elapsed_ms -= day_ms;
+                    if game.advance() {
+                        return Self::Play(game);
+                    }
+                }
+                Self::Travel(Travel { game, elapsed_ms })
             }
             screen => screen,
         }
@@ -126,29 +149,24 @@ impl Screen {
                 lead: String::new(),
             },
             (Self::Company(company), input) => Self::Company(edit(company, input)),
-            (Self::Lead { company, lead }, Input::Enter) if !lead.trim().is_empty() => Self::Play(
-                GameState::new(company.trim(), lead.trim(), macroquad::rand::rand()),
-            ),
+            (Self::Lead { company, lead }, Input::Enter) if !lead.trim().is_empty() => {
+                Self::Play(GameState::new(company.trim(), lead.trim()))
+            }
             (Self::Lead { company, lead }, input) => Self::Lead {
                 company,
                 lead: edit(lead, input),
             },
             (Self::Play(game), Input::Enter) if game.outcome.is_some() => Self::Title,
-            (Self::Play(mut game), Input::Char(c @ '1'..='3')) if game.outcome.is_none() => {
-                let choice = game.options()[c as usize - '1' as usize];
-                if !game.can_afford(&choice) {
-                    return Self::Play(game);
-                }
-                let news = game.log.len() + 1;
-                let setback = game.play(&choice);
-                Self::Report(Report {
-                    game,
-                    choice,
-                    setback,
-                    news,
-                })
+            (Self::Play(game), _) if game.outcome.is_some() => Self::Play(game),
+            (Self::Play(game), Input::Char('1')) => Self::Travel(Travel {
+                game,
+                elapsed_ms: 0,
+            }),
+            (Self::Play(game), Input::Char('2')) => Self::Team(game),
+            (Self::Play(mut game), Input::Char('3')) => {
+                game.tempo = game.tempo.next();
+                Self::Play(game)
             }
-            (Self::Report(report), Input::Enter) => Self::Play(report.game),
             (Self::Play(mut game), Input::Char('4')) if game.can_send_intern() => {
                 game.send_intern();
                 Self::Coffee(CoffeeRun {
@@ -156,6 +174,8 @@ impl Screen {
                     street: Street::new(),
                 })
             }
+            (Self::Travel(travel), _) => Self::Play(travel.game),
+            (Self::Team(game), Input::Enter) => Self::Play(game),
             (Self::Coffee(mut run), Input::Arrow(hop)) => {
                 run.street.hop(hop);
                 Self::Coffee(run)
@@ -202,7 +222,7 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::{Outcome, Stage};
+    use crate::game::{COFFEE_RUN_COST, IPO_DAY, Tempo};
 
     fn type_text(mut screen: Screen, text: &str) -> Screen {
         for c in text.chars() {
@@ -260,33 +280,74 @@ mod tests {
         assert_eq!(screen, Screen::Company("A".to_string()));
     }
 
-    #[test]
-    fn number_keys_play_the_matching_offered_choice() {
-        let before = new_game();
-        let second = game(&before).options()[1];
-        let screen = before.update(Input::Char('2'));
-        let Screen::Report(report) = &screen else {
-            panic!("expected Report, got {screen:?}");
-        };
-
-        assert_eq!(report.choice, second);
-        assert_eq!(game(&screen).stage, Stage::Weaponization);
+    /// Starts the clock and runs it for `seconds`.
+    fn travel(screen: Screen, seconds: f32) -> Screen {
+        screen.update(Input::Char('1')).tick(seconds)
     }
 
     #[test]
-    fn a_decision_shows_its_report_until_enter() {
+    fn continue_runs_the_clock_one_day_per_tick() {
         let screen = new_game().update(Input::Char('1'));
-        let Screen::Report(report) = &screen else {
-            panic!("expected Report, got {screen:?}");
-        };
+        assert!(matches!(screen, Screen::Travel(_)));
+        assert_eq!(game(&screen).day, 1);
 
-        assert!(report.game.log[report.news - 1].contains(report.choice.label));
-        assert!(report.game.log[report.news].starts_with("Meanwhile"));
-        assert_eq!(screen.clone().update(Input::Char('1')), screen);
-        assert_eq!(
-            screen.clone().update(Input::Enter),
-            Screen::Play(report.game.clone())
+        let screen = screen.tick(DAY_SECONDS / 2.0);
+        assert_eq!(game(&screen).day, 1);
+        let screen = screen.tick(DAY_SECONDS / 2.0);
+        assert_eq!(game(&screen).day, 2);
+        let screen = screen.tick(DAY_SECONDS * 3.0);
+        assert_eq!(game(&screen).day, 5);
+        assert!(matches!(screen, Screen::Travel(_)));
+    }
+
+    #[test]
+    fn any_key_stops_the_clock() {
+        for input in [Input::Char('x'), Input::Enter, Input::Arrow(Hop::Up)] {
+            let screen = travel(new_game(), DAY_SECONDS).update(input);
+
+            assert!(matches!(screen, Screen::Play(_)));
+            assert_eq!(game(&screen).day, 2);
+        }
+    }
+
+    #[test]
+    fn something_happening_stops_the_clock() {
+        let screen = travel(
+            with_game(new_game(), |game| game.coffee = 1),
+            DAY_SECONDS * 5.0,
         );
+
+        assert!(matches!(screen, Screen::Play(_)));
+        assert_eq!(game(&screen).day, 2);
+        assert!(game(&screen).log.last().unwrap().contains("coffee ran out"));
+    }
+
+    #[test]
+    fn the_clock_stops_at_the_end_of_the_game() {
+        let screen = with_game(new_game(), |game| game.day = IPO_DAY - 1);
+        let screen = travel(screen, DAY_SECONDS * 5.0);
+
+        assert!(matches!(screen, Screen::Play(_)));
+        assert_eq!(game(&screen).outcome, Some(Outcome::Ipo));
+        assert_eq!(screen.clone().update(Input::Char('1')), screen);
+    }
+
+    #[test]
+    fn two_checks_the_team_until_enter() {
+        let screen = new_game().update(Input::Char('2'));
+        assert!(matches!(screen, Screen::Team(_)));
+        assert_eq!(screen.clone().update(Input::Char('1')), screen);
+
+        assert_eq!(screen.update(Input::Enter), new_game());
+    }
+
+    #[test]
+    fn three_cycles_the_tempo() {
+        let screen = new_game().update(Input::Char('3'));
+        assert_eq!(game(&screen).tempo, Tempo::Crunch);
+
+        let screen = screen.update(Input::Char('3'));
+        assert_eq!(game(&screen).tempo, Tempo::Relaxed);
     }
 
     fn street(screen: &mut Screen) -> &mut Street {
@@ -300,7 +361,7 @@ mod tests {
     fn four_sends_the_intern_across_the_street() {
         let mut screen = new_game().update(Input::Char('4'));
 
-        assert_eq!(game(&screen).budget, 140);
+        assert_eq!(game(&screen).budget, 500_000 - COFFEE_RUN_COST);
         assert_eq!(street(&mut screen).row, 0);
         let mut screen = screen.update(Input::Arrow(Hop::Up));
         assert_eq!(street(&mut screen).row, 1);
@@ -321,8 +382,9 @@ mod tests {
     }
 
     #[test]
-    fn ticks_only_move_the_street() {
+    fn ticks_only_move_the_street_and_the_clock() {
         assert_eq!(Screen::Title.tick(1.0), Screen::Title);
+        assert_eq!(new_game().tick(1.0), new_game());
 
         let mut screen = new_game().update(Input::Char('4'));
         let before = street(&mut screen).lanes.clone();
@@ -367,19 +429,24 @@ mod tests {
     }
 
     #[test]
-    fn unaffordable_and_invalid_choices_are_ignored() {
-        let screen = with_game(new_game(), |game| game.budget = 0);
-        let paid = game(&screen)
-            .options()
-            .iter()
-            .position(|c| c.cost > 0)
-            .unwrap();
+    fn the_intern_goes_once_per_week() {
+        let screen = new_game().update(Input::Char('4'));
+        let screen = match screen {
+            Screen::Coffee(mut run) => {
+                run.street.survived = Some(false);
+                Screen::Coffee(run).update(Input::Enter)
+            }
+            other => panic!("expected Coffee, got {other:?}"),
+        };
 
-        let screen = screen
-            .update(Input::Char(char::from(b'1' + paid as u8)))
-            .update(Input::Char('7'));
+        assert_eq!(screen.clone().update(Input::Char('4')), screen);
+    }
 
-        assert_eq!(game(&screen).stage, Stage::Reconnaissance);
+    #[test]
+    fn invalid_keys_are_ignored() {
+        let screen = new_game();
+
+        assert_eq!(screen.clone().update(Input::Char('7')), screen);
     }
 
     #[test]
@@ -396,44 +463,44 @@ mod tests {
         assert_eq!(cue(&before, &after), Some(Cue::Select));
 
         let before = new_game();
-        let after = before.clone().update(Input::Char('1'));
+        let after = before.clone().update(Input::Char('3'));
         assert_eq!(cue(&before, &after), Some(Cue::Select));
     }
 
     #[test]
-    fn ignored_input_is_silent() {
+    fn ignored_input_and_quiet_days_are_silent() {
         let before = Screen::Company(String::new());
         let after = before.clone().update(Input::Enter);
+        assert_eq!(cue(&before, &after), None);
 
+        let before = new_game().update(Input::Char('1'));
+        let after = before.clone().tick(DAY_SECONDS);
+        assert_eq!(game(&after).day, 2);
         assert_eq!(cue(&before, &after), None);
     }
 
     #[test]
     fn losing_a_team_member_cues_the_alarm() {
-        let before = with_game(new_game(), |game| game.team[0].burnout = 120);
-        let after = before.clone().update(Input::Char('1'));
+        let before =
+            with_game(new_game(), |game| game.team[0].burnout = 99).update(Input::Char('1'));
+        let after = before.clone().tick(DAY_SECONDS);
 
         assert_eq!(cue(&before, &after), Some(Cue::Alarm));
     }
 
     #[test]
-    fn outcomes_cue_win_or_lose() {
-        let final_stage = |containment| {
+    fn outcomes_cue_win_only_for_an_ipo() {
+        let last_day = |trust| {
             with_game(new_game(), |game| {
-                game.stage = Stage::ActionsOnObjectives;
-                game.containment = containment;
+                game.day = IPO_DAY - 1;
+                game.trust = trust;
             })
+            .update(Input::Char('1'))
         };
-        let (won, lost) = (final_stage(100), final_stage(0));
+        let (won, lost) = (last_day(60), last_day(0));
 
-        assert_eq!(
-            cue(&won, &won.clone().update(Input::Char('1'))),
-            Some(Cue::Win)
-        );
-        assert_eq!(
-            cue(&lost, &lost.clone().update(Input::Char('1'))),
-            Some(Cue::Lose)
-        );
+        assert_eq!(cue(&won, &won.clone().tick(DAY_SECONDS)), Some(Cue::Win));
+        assert_eq!(cue(&lost, &lost.clone().tick(DAY_SECONDS)), Some(Cue::Lose));
     }
 
     #[test]
