@@ -1,9 +1,18 @@
 use crate::audio::TRACKS;
 use crate::conference::Track;
-use crate::game::{Action, GameState, Item, Outcome, Profile, Reply};
+use crate::game::{Action, Entry, GameState, Item, Outcome, Profile, Reply};
 use crate::street::{Hop, Street};
 
 const NAME_LIMIT: usize = 20;
+pub const WEEKDAYS: [&str; 7] = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+/// Pixels per line of log text, plus the gaps that separate entries and days.
+pub const LOG_LINE: f32 = 10.0;
+const ENTRY_GAP: f32 = 4.0;
+const DAY_GAP: f32 = 8.0;
+/// Characters per line and pixels of height on a page of the full log.
+pub const PAGE_WIDTH: usize = 76;
+pub const PAGE_HEIGHT: f32 = 400.0;
+
 /// Real seconds each day takes while the clock is running.
 pub const DAY_SECONDS: f32 = 0.5;
 
@@ -155,8 +164,19 @@ pub enum Screen {
     Play(GameState),
     /// Days passing on their own until something happens or a key is pressed.
     Travel(Travel),
-    Team(GameState),
+    /// The roster, with a cursor for choosing someone to let go.
+    Team {
+        game: GameState,
+        cursor: usize,
+        /// Waiting for Y or N before firing the member under the cursor.
+        confirming: bool,
+    },
     Coffee(CoffeeRun),
+    /// The whole log, one page at a time; page 0 is the oldest.
+    Log {
+        game: GameState,
+        page: usize,
+    },
     /// The after-action report once the game is over.
     Report(GameState),
 }
@@ -207,8 +227,9 @@ impl Screen {
     pub fn game(&self) -> Option<&GameState> {
         match self {
             Self::Play(game)
-            | Self::Team(game)
+            | Self::Team { game, .. }
             | Self::Report(game)
+            | Self::Log { game, .. }
             | Self::Attendees { game, .. }
             | Self::Tracks { game, .. }
             | Self::Shop(Shop { game, .. })
@@ -312,6 +333,10 @@ impl Screen {
                 shop,
                 name: edit(name, input),
             },
+            (Self::Play(game), Input::Char('l' | 'L')) => {
+                let page = log_pages(&game.log).len() - 1;
+                Self::Log { game, page }
+            }
             (Self::Play(game), Input::Enter) if game.outcome.is_some() => Self::Report(game),
             (Self::Play(game), _) if game.outcome.is_some() => Self::Play(game),
             (Self::Report(_), Input::Enter) => Self::Title,
@@ -371,10 +396,8 @@ impl Screen {
                 Self::Play(game)
             }
             (Self::Attendees { game, mut picked }, Input::Char(c @ '1'..='9')) => {
-                let analysts: Vec<usize> = (0..game.team.len())
-                    .filter(|&i| game.team[i].role.is_analyst())
-                    .collect();
-                if let Some(&i) = analysts.get(c as usize - '1' as usize) {
+                let i = c as usize - '1' as usize;
+                if i < game.team.len() {
                     if let Some(at) = picked.iter().position(|&p| p == i) {
                         picked.remove(at);
                     } else if game.conference_cost(picked.len() + 1) <= game.budget {
@@ -439,7 +462,11 @@ impl Screen {
             (Self::Play(game), Input::Char('2')) if !game.actions().is_empty() => {
                 Self::Actions(ActionMenu { game, cursor: 0 })
             }
-            (Self::Play(game), Input::Char('3')) => Self::Team(game),
+            (Self::Play(game), Input::Char('3')) => Self::Team {
+                game,
+                cursor: 0,
+                confirming: false,
+            },
             (Self::Play(mut game), Input::Char('4')) => {
                 game.tempo = game.tempo.next();
                 Self::Play(game)
@@ -481,6 +508,18 @@ impl Screen {
                 menu,
                 name: edit(name, input),
             },
+            (Self::Log { game, page }, Input::Arrow(Hop::Left)) => Self::Log {
+                game,
+                page: page.saturating_sub(1),
+            },
+            (Self::Log { game, page }, Input::Arrow(Hop::Right)) => {
+                let last = log_pages(&game.log).len() - 1;
+                Self::Log {
+                    game,
+                    page: (page + 1).min(last),
+                }
+            }
+            (Self::Log { game, .. }, Input::Enter) => Self::Play(game),
             (Self::Play(mut game), Input::Char('5')) if game.can_send_intern() => {
                 game.send_intern();
                 Self::Coffee(CoffeeRun {
@@ -489,7 +528,42 @@ impl Screen {
                 })
             }
             (Self::Travel(travel), _) => Self::Play(travel.game),
-            (Self::Team(game), Input::Enter) => Self::Play(game),
+            (
+                Self::Team {
+                    mut game,
+                    cursor,
+                    confirming: true,
+                },
+                input,
+            ) => {
+                if let Input::Char('y' | 'Y') = input {
+                    game.fire(cursor);
+                }
+                let cursor = cursor.min(game.team.len() - 1);
+                Self::Team {
+                    game,
+                    cursor,
+                    confirming: false,
+                }
+            }
+            (Self::Team { game, .. }, Input::Enter) => Self::Play(game),
+            (Self::Team { game, cursor, .. }, Input::Char('f' | 'F')) => Self::Team {
+                confirming: game.can_fire(cursor),
+                game,
+                cursor,
+            },
+            (Self::Team { game, cursor, .. }, Input::Arrow(hop)) => {
+                let cursor = match hop {
+                    Hop::Up => cursor.saturating_sub(1),
+                    Hop::Down => (cursor + 1).min(game.team.len() - 1),
+                    _ => cursor,
+                };
+                Self::Team {
+                    game,
+                    cursor,
+                    confirming: false,
+                }
+            }
             (Self::Coffee(mut run), Input::Arrow(hop)) => {
                 run.street.hop(hop);
                 Self::Coffee(run)
@@ -514,6 +588,94 @@ fn edit(mut text: String, input: Input) -> String {
         _ => {}
     }
     text
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineKind {
+    Day,
+    Alert,
+    Text,
+}
+
+/// A line of the log as laid out: its text, what it is, and the space above it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LogLine {
+    pub text: String,
+    pub kind: LineKind,
+    pub gap: f32,
+}
+
+fn day_header(day: u32, continued: bool) -> String {
+    let more = if continued { " (cont.)" } else { "" };
+    format!("DAY {day} {}{more}", WEEKDAYS[(day as usize - 1) % 7])
+}
+
+/// One entry's lines, led by a day header when it starts a new day.
+fn entry_lines(entry: &Entry, width: usize, header: bool, first: bool) -> Vec<LogLine> {
+    let mut lines = Vec::new();
+    if header {
+        lines.push(LogLine {
+            text: day_header(entry.day, false),
+            kind: LineKind::Day,
+            gap: if first { 0.0 } else { DAY_GAP },
+        });
+    }
+    let kind = if entry.starts_with("ALERT") || entry.starts_with("INCIDENT") {
+        LineKind::Alert
+    } else {
+        LineKind::Text
+    };
+    for (i, text) in wrap(entry, width).into_iter().enumerate() {
+        let gap = if i == 0 { ENTRY_GAP } else { 0.0 };
+        lines.push(LogLine { text, kind, gap });
+    }
+    lines
+}
+
+/// The whole log as lines of `width`, grouped under a header for each day.
+pub fn log_lines(entries: &[Entry], width: usize) -> Vec<LogLine> {
+    let mut lines = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        let header = i == 0 || entries[i - 1].day != entry.day;
+        lines.extend(entry_lines(entry, width, header, i == 0));
+    }
+    lines
+}
+
+/// Height of lines drawn top-down, ignoring the gap above the first.
+fn height(lines: &[LogLine]) -> f32 {
+    lines.iter().skip(1).map(|l| l.gap).sum::<f32>() + LOG_LINE * lines.len() as f32
+}
+
+/// The whole log split into pages that fit the full-log screen, oldest first.
+/// An entry is never split, and a day continued from the last page repeats its header.
+pub fn log_pages(entries: &[Entry]) -> Vec<Vec<LogLine>> {
+    let mut pages: Vec<Vec<LogLine>> = vec![Vec::new()];
+    for (i, entry) in entries.iter().enumerate() {
+        let new_day = i == 0 || entries[i - 1].day != entry.day;
+        let page = pages.last_mut().unwrap();
+        let mut lines = entry_lines(entry, PAGE_WIDTH, new_day, page.is_empty());
+        let mut grown = page.clone();
+        grown.extend(lines.iter().cloned());
+        if height(&grown) <= PAGE_HEIGHT || page.is_empty() {
+            *page = grown;
+            continue;
+        }
+        if !new_day {
+            lines.insert(
+                0,
+                LogLine {
+                    text: day_header(entry.day, true),
+                    kind: LineKind::Day,
+                    gap: 0.0,
+                },
+            );
+        } else {
+            lines[0].gap = 0.0;
+        }
+        pages.push(lines);
+    }
+    pages
 }
 
 /// Word-wraps text into lines of at most `width` characters.
@@ -783,7 +945,7 @@ mod tests {
     fn three_checks_the_team_until_enter() {
         let start = new_game();
         let screen = start.clone().update(Input::Char('3'));
-        assert!(matches!(screen, Screen::Team(_)));
+        assert!(matches!(screen, Screen::Team { .. }));
         assert_eq!(screen.clone().update(Input::Char('1')), screen);
 
         assert_eq!(screen.update(Input::Enter), start);
@@ -874,6 +1036,151 @@ mod tests {
         assert_eq!(screen, menu);
     }
 
+    fn page(screen: &Screen) -> usize {
+        match screen {
+            Screen::Log { page, .. } => *page,
+            other => panic!("expected Log, got {other:?}"),
+        }
+    }
+
+    /// A log of `days` days, each with an entry long enough to wrap.
+    fn long_log(days: u32) -> Vec<Entry> {
+        (1..=days)
+            .flat_map(|day| {
+                [
+                    Entry {
+                        day,
+                        text: format!("Day {day} happened."),
+                    },
+                    Entry {
+                        day,
+                        text: "A long entry that goes on and on about a very busy day in the SOC, \
+                               long enough to wrap onto a second line of the page."
+                            .to_string(),
+                    },
+                ]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_log_pages_hold_every_entry_once_in_order() {
+        let log = long_log(40);
+        let pages = log_pages(&log);
+        assert!(pages.len() > 1);
+
+        let text: Vec<String> = pages
+            .iter()
+            .flatten()
+            .filter(|l| l.kind != LineKind::Day)
+            .map(|l| l.text.clone())
+            .collect();
+        let expected: Vec<String> = log.iter().flat_map(|e| wrap(e, PAGE_WIDTH)).collect();
+        assert_eq!(text, expected);
+        for page in &pages {
+            assert!(height(page) <= PAGE_HEIGHT);
+            assert_eq!(
+                page[0].kind,
+                LineKind::Day,
+                "every page starts with its day"
+            );
+            assert_eq!(page[0].gap, 0.0);
+        }
+    }
+
+    #[test]
+    fn a_day_split_across_pages_repeats_its_header() {
+        let log: Vec<Entry> = (0..60)
+            .map(|i| Entry {
+                day: 3,
+                text: format!("Entry {i}"),
+            })
+            .collect();
+        let pages = log_pages(&log);
+
+        assert!(pages.len() > 1);
+        assert_eq!(pages[0][0].text, "DAY 3 WED");
+        assert_eq!(pages[1][0].text, "DAY 3 WED (cont.)");
+    }
+
+    #[test]
+    fn l_opens_the_newest_page_and_arrows_turn_pages() {
+        let start = with_game(new_game(), |game| game.log = long_log(40));
+        let last = log_pages(&game(&start).log).len() - 1;
+        let screen = start.clone().update(Input::Char('l'));
+        assert_eq!(page(&screen), last, "starts on the newest page");
+
+        let screen = screen.update(Input::Arrow(Hop::Right));
+        assert_eq!(page(&screen), last, "no page past the newest");
+        let screen = arrows(screen, Hop::Left, 2);
+        assert_eq!(page(&screen), last - 2);
+        let screen = arrows(screen, Hop::Left, 100);
+        assert_eq!(page(&screen), 0, "no page before the oldest");
+        let screen = screen.update(Input::Arrow(Hop::Right));
+        assert_eq!(page(&screen), 1);
+
+        assert_eq!(screen.update(Input::Enter), start);
+    }
+
+    #[test]
+    fn the_full_log_opens_even_while_something_is_waiting() {
+        let screen = alerted().update(Input::Char('L'));
+        assert!(matches!(screen, Screen::Log { .. }));
+
+        let screen = screen.update(Input::Enter);
+        assert!(
+            game(&screen).pending_alert().is_some(),
+            "the alert still waits"
+        );
+    }
+
+    #[test]
+    fn finished_actions_show_a_result_card() {
+        let screen = choose(new_game(), Action::Tabletop).update(Input::Enter);
+        let screen = screen.tick(DAY_SECONDS * 2.0);
+
+        let card = &game(&screen).cards[0];
+        assert_eq!(card.title, "TABLETOP EXERCISE");
+        assert!(card.effect.contains("Trust +2"));
+        assert!(card.effect.contains("Resilience improved"));
+        assert_eq!(
+            screen.clone().update(Input::Char('1')),
+            screen,
+            "ENTER first"
+        );
+        assert!(game(&screen.update(Input::Enter)).cards.is_empty());
+    }
+
+    fn team(screen: &Screen) -> (usize, bool) {
+        match screen {
+            Screen::Team {
+                cursor, confirming, ..
+            } => (*cursor, *confirming),
+            other => panic!("expected Team, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn analysts_are_fired_from_the_team_screen_after_confirming() {
+        let screen = new_game().update(Input::Char('3'));
+        assert_eq!(team(&screen), (0, false));
+
+        let screen = screen.update(Input::Char('f'));
+        assert_eq!(team(&screen), (0, true), "asks first");
+        let kept = screen.clone().update(Input::Char('n'));
+        assert_eq!(team(&kept), (0, false));
+        assert_eq!(game(&kept).analysts(), 2);
+
+        let screen = screen.update(Input::Char('y'));
+        assert_eq!(game(&screen).analysts(), 1);
+        assert!(game(&screen).team.iter().all(|m| m.name != "Maya"));
+
+        let screen = screen.update(Input::Char('f'));
+        assert_eq!(team(&screen), (0, false), "not the last analyst");
+        let screen = arrows(screen, Hop::Down, 10);
+        assert_eq!(team(&screen).0, 0, "cursor stays on the roster");
+    }
+
     #[test]
     fn four_cycles_the_tempo() {
         let screen = new_game().update(Input::Char('4'));
@@ -912,8 +1219,14 @@ mod tests {
         let screen = screen.update(Input::Enter);
 
         assert!(matches!(screen, Screen::Play(_)));
-        assert_eq!(game(&screen).coffee, coffee + 12);
-        assert_eq!(screen.clone().update(Input::Char('5')), screen);
+        assert_eq!(game(&screen).coffee, coffee + 6);
+        assert_eq!(game(&screen).cards[0].title, "COFFEE RUN");
+        let screen = screen.update(Input::Enter);
+        assert_eq!(
+            screen.clone().update(Input::Char('5')),
+            screen,
+            "once a week"
+        );
     }
 
     #[test]
@@ -1118,10 +1431,10 @@ mod tests {
         };
 
         let screen = screen.update(Input::Char('2'));
-        assert_eq!(picked(&screen), [4], "Dev is the second analyst");
+        assert_eq!(picked(&screen), [1], "Dev is the second analyst");
         let screen = screen.update(Input::Char('1')).update(Input::Char('2'));
-        assert_eq!(picked(&screen), [3]);
-        assert_eq!(picked(&screen.clone().update(Input::Char('9'))), [3]);
+        assert_eq!(picked(&screen), [0]);
+        assert_eq!(picked(&screen.clone().update(Input::Char('9'))), [0]);
 
         let broke = match conference().update(Input::Char('1')) {
             Screen::Attendees { mut game, picked } => {
@@ -1150,8 +1463,8 @@ mod tests {
         let Screen::Travel(travel) = &screen else {
             panic!("expected Travel, got {screen:?}");
         };
-        assert_eq!(travel.game.team[3].track, Some(Track::Talks));
-        assert_eq!(travel.game.team[4].track, Some(Track::Hallway));
+        assert_eq!(travel.game.team[0].track, Some(Track::Talks));
+        assert_eq!(travel.game.team[1].track, Some(Track::Hallway));
     }
 
     #[test]
@@ -1254,7 +1567,7 @@ mod tests {
     #[test]
     fn losing_a_team_member_cues_the_alarm() {
         let before =
-            with_game(new_game(), |game| game.team[3].burnout = 99).update(Input::Char('1'));
+            with_game(new_game(), |game| game.team[0].burnout = 99).update(Input::Char('1'));
         let after = before.clone().tick(DAY_SECONDS);
 
         assert_eq!(cue(&before, &after), Some(Cue::Alarm));

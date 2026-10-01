@@ -57,9 +57,7 @@ fn may_buy(style: Style, item: Item) -> bool {
 }
 
 fn analysts(game: &GameState) -> Vec<usize> {
-    (0..game.team.len())
-        .filter(|&i| game.team[i].role.is_analyst())
-        .collect()
+    (0..game.team.len()).collect()
 }
 
 fn average_burnout(game: &GameState) -> i32 {
@@ -69,7 +67,7 @@ fn average_burnout(game: &GameState) -> i32 {
 
 /// Money the rest of the payroll needs, plus a cushion.
 fn reserve(game: &GameState) -> i64 {
-    game.payroll() * game.paydays_left() + 150_000
+    game.weekly_costs() * game.paydays_left() + 150_000
 }
 
 fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
@@ -98,7 +96,7 @@ fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
             // A team whose payroll through the IPO takes at most 60% of the budget.
             let budget = game.budget;
             let affordable = |g: &GameState, level: Item| {
-                (g.payroll() + level.salary()) * g.paydays_left() <= budget * 60 / 100
+                (g.payroll() + level.weekly()) * g.paydays_left() <= budget * 60 / 100
             };
             if may_buy(style, Item::Senior) && affordable(game, Item::Senior) {
                 game.hire(Item::Senior, "Sensible");
@@ -120,6 +118,7 @@ fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
 /// Buys what a sensible player wants while keeping enough for payroll.
 fn shop(game: &mut GameState, style: Style) {
     let wanted = [
+        Item::CoffeeSubscription,
         Item::MfaTokens,
         Item::EmailGateway,
         Item::Edr,
@@ -390,10 +389,11 @@ fn sensible_play_usually_reaches_the_ipo() {
 
 #[test]
 fn every_ending_happens_to_some_strategy() {
+    // A pulled IPO is rare (about 1 in 70 random Fintech games), so this looks wider.
     let mut endings = Vec::new();
     for profile in Profile::ALL {
         for style in [Style::Idle, Style::Random, Style::Sensible(None)] {
-            for seed in 0..SEEDS {
+            for seed in 0..3 * SEEDS {
                 endings.push(play(profile, seed, style).outcome.unwrap());
             }
         }

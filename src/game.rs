@@ -29,8 +29,14 @@ const WEAK_POSTURE: i32 = 40;
 pub const COFFEE_CAPACITY: i32 = 36;
 /// Cost in dollars of sending the intern across the street for coffee.
 pub const COFFEE_RUN_COST: i64 = 10;
-/// Pots of coffee the intern brings back, and in a case from the Vendor Hall.
-const COFFEE_RUN_POTS: i32 = 12;
+/// Pots of coffee in a case from the Vendor Hall.
+const CASE_POTS: i32 = 12;
+/// Pots the coffee subscription delivers every Monday, and what it costs each week.
+const SUBSCRIPTION_POTS: i32 = 18;
+const SUBSCRIPTION_FEE: i64 = 2_000;
+/// Pots of fancy coffee the intern brings back, and the burnout each analyst sheds.
+const FANCY_POTS: i32 = 6;
+const FANCY_RELIEF: i32 = 8;
 /// Extra burnout everyone gains each day the coffee is out.
 const NO_COFFEE_BURNOUT: i32 = 1;
 /// Burnout a junior analyst sheds each day before their share of the workload.
@@ -42,10 +48,6 @@ const JUNIOR_SALARY: i64 = 4_000;
 const SENIOR_SALARY: i64 = 8_000;
 /// Most analysts the SOC has desks for.
 pub const MAX_ANALYSTS: i32 = 8;
-/// Trust below this gets the CISO fired.
-const FIRING_TRUST: i32 = 30;
-/// Budget in dollars below which the SOC Manager is made redundant.
-const REDUNDANCY_BUDGET: i64 = 50_000;
 /// Posture each area loses every Monday as systems drift.
 const POSTURE_DECAY: i32 = 2;
 /// Brand loyalty below this drags the valuation down every Monday.
@@ -88,6 +90,28 @@ fn roll(seed: u32, salt: u32) -> u32 {
     x = x.wrapping_mul(0xC2B2_AE35);
     x ^ x >> 16
 }
+
+/// How a fired analyst takes the news; `{name}` is the analyst.
+const LETTING_GO: [&str; 8] = [
+    "{name} says \"You can't fire me, I quit!\" and storms out. HR is still deciding which happened.",
+    "You tell {name} \"It's not you, it's me.\" {name} says \"No, it's definitely you\" and leaves.",
+    "{name} takes the news calmly, then takes the good stapler.",
+    "{name} replies-all to the whole company with a farewell essay. Legal is reading it now.",
+    "{name} leaves a sticky note on their monitor: \"Please water my plant.\"",
+    "{name} hands back the badge and asks if they can still come to the holiday party.",
+    "{name} was already updating their resume during the meeting. They had three offers by lunch.",
+    "Security walks {name} out with a box of stickers. {name} insists on keeping the stickers.",
+];
+
+/// What crosses your mind before letting someone go, shown on the confirmation.
+pub const SECOND_THOUGHTS: [&str; 6] = [
+    "They still owe you twenty dollars.",
+    "They did bring donuts that one time.",
+    "They know where all the logs are buried.",
+    "HR will want a form for this. In triplicate.",
+    "Their desk plant has never looked healthier.",
+    "Their farewell email will be long. Very long.",
+];
 
 /// Formats dollars the way the game shows money: $10, $18K, $1.5M, $600M, $1.20B.
 pub fn money(dollars: i64) -> String {
@@ -179,10 +203,11 @@ pub enum Item {
     IrRetainer,
     Insurance,
     Coffee,
+    CoffeeSubscription,
 }
 
 impl Item {
-    pub const ALL: [Item; 11] = [
+    pub const ALL: [Item; 12] = [
         Self::Junior,
         Self::Senior,
         Self::Edr,
@@ -194,6 +219,7 @@ impl Item {
         Self::IrRetainer,
         Self::Insurance,
         Self::Coffee,
+        Self::CoffeeSubscription,
     ];
 
     /// One-time cost; for analysts this is the recruiter's fee.
@@ -210,6 +236,7 @@ impl Item {
             Self::IrRetainer => 50_000,
             Self::Insurance => 40_000,
             Self::Coffee => 100,
+            Self::CoffeeSubscription => 0,
         }
     }
 
@@ -226,6 +253,7 @@ impl Item {
             Self::IrRetainer => "Incident response retainer",
             Self::Insurance => "Cyber insurance",
             Self::Coffee => "A case of coffee (12 pots)",
+            Self::CoffeeSubscription => "Coffee subscription",
         }
     }
 
@@ -242,14 +270,16 @@ impl Item {
             Self::IrRetainer => "Lets you call in an incident response firm.",
             Self::Insurance => "Pays for part of the damage when things go wrong.",
             Self::Coffee => "Fuel. The break room holds 36 pots.",
+            Self::CoffeeSubscription => "18 pots every Monday. Enough unless you crunch.",
         }
     }
 
-    /// Weekly pay for an analyst hired from this listing; zero for everything else.
-    pub fn salary(self) -> i64 {
+    /// What this costs every Monday: an analyst's salary or the coffee subscription.
+    pub fn weekly(self) -> i64 {
         match self {
             Self::Junior => JUNIOR_SALARY,
             Self::Senior => SENIOR_SALARY,
+            Self::CoffeeSubscription => SUBSCRIPTION_FEE,
             _ => 0,
         }
     }
@@ -371,6 +401,23 @@ impl Action {
     }
 }
 
+/// What the player can see of the company, to describe what an outcome changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Glance {
+    valuation: i64,
+    trust: i32,
+    brand: i32,
+    budget: i64,
+    coffee: i32,
+    /// Average analyst burnout.
+    burnout: i32,
+    /// Posture with expertise, shown only as better or worse.
+    levels: [i32; 6],
+    ipo_day: u32,
+    team: Vec<String>,
+    conditions: Vec<Condition>,
+}
+
 /// The action in progress and how long it has left.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
@@ -378,6 +425,8 @@ pub struct Task {
     pub days_left: u32,
     /// The new analyst's name, for `Recruit`.
     pub name: String,
+    /// Average analyst burnout when the action started, to show what resting did.
+    start_burnout: i32,
 }
 
 /// An alert being looked into in the background while other work goes on.
@@ -509,15 +558,6 @@ impl Area {
 pub enum Role {
     Junior,
     Senior,
-    Manager,
-    Ciso,
-    Cio,
-}
-
-impl Role {
-    pub fn is_analyst(self) -> bool {
-        matches!(self, Self::Junior | Self::Senior)
-    }
 }
 
 impl fmt::Display for Role {
@@ -525,9 +565,6 @@ impl fmt::Display for Role {
         f.write_str(match self {
             Self::Junior => "Junior Analyst",
             Self::Senior => "Senior Analyst",
-            Self::Manager => "Manager",
-            Self::Ciso => "CISO",
-            Self::Cio => "CIO",
         })
     }
 }
@@ -537,7 +574,7 @@ pub struct TeamMember {
     pub name: String,
     pub role: Role,
     pub burnout: i32,
-    /// Weekly pay from the SOC budget; leadership is paid by the company.
+    /// Weekly pay from the SOC budget.
     pub salary: i64,
     /// A posture area this analyst picked up at the conference.
     pub expertise: Option<Area>,
@@ -555,9 +592,26 @@ impl TeamMember {
     }
 }
 
-/// A conference card shown to the player when the team gets back.
+/// One line of the game log and the day it happened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    pub day: u32,
+    pub text: String,
+}
+
+/// Lets a log entry be read as its text.
+impl std::ops::Deref for Entry {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.text
+    }
+}
+
+/// A card shown to the player: the outcome of something they did, or a conference report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Revealed {
+    pub title: String,
     pub text: String,
     pub effect: String,
     /// The attendee's track, or `None` for the lead's card.
@@ -631,7 +685,7 @@ pub struct GameState {
     threat: u32,
     /// Days of thin holiday coverage left.
     holiday: u32,
-    pub log: Vec<String>,
+    pub log: Vec<Entry>,
     pub outcome: Option<Outcome>,
     /// Whether the intern has already been sent for coffee this week.
     pub coffee_run_made: bool,
@@ -644,14 +698,6 @@ pub struct GameState {
 impl GameState {
     /// A new game with leadership in place and no analysts yet; hire them at the Vendor Hall.
     pub fn new(company: &str, lead: &str, profile: Profile, seed: u32) -> Self {
-        let leader = |name: &str, role| TeamMember {
-            name: name.to_string(),
-            role,
-            burnout: 10,
-            salary: 0,
-            expertise: None,
-            track: None,
-        };
         Self {
             company: company.to_string(),
             lead: lead.to_string(),
@@ -676,11 +722,7 @@ impl GameState {
             coffee: 12,
             tempo: Tempo::Steady,
             posture: [30; Area::ALL.len()],
-            team: vec![
-                leader("Jules", Role::Manager),
-                leader("Ravi", Role::Ciso),
-                leader("Dana", Role::Cio),
-            ],
+            team: Vec::new(),
             owned: Vec::new(),
             deployed: Vec::new(),
             task: None,
@@ -694,14 +736,44 @@ impl GameState {
             event: None,
             threat: 0,
             holiday: 0,
-            log: vec![format!(
-                "{company} goes public in 26 weeks. {lead} takes command of the SOC."
-            )],
+            log: vec![Entry {
+                day: 1,
+                text: format!(
+                    "{company} goes public in 26 weeks. {lead} takes command of the SOC."
+                ),
+            }],
             outcome: None,
             coffee_run_made: false,
             seed,
             rolls: 0,
         }
+    }
+
+    /// Whether an analyst can be let go: here, not the last one, with a week's salary
+    /// on hand for severance.
+    pub fn can_fire(&self, index: usize) -> bool {
+        self.team
+            .get(index)
+            .is_some_and(|m| m.track.is_none() && self.analysts() > 1 && self.affords(m.salary))
+    }
+
+    /// Lets an analyst go with a week's salary as severance.
+    pub fn fire(&mut self, index: usize) {
+        let before = self.glance();
+        let analyst = self.team.remove(index);
+        self.budget -= analyst.salary;
+        let exit = LETTING_GO[self.chance() as usize % LETTING_GO.len()];
+        let message = exit.replace("{name}", &analyst.name) + &analyst.farewell();
+        self.note(message.clone());
+        self.card("Let go", &message, &before);
+    }
+
+    /// Adds a line to the log, stamped with today's date.
+    fn note(&mut self, text: impl Into<String>) {
+        self.log.push(Entry {
+            day: self.day,
+            text: text.into(),
+        });
     }
 
     /// The next number in this game's random sequence, from 0 to 999.
@@ -744,7 +816,7 @@ impl GameState {
     pub fn buy(&mut self, item: Item) {
         self.budget -= self.price(item);
         match item {
-            Item::Coffee => self.coffee = (self.coffee + COFFEE_RUN_POTS).min(COFFEE_CAPACITY),
+            Item::Coffee => self.coffee = (self.coffee + CASE_POTS).min(COFFEE_CAPACITY),
             Item::Junior | Item::Senior => unreachable!("analysts are hired by name"),
             _ => self.owned.push(item),
         }
@@ -769,7 +841,7 @@ impl GameState {
             name: name.to_string(),
             role,
             burnout: 0,
-            salary: item.salary(),
+            salary: item.weekly(),
             expertise: None,
             track: None,
         });
@@ -800,7 +872,12 @@ impl GameState {
         let deployable = self
             .owned
             .iter()
-            .filter(|item| !matches!(item, Item::IrRetainer | Item::Insurance))
+            .filter(|item| {
+                !matches!(
+                    item,
+                    Item::IrRetainer | Item::Insurance | Item::CoffeeSubscription
+                )
+            })
             .filter(|item| !self.deployed.contains(item))
             .map(|&item| Action::Deploy(item));
         let backup_test = self
@@ -847,12 +924,107 @@ impl GameState {
     pub fn start(&mut self, action: Action, name: &str) {
         self.budget -= action.cost();
         let days = self.duration(action);
-        self.log
-            .push(format!("Started: {} ({days} days).", action.label()));
+        self.note(format!("Started: {} ({days} days).", action.label()));
         self.task = Some(Task {
             action,
             days_left: days,
             name: name.to_string(),
+            start_burnout: self.glance().burnout,
+        });
+    }
+
+    fn glance(&self) -> Glance {
+        Glance {
+            valuation: self.valuation,
+            trust: self.trust,
+            brand: self.brand,
+            budget: self.budget,
+            coffee: self.coffee,
+            burnout: self.team.iter().map(|m| m.burnout).sum::<i32>()
+                / self.team.len().max(1) as i32,
+            levels: Area::ALL.map(|a| self.level(a)),
+            ipo_day: self.ipo_day,
+            team: self.team.iter().map(|m| m.name.clone()).collect(),
+            conditions: self.conditions.clone(),
+        }
+    }
+
+    /// Describes what visibly changed since `before`, like "Trust +2. Resilience improved."
+    fn changes(&self, before: &Glance) -> String {
+        let after = self.glance();
+        let signed = |change: i64| {
+            if change > 0 {
+                format!("+{change}")
+            } else {
+                change.to_string()
+            }
+        };
+        let mut parts = Vec::new();
+        let valuation = after.valuation - before.valuation;
+        if valuation != 0 {
+            let sign = if valuation > 0 { "+" } else { "-" };
+            parts.push(format!("Valuation {sign}{}", money(valuation.abs())));
+        }
+        for (label, old, new) in [
+            ("Trust", before.trust, after.trust),
+            ("Brand", before.brand, after.brand),
+            ("Team burnout", before.burnout, after.burnout),
+            ("Coffee", before.coffee, after.coffee),
+        ] {
+            if new != old {
+                parts.push(format!("{label} {}", signed((new - old) as i64)));
+            }
+        }
+        let budget = after.budget - before.budget;
+        if budget != 0 {
+            let sign = if budget > 0 { "+" } else { "-" };
+            parts.push(format!("Budget {sign}{}", money(budget.abs())));
+        }
+        for (i, area) in Area::ALL.iter().enumerate() {
+            match after.levels[i].cmp(&before.levels[i]) {
+                std::cmp::Ordering::Greater => parts.push(format!("{area} improved")),
+                std::cmp::Ordering::Less => parts.push(format!("{area} weakened")),
+                std::cmp::Ordering::Equal => {}
+            }
+        }
+        if after.ipo_day > before.ipo_day {
+            parts.push(format!("IPO delayed to day {}", after.ipo_day));
+        }
+        for name in after.team.iter().filter(|n| !before.team.contains(n)) {
+            parts.push(format!("{name} joins the team"));
+        }
+        for name in before.team.iter().filter(|n| !after.team.contains(n)) {
+            parts.push(format!("{name} leaves the team"));
+        }
+        for condition in after
+            .conditions
+            .iter()
+            .filter(|c| !before.conditions.contains(c))
+        {
+            parts.push(format!("{} begins", condition.tag()));
+        }
+        for condition in before
+            .conditions
+            .iter()
+            .filter(|c| !after.conditions.contains(c))
+        {
+            parts.push(format!("{} cleared", condition.tag()));
+        }
+        if parts.is_empty() {
+            "No visible change.".to_string()
+        } else {
+            parts.join(". ") + "."
+        }
+    }
+
+    /// Queues a result card for something that has just been logged.
+    fn card(&mut self, title: &str, text: &str, before: &Glance) {
+        let effect = self.changes(before);
+        self.cards.push(Revealed {
+            title: title.to_uppercase(),
+            text: text.to_string(),
+            effect,
+            track: None,
         });
     }
 
@@ -864,6 +1036,10 @@ impl GameState {
     /// Applies a finished action's effects.
     fn finish(&mut self, task: Task) {
         let action = task.action;
+        let mut before = self.glance();
+        if action.rest().is_some() {
+            before.burnout = task.start_burnout;
+        }
         let message = match task.action {
             Action::Deploy(item) => {
                 self.deployed.push(item);
@@ -905,7 +1081,7 @@ impl GameState {
             Action::PatchSprint => {
                 self.boost(Area::Endpoint, 8);
                 self.boost(Area::Perimeter, 5);
-                for member in self.team.iter_mut().filter(|m| m.role.is_analyst()) {
+                for member in self.team.iter_mut() {
                     member.burnout += 8;
                 }
                 "Patch sprint complete. 1,200 patches applied, 3 servers rebooted unexpectedly."
@@ -947,7 +1123,8 @@ impl GameState {
             }
         };
         self.trust = self.trust.clamp(0, 100);
-        self.log.push(message);
+        self.note(message.clone());
+        self.card(&action.label(), &message, &before);
         // A third of briefings end with the CIO pitching a pet project.
         if action == Action::BriefLeadership && self.chance() < 333 {
             self.trigger(PET_PROJECT);
@@ -956,16 +1133,12 @@ impl GameState {
 
     /// Sets off a random event: applied at once, or left waiting for a choice.
     fn trigger(&mut self, index: usize) {
-        let analysts: Vec<usize> = (0..self.team.len())
-            .filter(|&i| self.team[i].role.is_analyst())
-            .collect();
-        if analysts.is_empty() {
+        if self.team.is_empty() {
             return;
         }
-        let patient = analysts[self.chance() as usize % analysts.len()];
+        let patient = self.chance() as usize % self.team.len();
         let event = EVENTS[index];
-        self.log
-            .push(event.text.replace("{name}", &self.team[patient].name));
+        self.note(event.text.replace("{name}", &self.team[patient].name));
         if event.choices.is_empty() {
             self.apply(&event.effect, patient);
         } else {
@@ -978,7 +1151,7 @@ impl GameState {
         self.brand = (self.brand + effect.brand).clamp(0, 100);
         self.budget += effect.budget;
         self.valuation += self.base_valuation * effect.valuation / 1000;
-        for member in self.team.iter_mut().filter(|m| m.role.is_analyst()) {
+        for member in self.team.iter_mut() {
             member.burnout = (member.burnout + effect.burnout).max(0);
         }
         if let Some(patient) = self.team.get_mut(patient) {
@@ -1008,7 +1181,7 @@ impl GameState {
     fn slip(&mut self) {
         self.delay += DELAY_DAYS;
         if self.delay > MAX_DELAY {
-            self.log.push(
+            self.note(
                 "Too many delays. The board pulls the IPO \"until market conditions improve\"."
                     .to_string(),
             );
@@ -1021,7 +1194,7 @@ impl GameState {
         }
         self.valuation -= self.base_valuation * 20 / 1000;
         self.trust = (self.trust - 5).max(0);
-        self.log.push(format!(
+        self.note(format!(
             "The IPO slips two weeks, to day {}. Investors grumble.",
             self.ipo_day
         ));
@@ -1064,7 +1237,7 @@ impl GameState {
         self.valuation -= self.base_valuation * 60 * self.hidden as i64 / 1000;
         self.trust = (self.trust - 10).max(0);
         self.hidden = 0;
-        self.log.push(
+        self.note(
             "A journalist found the incidents you left out of the S-1. The SEC would like a word."
                 .to_string(),
         );
@@ -1077,13 +1250,13 @@ impl GameState {
         }
         let landmark = Landmark::ALL[self.next_landmark];
         self.next_landmark += 1;
-        self.log.push(format!("You have reached the {landmark}."));
+        self.note(format!("You have reached the {landmark}."));
         match landmark {
             Landmark::Flip => {
                 self.threat += FLIP_THREAT;
                 if self.trust >= TOP_UP_TRUST {
                     self.budget += TOP_UP;
-                    self.log.push(format!(
+                    self.note(format!(
                         "The board is confident in the SOC and adds {} to the budget.",
                         money(TOP_UP)
                     ));
@@ -1093,8 +1266,7 @@ impl GameState {
             Landmark::Roadshow => {
                 self.surface();
                 if self.conditions.contains(&Condition::SystemsDown) {
-                    self.log
-                        .push("You cannot pitch investors while systems are down.".to_string());
+                    self.note("You cannot pitch investors while systems are down.".to_string());
                     self.slip();
                 }
             }
@@ -1121,13 +1293,14 @@ impl GameState {
     pub fn cross(&mut self, index: usize) {
         let landmark = self.stop.take().expect("a river to cross").landmark;
         let crossing = landmark.crossings()[index];
+        let before = self.glance();
         self.budget -= crossing.cost;
         let (text, effect) = if self.chance() < self.crossing_odds(&crossing.odds) {
             crossing.success
         } else {
             crossing.failure
         };
-        self.log.push(text.to_string());
+        self.note(text.to_string());
         self.apply(&effect, usize::MAX);
         match landmark {
             Landmark::S1Filing if index == 0 => {
@@ -1142,7 +1315,7 @@ impl GameState {
                 let cost = self.base_valuation * 10 * weak / 1000 / (index as i64 + 1);
                 if cost > 0 {
                     self.valuation -= cost;
-                    self.log.push(format!(
+                    self.note(format!(
                         "{weak} weak areas in the report cost {} in valuation.",
                         money(cost)
                     ));
@@ -1150,6 +1323,7 @@ impl GameState {
             }
             _ => {}
         }
+        self.card(&landmark.to_string(), text, &before);
         self.check_outcome();
     }
 
@@ -1165,8 +1339,7 @@ impl GameState {
         for member in &mut self.team {
             member.burnout = (member.burnout - 15).max(0);
         }
-        self.log
-            .push("The team rests. Nobody checks chat for a whole afternoon.".to_string());
+        self.note("The team rests. Nobody checks chat for a whole afternoon.".to_string());
     }
 
     pub fn leave_fort(&mut self) {
@@ -1195,7 +1368,7 @@ impl GameState {
         }
         self.conference_days = CONFERENCE_DAYS;
         self.stop = None;
-        self.log.push(format!(
+        self.note(format!(
             "You and {} analysts head to the conference. The rest hold the fort.",
             picks.len()
         ));
@@ -1246,8 +1419,9 @@ impl GameState {
                 None => format!("Burnout -{}", card.relief),
             };
             let text = card.text.replace("{name}", &member.name);
-            self.log.push(text.clone());
+            self.note(text.clone());
             self.cards.push(Revealed {
+                title: "CONFERENCE REPORT".to_string(),
                 text,
                 effect,
                 track: Some(track),
@@ -1267,8 +1441,9 @@ impl GameState {
         } else {
             "No effect".to_string()
         };
-        self.log.push(lead.text.to_string());
+        self.note(lead.text.to_string());
         self.cards.push(Revealed {
+            title: "CONFERENCE REPORT".to_string(),
             text: lead.text.to_string(),
             effect,
             track: None,
@@ -1295,8 +1470,10 @@ impl GameState {
     pub fn choose(&mut self, index: usize) {
         let event = self.event.take().expect("an event to choose for");
         let choice = EVENTS[event.index].choices[index];
+        let before = self.glance();
         self.apply(&choice.effect, event.patient);
-        self.log.push(choice.text.to_string());
+        self.note(choice.text.to_string());
+        self.card(choice.label, choice.text, &before);
         self.check_outcome();
     }
 
@@ -1377,6 +1554,7 @@ impl GameState {
         let Some(alert) = self.alert.take() else {
             return;
         };
+        let before = self.glance();
         let message = match reply {
             Reply::Investigate => {
                 let days = self.investigation_days();
@@ -1399,7 +1577,10 @@ impl GameState {
             }
             Reply::Ignore => "You ignore it. Probably nothing.".to_string(),
         };
-        self.log.push(message);
+        if reply == Reply::CallIr {
+            self.card("Incident response firm", &message, &before);
+        }
+        self.note(message);
     }
 
     fn alert_actor(&self, alert: usize) -> Actor {
@@ -1428,6 +1609,7 @@ impl GameState {
             return false;
         }
         let alert = self.investigation.take().unwrap().alert;
+        let before = self.glance();
         let message = if self.chance() < self.find_odds(50) && self.evict(alert) {
             format!(
                 "Investigation complete: it was a {}. They have been evicted.",
@@ -1436,7 +1618,8 @@ impl GameState {
         } else {
             "Investigation complete: nothing conclusive.".to_string()
         };
-        self.log.push(message);
+        self.note(message.clone());
+        self.card("Investigation", &message, &before);
         true
     }
 
@@ -1459,6 +1642,7 @@ impl GameState {
     pub fn respond(&mut self, index: usize) {
         let actor = self.incident.take().expect("an incident to respond to");
         let response = actor.responses()[index];
+        let before = self.glance();
         let scale = 200 - self.level(Area::Resilience) as i64;
         self.valuation -= self.base_valuation * response.valuation * scale / 200_000;
         self.trust = (self.trust + response.trust * scale as i32 / 200).clamp(0, 100);
@@ -1468,13 +1652,14 @@ impl GameState {
         if response.lingers && !self.conditions.contains(&condition) {
             self.conditions.push(condition);
         }
-        self.log.push(response.text.to_string());
+        self.note(response.text.to_string());
         let flipped = self.next_landmark > Landmark::Flip as usize;
         if flipped && !self.amended && matches!(actor, Actor::DataThief | Actor::Insider) {
             self.amended = true;
-            self.log.push("The leak forces an amended S-1.".to_string());
+            self.note("The leak forces an amended S-1.".to_string());
             self.slip();
         }
+        self.card(response.label, response.text, &before);
         self.check_outcome();
     }
 
@@ -1486,11 +1671,7 @@ impl GameState {
         }
         let analysts = self.analysts();
         if self.conference_days > 0 && analysts > 0 {
-            let home = self
-                .team
-                .iter()
-                .filter(|m| m.role.is_analyst() && m.track.is_none())
-                .count() as i32;
+            let home = self.team.iter().filter(|m| m.track.is_none()).count() as i32;
             detection = detection * home / analysts;
         }
         match self.task.as_ref().map(|t| t.action) {
@@ -1535,7 +1716,7 @@ impl GameState {
             campaign,
         });
         self.alert = Some(self.alerts.len() - 1);
-        self.log.push(format!("ALERT: {text}"));
+        self.note(format!("ALERT: {text}"));
         true
     }
 
@@ -1576,7 +1757,7 @@ impl GameState {
                     self.campaigns[i].stage = next;
                     self.campaigns[i].end = Some(End::Succeeded);
                     self.incident = Some(actor);
-                    self.log.push(format!("INCIDENT: {}", actor.incident()));
+                    self.note(format!("INCIDENT: {}", actor.incident()));
                     stop = true;
                 } else {
                     self.campaigns[i].stage = next;
@@ -1663,7 +1844,7 @@ impl GameState {
     }
 
     pub fn analysts(&self) -> i32 {
-        self.team.iter().filter(|m| m.role.is_analyst()).count() as i32
+        self.team.len() as i32
     }
 
     /// Days since the last Monday: 0 is Monday.
@@ -1684,6 +1865,11 @@ impl GameState {
         self.team.iter().map(|m| m.salary).sum()
     }
 
+    /// Everything that comes out of the budget each Monday: payroll and the coffee subscription.
+    pub fn weekly_costs(&self) -> i64 {
+        self.payroll() + self.owned.iter().map(|i| i.weekly()).sum::<i64>()
+    }
+
     /// The final score, only for reaching the IPO: valuation in millions times the profile multiplier.
     pub fn score(&self) -> Option<i64> {
         (self.outcome == Some(Outcome::Ipo))
@@ -1695,10 +1881,7 @@ impl GameState {
     }
 
     pub fn can_send_intern(&self) -> bool {
-        self.outcome.is_none()
-            && !self.coffee_run_made
-            && !self.coffee_full()
-            && self.budget >= COFFEE_RUN_COST
+        self.outcome.is_none() && !self.coffee_run_made && self.budget >= COFFEE_RUN_COST
     }
 
     /// Pays for a coffee run; the intern still has to survive the street.
@@ -1707,17 +1890,22 @@ impl GameState {
         self.coffee_run_made = true;
     }
 
+    /// The intern's fancy coffee: a few pots and a lift for every analyst, if they survive.
     pub fn intern_returns(&mut self, survived: bool) {
-        if survived {
-            self.coffee = (self.coffee + COFFEE_RUN_POTS).min(COFFEE_CAPACITY);
-            self.log.push(format!(
-                "The intern made it back with {COFFEE_RUN_POTS} pots of coffee and only minor tire marks."
-            ));
+        let before = self.glance();
+        let message = if survived {
+            self.coffee = (self.coffee + FANCY_POTS).min(COFFEE_CAPACITY);
+            for member in self.team.iter_mut() {
+                member.burnout = (member.burnout - FANCY_RELIEF).max(0);
+            }
+            "The intern made it back with oat milk lattes for everyone and only minor tire marks."
+                .to_string()
         } else {
             let week = (self.day - 1) / 7;
-            self.log
-                .push(INTERN_FATES[week as usize % INTERN_FATES.len()].to_string());
-        }
+            INTERN_FATES[week as usize % INTERN_FATES.len()].to_string()
+        };
+        self.note(message.clone());
+        self.card("Coffee run", &message, &before);
     }
 
     /// Advances one day and returns whether something happened that should stop the clock.
@@ -1736,7 +1924,6 @@ impl GameState {
             self.linger();
             stop |= self.attack();
             stop |= self.maybe_event();
-            stop |= self.leadership_changes();
             self.check_outcome();
         }
         if self.outcome.is_none() {
@@ -1748,13 +1935,14 @@ impl GameState {
     /// Weekly upkeep: posture drift, brand drag, and payroll.
     fn monday(&mut self) -> bool {
         self.coffee_run_made = false;
+
         for value in &mut self.posture {
             *value = (*value - POSTURE_DECAY).clamp(0, 100);
         }
         if self.brand < BRAND_DRAG_LEVEL {
             let drag = self.base_valuation * (BRAND_DRAG_LEVEL - self.brand) as i64 / 1000;
             self.valuation -= drag;
-            self.log.push(format!(
+            self.note(format!(
                 "Weak brand loyalty knocked {} off the valuation.",
                 money(drag)
             ));
@@ -1762,7 +1950,7 @@ impl GameState {
 
         if self.conditions.contains(&Condition::RegulatorInquiry) {
             self.budget -= LEGAL_FEES;
-            self.log.push(format!(
+            self.note(format!(
                 "The regulators' questions cost {} in legal fees this week.",
                 money(LEGAL_FEES)
             ));
@@ -1770,7 +1958,7 @@ impl GameState {
         if self.conditions.contains(&Condition::LeakyRoadmap) {
             let leak = self.base_valuation * 5 / 1000;
             self.valuation -= leak;
-            self.log.push(format!(
+            self.note(format!(
                 "More of the roadmap leaked. The valuation slips {}.",
                 money(leak)
             ));
@@ -1782,11 +1970,10 @@ impl GameState {
                 .team
                 .iter()
                 .enumerate()
-                .filter(|(_, m)| m.role.is_analyst())
                 .max_by_key(|(_, m)| m.salary)
                 .unwrap();
             let analyst = self.team.remove(i);
-            self.log.push(format!(
+            self.note(format!(
                 "Payroll came up short. {} the {} was laid off and walked out holding a cardboard box.{}",
                 analyst.name,
                 analyst.role,
@@ -1799,8 +1986,19 @@ impl GameState {
             return true;
         }
         self.budget -= self.payroll();
-        self.log
-            .push(format!("Payday: {} in salaries.", money(self.payroll())));
+        self.note(format!("Payday: {} in salaries.", money(self.payroll())));
+        if self.owned.contains(&Item::CoffeeSubscription) {
+            if self.budget >= SUBSCRIPTION_FEE {
+                self.budget -= SUBSCRIPTION_FEE;
+                self.coffee = (self.coffee + SUBSCRIPTION_POTS).min(COFFEE_CAPACITY);
+                self.note(format!(
+                    "The coffee subscription delivered {SUBSCRIPTION_POTS} pots for {}.",
+                    money(SUBSCRIPTION_FEE)
+                ));
+            } else {
+                self.note("The coffee subscription payment bounced. No delivery this week.");
+            }
+        }
         stop
     }
 
@@ -1814,8 +2012,7 @@ impl GameState {
             member.burnout += NO_COFFEE_BURNOUT;
         }
         if had_coffee {
-            self.log
-                .push("The coffee ran out. Tempers are short.".to_string());
+            self.note("The coffee ran out. Tempers are short.".to_string());
         }
         had_coffee
     }
@@ -1829,11 +2026,7 @@ impl GameState {
             }
         } else if analysts > 0 {
             // Analysts away at the conference leave the workload to the ones at home.
-            let home = self
-                .team
-                .iter()
-                .filter(|m| m.role.is_analyst() && m.track.is_none())
-                .count() as i32;
+            let home = self.team.iter().filter(|m| m.track.is_none()).count() as i32;
             let paranoia = self.conditions.contains(&Condition::Paranoia) as i32;
             let stay_home = if self.conference_days > 0 {
                 STAY_HOME_BURNOUT
@@ -1847,54 +2040,26 @@ impl GameState {
                 let rest = match member.role {
                     Role::Junior => JUNIOR_REST,
                     Role::Senior => SENIOR_REST,
-                    _ => continue,
                 };
                 member.burnout = (member.burnout + share - rest).max(0);
             }
         }
 
         let mut exit = self.day as usize;
-        let log = &mut self.log;
+        let (log, day) = (&mut self.log, self.day);
         let before = self.team.len();
         self.team.retain(|m| {
             if m.burnout >= 100 {
                 let reason = BURNOUT_EXITS[exit % BURNOUT_EXITS.len()];
-                log.push(format!(
-                    "{} the {} {reason}{}",
-                    m.name,
-                    m.role,
-                    m.farewell()
-                ));
+                log.push(Entry {
+                    day,
+                    text: format!("{} the {} {reason}{}", m.name, m.role, m.farewell()),
+                });
                 exit += 1;
             }
             m.burnout < 100
         });
         self.team.len() < before
-    }
-
-    fn leadership_changes(&mut self) -> bool {
-        let mut changed = false;
-        if self.budget < REDUNDANCY_BUDGET
-            && let Some(i) = self.team.iter().position(|m| m.role == Role::Manager)
-        {
-            let manager = self.team.remove(i);
-            self.log.push(format!(
-                "Finance made {} the Manager redundant to save money. The consultants who recommended it billed $80K.",
-                manager.name
-            ));
-            changed = true;
-        }
-        if self.trust < FIRING_TRUST
-            && let Some(i) = self.team.iter().position(|m| m.role == Role::Ciso)
-        {
-            let ciso = self.team.remove(i);
-            self.log.push(format!(
-                "The board fired {} the CISO over the SOC's performance.",
-                ciso.name
-            ));
-            changed = true;
-        }
-        changed
     }
 
     fn check_outcome(&mut self) {
@@ -1941,9 +2106,6 @@ mod tests {
                 member("Maya", Role::Junior, 20, 6_000),
                 member("Dev", Role::Junior, 15, 6_000),
                 member("Sam", Role::Junior, 10, 6_000),
-                member("Jules", Role::Manager, 20, 0),
-                member("Ravi", Role::Ciso, 15, 0),
-                member("Dana", Role::Cio, 10, 0),
             ],
             ..GameState::new("Acme", "Alex", Profile::Healthtech, 1)
         }
@@ -1977,10 +2139,7 @@ mod tests {
         assert_eq!(game.day, 1);
         assert_eq!(game.weekday(), 0);
         assert_eq!(game.days_to_ipo(), IPO_DAY - 1);
-        assert_eq!(game.analysts(), 0);
-        assert!(game.team.iter().any(|m| m.role == Role::Manager));
-        assert!(game.team.iter().any(|m| m.role == Role::Ciso));
-        assert!(game.team.iter().any(|m| m.role == Role::Cio));
+        assert!(game.team.is_empty(), "hire analysts at the Vendor Hall");
         assert!(game.owned.is_empty());
         assert!(game.log[0].contains("Acme") && game.log[0].contains("Alex"));
         assert_eq!(game.outcome, None);
@@ -2010,7 +2169,7 @@ mod tests {
     #[test]
     fn purchases_cannot_exceed_the_budget() {
         let mut game = game();
-        for item in Item::ALL {
+        for item in Item::ALL.into_iter().filter(|i| i.price() > 0) {
             game.budget = item.price() - 1;
             assert!(!game.can_buy(item), "{item:?}");
             game.budget = item.price();
@@ -2052,11 +2211,11 @@ mod tests {
 
         assert_eq!(game.analysts(), 2);
         assert_eq!(
-            game.team[3],
+            game.team[0],
             member("Priya", Role::Junior, 0, JUNIOR_SALARY)
         );
         assert_eq!(
-            game.team[4],
+            game.team[1],
             member("Marcus", Role::Senior, 0, SENIOR_SALARY)
         );
         assert_eq!(game.payroll(), JUNIOR_SALARY + SENIOR_SALARY);
@@ -2150,7 +2309,11 @@ mod tests {
         }
 
         assert_eq!(paydays, [8, 15, 22]);
-        assert!(game.log.iter().any(|e| e == "Payday: $18K in salaries."));
+        assert!(
+            game.log
+                .iter()
+                .any(|e| e.text == "Payday: $18K in salaries.")
+        );
     }
 
     #[test]
@@ -2220,11 +2383,15 @@ mod tests {
 
         assert!(game.advance());
         assert_eq!(game.coffee, 0);
-        assert_eq!(game.team[5].burnout, 10 + NO_COFFEE_BURNOUT);
+        assert_eq!(
+            game.team[2].burnout,
+            10 + NO_COFFEE_BURNOUT + 1,
+            "and a Steady day"
+        );
         assert!(game.log.iter().any(|e| e.contains("coffee ran out")));
 
         assert!(!game.advance(), "only running out stops the clock");
-        assert_eq!(game.team[5].burnout, 10 + 2 * NO_COFFEE_BURNOUT);
+        assert_eq!(game.team[2].burnout, 10 + 2 * NO_COFFEE_BURNOUT + 2);
     }
 
     #[test]
@@ -2268,10 +2435,8 @@ mod tests {
 
         assert_eq!(game.analysts(), 2);
         assert!(
-            game.log
-                .iter()
-                .any(|e| e
-                    == "Maya the Junior Analyst burned out and quit to open a llama sanctuary.")
+            game.log.iter().any(|e| e.text
+                == "Maya the Junior Analyst burned out and quit to open a llama sanctuary.")
         );
     }
 
@@ -2293,32 +2458,6 @@ mod tests {
                 .iter()
                 .any(|e| e.starts_with("Dev the Junior Analyst has died of dysentery"))
         );
-    }
-
-    #[test]
-    fn low_budget_makes_the_manager_redundant() {
-        let mut game = game();
-        game.budget = REDUNDANCY_BUDGET - 1;
-
-        assert!(game.advance());
-
-        assert!(game.team.iter().all(|m| m.role != Role::Manager));
-        assert!(
-            game.log
-                .iter()
-                .any(|e| e.contains("made Jules the Manager redundant"))
-        );
-    }
-
-    #[test]
-    fn low_trust_gets_the_ciso_fired() {
-        let mut game = game();
-        game.trust = FIRING_TRUST - 1;
-
-        assert!(game.advance());
-
-        assert!(game.team.iter().all(|m| m.role != Role::Ciso));
-        assert!(game.log.iter().any(|e| e.contains("fired Ravi the CISO")));
     }
 
     #[test]
@@ -2370,7 +2509,13 @@ mod tests {
         let mut game = game();
 
         game.intern_returns(true);
-        assert_eq!(game.coffee, 24 + COFFEE_RUN_POTS);
+        assert_eq!(game.coffee, 24 + FANCY_POTS);
+        assert_eq!(
+            game.team[0].burnout,
+            20 - FANCY_RELIEF,
+            "lattes lift the analysts"
+        );
+        assert_eq!(game.cards.last().unwrap().title, "COFFEE RUN");
         assert!(game.log.last().unwrap().contains("made it back"));
 
         game.intern_returns(true);
@@ -2378,13 +2523,59 @@ mod tests {
     }
 
     #[test]
-    fn the_intern_is_not_sent_when_coffee_is_full() {
+    fn the_intern_goes_even_when_the_break_room_is_full() {
         let mut game = game();
         game.coffee = COFFEE_CAPACITY;
 
-        assert!(!game.can_send_intern());
-        game.coffee -= 1;
-        assert!(game.can_send_intern());
+        assert!(game.can_send_intern(), "fancy coffee is about morale");
+    }
+
+    #[test]
+    fn the_coffee_subscription_delivers_every_monday_for_a_weekly_fee() {
+        let mut without = game();
+        without.day = 7;
+        without.coffee = 2;
+        without.advance();
+        assert_eq!(without.coffee, 0, "no delivery without the subscription");
+
+        let mut game = game();
+        assert_eq!(game.price(Item::CoffeeSubscription), 0, "nothing up front");
+        game.buy(Item::CoffeeSubscription);
+        assert!(!game.can_buy(Item::CoffeeSubscription), "bought once");
+        assert_eq!(game.budget, 500_000);
+        assert_eq!(game.weekly_costs(), 18_000 + SUBSCRIPTION_FEE);
+        assert!(
+            !game
+                .actions()
+                .contains(&Action::Deploy(Item::CoffeeSubscription)),
+            "nothing to deploy"
+        );
+        game.day = 7;
+        game.coffee = 2;
+        game.advance();
+        assert_eq!(
+            game.coffee,
+            2 + SUBSCRIPTION_POTS - 2,
+            "delivered, then a Steady day"
+        );
+        assert_eq!(game.budget, 500_000 - 18_000 - SUBSCRIPTION_FEE);
+        assert!(
+            game.log
+                .iter()
+                .any(|e| e.contains("coffee subscription delivered"))
+        );
+
+        game.day = 14;
+        game.coffee = COFFEE_CAPACITY - 4;
+        game.advance();
+        assert_eq!(game.coffee, COFFEE_CAPACITY - 2, "never past capacity");
+
+        game.day = 21;
+        game.coffee = 2;
+        game.budget = 18_000 + SUBSCRIPTION_FEE - 1;
+        game.advance();
+        assert_eq!(game.coffee, 0, "no money, no delivery");
+        assert!(game.log.iter().any(|e| e.contains("bounced")));
     }
 
     #[test]
@@ -2551,15 +2742,18 @@ mod tests {
         assert_eq!(game.analysts(), 4);
         assert_eq!(
             game.team.last().unwrap(),
-            &member("Priya", Role::Senior, 0, Item::Senior.salary())
+            &member("Priya", Role::Senior, 0, Item::Senior.weekly())
         );
-        assert_eq!(game.payroll(), 18_000 + Item::Senior.salary());
+        assert_eq!(game.payroll(), 18_000 + Item::Senior.weekly());
         assert_eq!(
             game.budget,
             500_000 - Item::Senior.price() - 18_000,
             "fee paid once, new hire not yet on payroll"
         );
-        assert!(game.log.last().unwrap() == "Priya the Senior Analyst joins the SOC.");
+        assert_eq!(
+            game.log.last().unwrap().text,
+            "Priya the Senior Analyst joins the SOC."
+        );
     }
 
     #[test]
@@ -2644,7 +2838,6 @@ mod tests {
 
         game.advance();
 
-        assert_eq!(game.team[3].burnout, 0, "leadership rests too");
         assert_eq!(game.team[1].burnout, 0);
     }
 
@@ -2977,7 +3170,7 @@ mod tests {
                     "{}",
                     response.label
                 );
-                assert_eq!(game.log.last().unwrap(), response.text);
+                assert_eq!(game.log.last().unwrap().text, response.text);
             }
         }
     }
@@ -3188,9 +3381,7 @@ mod tests {
         );
         for (i, (old, new)) in before.team.iter().zip(&after.team).enumerate() {
             let mut burnout = old.burnout;
-            if old.role.is_analyst() {
-                burnout = (burnout + effect.burnout).max(0);
-            }
+            burnout = (burnout + effect.burnout).max(0);
             if i == patient {
                 burnout = (burnout + effect.patient).max(0);
             }
@@ -3264,7 +3455,7 @@ mod tests {
 
             assert_eq!(after.event, None);
             assert_effect(&before, &after, &event.effect, usize::MAX);
-            assert!(after.log.last().unwrap() == event.text);
+            assert_eq!(after.log.last().unwrap().text, event.text);
         }
     }
 
@@ -3283,7 +3474,7 @@ mod tests {
 
                 assert_eq!(after.event, None);
                 assert_effect(&before, &after, &choice.effect, pending.patient);
-                assert_eq!(after.log.last().unwrap(), choice.text);
+                assert_eq!(after.log.last().unwrap().text, choice.text);
             }
         }
     }
@@ -3295,7 +3486,6 @@ mod tests {
         game.trigger(0);
 
         let patient = &game.team[game.event.as_ref().unwrap().patient];
-        assert!(patient.role.is_analyst());
         assert!(game.log.last().unwrap().starts_with(&patient.name));
     }
 
@@ -3370,8 +3560,8 @@ mod tests {
                         game.cross(i);
                         assert_eq!(game.stop, None);
                         let log = &game.log;
-                        succeeded |= log.iter().any(|e| e == crossing.success.0);
-                        failed |= log.iter().any(|e| e == crossing.failure.0);
+                        succeeded |= log.iter().any(|e| e.text == crossing.success.0);
+                        failed |= log.iter().any(|e| e.text == crossing.failure.0);
                     }
                 }
 
@@ -3665,10 +3855,7 @@ mod tests {
                 let mut game = at(Landmark::Conference, seed, 30);
                 game.team
                     .extend((0..5).map(|i| member(&format!("A{i}"), Role::Junior, 0, 0)));
-                let picks: Vec<_> = (0..game.team.len())
-                    .filter(|&i| game.team[i].role.is_analyst())
-                    .map(|i| (i, track))
-                    .collect();
+                let picks: Vec<_> = (0..game.team.len()).map(|i| (i, track)).collect();
                 game.attend(&picks);
                 while game.conference_days > 0 {
                     game.advance();
@@ -3817,6 +4004,118 @@ mod tests {
         let mut river = at(Landmark::Audit, 1, 30);
         river.budget = -5_000;
         assert!(river.can_cross(0) && !river.can_cross(1));
+    }
+
+    #[test]
+    fn log_entries_carry_their_day() {
+        let mut game = game();
+        advance_to(&mut game, 8);
+
+        let payday = game.log.iter().find(|e| e.starts_with("Payday")).unwrap();
+        assert_eq!(payday.day, 8);
+        assert_eq!(game.log[0].day, 1);
+    }
+
+    #[test]
+    fn result_cards_describe_what_visibly_changed() {
+        let mut tabletop = game();
+        run(&mut tabletop, Action::Tabletop);
+        let card = tabletop.cards.last().unwrap();
+        assert_eq!(card.title, "TABLETOP EXERCISE");
+        assert_eq!(card.effect, "Trust +2. Resilience improved.");
+        assert!(tabletop.log.iter().any(|e| e.text == card.text));
+
+        let mut rested = game();
+        rested.team.iter_mut().for_each(|m| m.burnout = 50);
+        run(&mut rested, Action::DayOff);
+        assert!(
+            rested
+                .cards
+                .last()
+                .unwrap()
+                .effect
+                .contains("Team burnout -")
+        );
+
+        let mut hit = game();
+        hit.incident = Some(Actor::Ransomware);
+        hit.respond(1);
+        let card = hit.cards.last().unwrap();
+        assert_eq!(card.title, "PAY THE RANSOM ($150K)");
+        assert!(card.effect.contains("Budget -$150K"));
+    }
+
+    #[test]
+    fn hidden_posture_only_reads_as_better_or_worse() {
+        let mut game = game();
+        let before = game.glance();
+        game.posture[Area::Identity as usize] += 7;
+        game.posture[Area::Perimeter as usize] -= 3;
+
+        assert_eq!(
+            game.changes(&before),
+            "Identity improved. Perimeter weakened."
+        );
+        assert_eq!(game.clone().changes(&game.glance()), "No visible change.");
+    }
+
+    #[test]
+    fn firing_an_analyst_costs_a_week_of_salary_and_saves_payroll() {
+        let mut game = game();
+        game.team[1].expertise = Some(Area::Endpoint);
+        let level = game.level(Area::Endpoint);
+
+        game.fire(1);
+
+        assert_eq!(game.analysts(), 2);
+        assert_eq!(game.budget, 500_000 - 6_000, "a week of severance");
+        assert_eq!(game.payroll(), 12_000);
+        assert_eq!(game.level(Area::Endpoint), level - EXPERTISE_BONUS);
+        let card = game.cards.last().unwrap();
+        assert_eq!(card.title, "LET GO");
+        assert!(card.effect.contains("Dev leaves the team"));
+        assert!(game.log.last().unwrap().contains("Endpoint expertise"));
+    }
+
+    #[test]
+    fn fired_analysts_go_out_in_different_ways() {
+        let exits: Vec<String> = (0..100)
+            .map(|seed| {
+                let mut game = GameState { seed, ..game() };
+                game.fire(1);
+                game.log.last().unwrap().text.clone()
+            })
+            .collect();
+
+        for exit in &exits {
+            assert!(exit.contains("Dev"), "{exit}");
+            assert!(!exit.contains("{name}"), "{exit}");
+        }
+        for template in LETTING_GO {
+            let tail = template.split("{name}").last().unwrap();
+            assert!(exits.iter().any(|e| e.ends_with(tail)), "never: {template}");
+        }
+    }
+
+    #[test]
+    fn only_present_analysts_can_be_fired_and_never_the_last() {
+        let mut game = game();
+        assert!(game.can_fire(0));
+        assert!(!game.can_fire(3), "leadership is not yours to fire");
+        assert!(!game.can_fire(99));
+
+        game.team[0].track = Some(Track::Talks);
+        assert!(!game.can_fire(0), "away at the conference");
+        game.team[0].track = None;
+
+        game.budget = 5_999;
+        assert!(!game.can_fire(0), "no money for severance");
+        game.budget = 500_000;
+
+        game.fire(0);
+        game.fire(0);
+        assert_eq!(game.analysts(), 1);
+        assert!(!game.can_fire(0), "someone has to watch the alerts");
     }
 
     #[test]

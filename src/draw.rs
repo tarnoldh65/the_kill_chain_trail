@@ -6,12 +6,15 @@ use crate::audio::TRACKS;
 use crate::conference::Track;
 use crate::game::{
     Action, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Outcome, Profile, Reply,
-    Role, TeamMember, money,
+    Role, SECOND_THOUGHTS, TeamMember, money,
 };
 use crate::landmarks::Landmark;
 use crate::scores::Score;
 use crate::street::{self, Leg, Street};
-use crate::ui::{ActionMenu, CoffeeRun, Music, Screen, Shop, wrap};
+use crate::ui::{
+    ActionMenu, CoffeeRun, LOG_LINE, LineKind, LogLine, Music, PAGE_HEIGHT, Screen, Shop, WEEKDAYS,
+    log_lines, log_pages, wrap,
+};
 
 pub const WIDTH: f32 = 640.0;
 pub const HEIGHT: f32 = 480.0;
@@ -34,8 +37,6 @@ const GLYPH: f32 = 8.0;
 const MARGIN: f32 = 16.0;
 /// Left edge of the log column, right of the status panel.
 const LOG_X: f32 = 264.0;
-const LOG_LINES: usize = 29;
-const WEEKDAYS: [&str; 7] = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 /// 8x8 bitmap font rendered from a texture atlas of the 128 ASCII glyphs.
 pub struct Font(Texture2D);
@@ -116,9 +117,19 @@ pub fn screen(screen: &Screen, font: &Font, music: Music, scores: &[Score]) {
         }
         Screen::Play(game) => play(font, game, false),
         Screen::Travel(travel) => play(font, &travel.game, true),
-        Screen::Team(game) => team_screen(font, game),
+        Screen::Team {
+            game,
+            cursor,
+            confirming,
+        } => {
+            team_screen(font, game, *cursor);
+            if *confirming {
+                fire_popup(font, &game.team[*cursor]);
+            }
+        }
         Screen::Coffee(run) => coffee_run(font, run),
         Screen::Report(game) => after_action(font, game),
+        Screen::Log { game, page } => full_log(font, game, *page),
         Screen::Attendees { game, picked } => attendees(font, game, picked),
         Screen::Tracks {
             game,
@@ -311,9 +322,10 @@ fn profile_choice(font: &Font, company: &str) {
 
 /// Price column text: the recruiter's fee plus weekly salary for analysts.
 fn price_text(game: &GameState, item: Item) -> String {
-    match item.salary() {
-        0 => money(game.price(item)),
-        salary => format!("{} + {}/wk", money(game.price(item)), money(salary)),
+    match (game.price(item), item.weekly()) {
+        (price, 0) => money(price),
+        (0, weekly) => format!("{}/wk", money(weekly)),
+        (price, weekly) => format!("{} + {}/wk", money(price), money(weekly)),
     }
 }
 
@@ -323,10 +335,10 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     right(font, &game.company, 12.0, CYAN);
     font.text(
         &format!(
-            "Budget {}   Payroll {}/wk, {} to IPO",
+            "Budget {}   Weekly costs {}/wk, {} to IPO",
             money(game.budget),
-            money(game.payroll()),
-            money(game.payroll() * game.paydays_left())
+            money(game.weekly_costs()),
+            money(game.weekly_costs() * game.paydays_left())
         ),
         MARGIN,
         36.0,
@@ -395,7 +407,6 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     let analysts: Vec<String> = game
         .team
         .iter()
-        .filter(|m| m.role.is_analyst())
         .map(|m| format!("{} ({})", m.name, short_role(m.role)))
         .collect();
     let roster = format!("Analysts: {}", analysts.join(", "));
@@ -465,11 +476,10 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
 }
 
 /// Role names that fit the narrow status panel.
-fn short_role(role: Role) -> String {
+fn short_role(role: Role) -> &'static str {
     match role {
-        Role::Junior => "Junior".to_string(),
-        Role::Senior => "Senior".to_string(),
-        role => role.to_string(),
+        Role::Junior => "Junior",
+        Role::Senior => "Senior",
     }
 }
 
@@ -619,19 +629,14 @@ fn attendees(font: &Font, game: &GameState, picked: &[usize]) {
         1.0,
         INK,
     );
-    let analysts = game
-        .team
-        .iter()
-        .enumerate()
-        .filter(|(_, m)| m.role.is_analyst());
-    for (n, (i, member)) in analysts.enumerate() {
+    for (i, member) in game.team.iter().enumerate() {
         let going = picked.contains(&i);
         let mark = if going { "X" } else { " " };
-        let y = 120.0 + n as f32 * 16.0;
+        let y = 120.0 + i as f32 * 16.0;
         font.text(
             &format!(
                 "{}) [{mark}] {:<20} {:<8}",
-                n + 1,
+                i + 1,
                 member.name,
                 short_role(member.role)
             ),
@@ -687,7 +692,7 @@ fn card_popup(font: &Font, game: &GameState) {
     let (x, y, w, h) = (40.0, 96.0, WIDTH - 80.0, 240.0);
     draw_rectangle(x, y, w, h, NAVY);
     draw_rectangle_lines(x, y, w, h, 2.0, GREEN);
-    font.centered("CONFERENCE REPORT", WIDTH / 2.0, y + 12.0, 2.0, AMBER);
+    font.centered(&card.title, WIDTH / 2.0, y + 12.0, 2.0, AMBER);
     let width = ((w - 32.0) / GLYPH) as usize;
     let mut line_y = y + 48.0;
     for line in wrap(&card.text, width) {
@@ -837,7 +842,6 @@ fn after_action(font: &Font, game: &GameState) {
 
 /// The calendar bar from day 1 to IPO day, on every gameplay screen.
 fn timeline(font: &Font, game: &GameState) {
-    font.text(&game.company, MARGIN, 6.0, 1.0, CYAN);
     right(font, &format!("Lead: {}", game.lead), 6.0, CYAN);
 
     let (left, end, y) = (MARGIN + 4.0, WIDTH - MARGIN - 36.0, 30.0);
@@ -882,10 +886,12 @@ fn timeline(font: &Font, game: &GameState) {
 
 fn status_panel(font: &Font, game: &GameState) {
     let x = MARGIN;
-    let value_x = x + 88.0;
-    let row = |i: usize| 88.0 + i as f32 * 14.0;
-    font.text("STATUS", x, 72.0, 1.0, CYAN);
 
+    // The company: what the IPO is riding on.
+    let value_x = x + 96.0;
+    let row = |i: usize| 88.0 + i as f32 * 14.0;
+    let company: String = game.company.to_uppercase().chars().take(29).collect();
+    font.text(&company, x, 72.0, 1.0, CYAN);
     font.text("Valuation", x, row(0), 1.0, INK);
     font.text(&money(game.valuation), value_x, row(0), 1.0, INK);
     for (i, (label, value)) in [("Trust", game.trust), ("Brand", game.brand)]
@@ -896,9 +902,16 @@ fn status_panel(font: &Font, game: &GameState) {
         bar(value_x, row(i + 1), 96.0, value, health_color(value));
         font.text(&value.to_string(), value_x + 104.0, row(i + 1), 1.0, INK);
     }
-    font.text("Budget", x, row(3), 1.0, INK);
-    font.text(&money(game.budget), value_x, row(3), 1.0, INK);
-    font.text("Coffee", x, row(4), 1.0, INK);
+
+    // The SOC: its money, how hard it is working, and on what.
+    let value_x = x + 112.0;
+    let row = |i: usize| 154.0 + i as f32 * 14.0;
+    font.text("SOC STATUS", x, 138.0, 1.0, CYAN);
+    font.text("Budget", x, row(0), 1.0, INK);
+    font.text(&money(game.budget), value_x, row(0), 1.0, INK);
+    font.text("Tempo", x, row(1), 1.0, INK);
+    font.text(&game.tempo.to_string(), value_x, row(1), 1.0, INK);
+    font.text("Coffee", x, row(2), 1.0, INK);
     let coffee_color = match game.coffee {
         0 => RED,
         1..10 => AMBER,
@@ -907,28 +920,33 @@ fn status_panel(font: &Font, game: &GameState) {
     font.text(
         &format!("{}/{COFFEE_CAPACITY} pots", game.coffee),
         value_x,
-        row(4),
+        row(2),
         1.0,
         coffee_color,
     );
-    font.text("Tempo", x, row(5), 1.0, INK);
-    font.text(&game.tempo.to_string(), value_x, row(5), 1.0, INK);
-    font.text("Task", x, row(6), 1.0, INK);
-    let task = match &game.task {
-        Some(task) => format!("{:.15} {}d", task.action.label(), task.days_left),
+    font.text("Task", x, row(3), 1.0, INK);
+    let task: String = match &game.task {
+        Some(task) => format!("{}d {}", task.days_left, task.action.label()),
         None => "-".to_string(),
     };
-    font.text(&task, value_x, row(6), 1.0, AMBER);
-    font.text("Probe", x, row(7), 1.0, INK);
-    let probe = match &game.investigation {
-        Some(investigation) => format!("Digging {}d", investigation.days_left),
+    font.text(
+        &task.chars().take(15).collect::<String>(),
+        value_x,
+        row(3),
+        1.0,
+        AMBER,
+    );
+    font.text("Investigating", x, row(4), 1.0, INK);
+    let investigating = match &game.investigation {
+        Some(investigation) => format!("{} days left", investigation.days_left),
         None => "-".to_string(),
     };
-    font.text(&probe, value_x, row(7), 1.0, AMBER);
+    font.text(&investigating, value_x, row(4), 1.0, AMBER);
 
-    font.text("TEAM", x, 206.0, 1.0, CYAN);
+    // Morale: each person's burnout.
+    font.text("MORALE", x, 232.0, 1.0, CYAN);
     for (i, member) in game.team.iter().enumerate() {
-        let y = 222.0 + i as f32 * 14.0;
+        let y = 248.0 + i as f32 * 12.0;
         let name: String = member.name.chars().take(10).collect();
         font.text(
             &format!("{name:<10} {}", short_role(member.role)),
@@ -947,18 +965,63 @@ fn status_panel(font: &Font, game: &GameState) {
     }
 }
 
+fn line_color(kind: LineKind) -> Color {
+    match kind {
+        LineKind::Day => CYAN,
+        LineKind::Alert => RED,
+        LineKind::Text => INK,
+    }
+}
+
+/// Draws lines top-down from `top`.
+fn draw_lines(font: &Font, lines: &[LogLine], x: f32, top: f32) {
+    let mut y = top;
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            y += line.gap;
+        }
+        font.text(&line.text, x, y, 1.0, line_color(line.kind));
+        y += LOG_LINE;
+    }
+}
+
 fn event_log(font: &Font, game: &GameState) {
     font.text("LOG", LOG_X, 72.0, 1.0, CYAN);
+    font.text("L for the full log", LOG_X + 128.0, 72.0, 1.0, DIM);
     let width = ((WIDTH - MARGIN - LOG_X) / GLYPH) as usize;
-    let lines: Vec<String> = game
-        .log
+    let lines = log_lines(&game.log, width);
+    // The newest lines that fit, newest at the bottom.
+    let mut height = 0.0;
+    let start = lines
         .iter()
-        .flat_map(|entry| wrap(entry, width))
-        .collect();
-    let start = lines.len().saturating_sub(LOG_LINES);
-    for (i, line) in lines[start..].iter().enumerate() {
-        font.text(line, LOG_X, 88.0 + i as f32 * 10.0, 1.0, INK);
-    }
+        .rposition(|line| {
+            height += LOG_LINE + line.gap;
+            height > 380.0 - 88.0
+        })
+        .map_or(0, |i| i + 1);
+    draw_lines(font, &lines[start..], LOG_X, 88.0);
+}
+
+/// One page of the whole log; page 0 is the oldest.
+fn full_log(font: &Font, game: &GameState, page: usize) {
+    let pages = log_pages(&game.log);
+    font.text("THE LOG", MARGIN, 8.0, 2.0, AMBER);
+    right(
+        font,
+        &format!("Page {} of {}", page + 1, pages.len()),
+        12.0,
+        INK,
+    );
+    divider(32.0);
+    draw_lines(font, &pages[page], MARGIN, 44.0);
+    divider(44.0 + PAGE_HEIGHT);
+    font.text(
+        "LEFT/RIGHT to turn pages, ENTER to return.",
+        MARGIN,
+        460.0,
+        1.0,
+        DIM,
+    );
 }
 
 fn day_menu(font: &Font, game: &GameState) {
@@ -973,7 +1036,7 @@ fn day_menu(font: &Font, game: &GameState) {
     };
     let tempo = format!("Set the tempo (now {})", game.tempo);
     let intern = format!(
-        "Send the intern for coffee ({}, once a week)",
+        "Send the intern for fancy coffee ({}, once a week)",
         money(COFFEE_RUN_COST)
     );
     let options = [
@@ -983,22 +1046,20 @@ fn day_menu(font: &Font, game: &GameState) {
         (tempo.as_str(), true),
         (intern.as_str(), game.can_send_intern()),
     ];
-    // The coffee run is not offered while the break room is full.
-    let shown = if game.coffee_full() { 4 } else { 5 };
-    for (i, (label, available)) in options[..shown].iter().enumerate() {
+    for (i, (label, available)) in options.iter().enumerate() {
         let color = if *available { INK } else { DIM };
         font.text(
             &format!("{}) {label}", i + 1),
             MARGIN + 16.0,
-            402.0 + i as f32 * 11.0,
+            400.0 + i as f32 * 10.0,
             1.0,
             color,
         );
     }
     font.text(
-        &format!("Press 1-{shown}. Grey choices are unavailable."),
+        "Press 1-5. Grey choices are unavailable.",
         MARGIN,
-        462.0,
+        464.0,
         1.0,
         DIM,
     );
@@ -1059,7 +1120,7 @@ fn ending(font: &Font, game: &GameState, outcome: Outcome) {
     }
 }
 
-fn team_screen(font: &Font, game: &GameState) {
+fn team_screen(font: &Font, game: &GameState, cursor: usize) {
     timeline(font, game);
     font.text("THE TEAM", MARGIN, 72.0, 2.0, AMBER);
     font.text(
@@ -1072,6 +1133,7 @@ fn team_screen(font: &Font, game: &GameState) {
     for (i, member) in game.team.iter().enumerate() {
         team_row(font, member, 116.0 + i as f32 * 16.0);
     }
+    font.text(">", 4.0, 116.0 + cursor as f32 * 16.0, 1.0, AMBER);
     divider(384.0);
     font.text(
         &format!(
@@ -1083,17 +1145,50 @@ fn team_screen(font: &Font, game: &GameState) {
         1.0,
         INK,
     );
-    if blink() {
-        font.text("Press ENTER to return", MARGIN, 460.0, 1.0, AMBER);
-    }
+    let hint = if game.can_fire(cursor) {
+        format!(
+            "F to let {} go ({} severance).",
+            game.team[cursor].name,
+            money(game.team[cursor].salary)
+        )
+    } else {
+        "Only analysts who are here can be let go, and never the last one.".to_string()
+    };
+    font.text(&hint, MARGIN, 412.0, 1.0, CYAN);
+    font.text(
+        "UP/DOWN to choose, ENTER to return.",
+        MARGIN,
+        460.0,
+        1.0,
+        DIM,
+    );
+}
+
+fn fire_popup(font: &Font, member: &TeamMember) {
+    let (x, y, w, h) = (64.0, 168.0, WIDTH - 128.0, 96.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, RED);
+    font.centered(
+        &format!("Let {} go?", member.name),
+        WIDTH / 2.0,
+        y + 20.0,
+        2.0,
+        RED,
+    );
+    // The same person always gives you the same pause.
+    let pick = member.name.bytes().map(usize::from).sum::<usize>() % SECOND_THOUGHTS.len();
+    font.centered(SECOND_THOUGHTS[pick], WIDTH / 2.0, y + 48.0, 1.0, CYAN);
+    font.centered(
+        "Y to confirm, any other key to cancel",
+        WIDTH / 2.0,
+        y + 72.0,
+        1.0,
+        INK,
+    );
 }
 
 fn team_row(font: &Font, member: &TeamMember, y: f32) {
-    let salary = if member.salary > 0 {
-        format!("{}/wk", money(member.salary))
-    } else {
-        "-".to_string()
-    };
+    let salary = format!("{}/wk", money(member.salary));
     font.text(
         &format!(
             "{:<20} {:<15} {salary:<7}",

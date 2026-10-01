@@ -19,7 +19,7 @@ The name stays. The kill chain is still there, but on the attacker's side and hi
 | Fixed roster | Hire and name analysts at setup and at landmarks |
 | Choices cost budget, coffee, fatigue | Actions cost budget and/or days; tools must be bought and then deployed |
 
-Kept as-is or lightly reworked: name entry (company and incident lead), the leadership cast, burnout and Oregon Trail-style departure messages, the log plus numbered options layout, illustrated incident reports, the intern coffee run, 8-bit graphics, synthesized music and sound, 640x480 scaling, the web build.
+Kept as-is or lightly reworked: name entry (company and incident lead), burnout and Oregon Trail-style departure messages, the log plus numbered options layout, illustrated incident reports, the intern coffee run, 8-bit graphics, synthesized music and sound, 640x480 scaling, the web build.
 
 ## 3. Core loop
 
@@ -69,7 +69,8 @@ A tool bought but never deployed is shelfware, and the end report says so.
 **Services and supplies**:
 - Incident response retainer: unlocks "Call the IR firm" during incidents.
 - Cyber insurance: reduces budget losses from incidents.
-- Coffee: pots for the break room (existing capacity of 36).
+- Coffee: cases of 12 pots for the break room (capacity 36).
+- Coffee subscription: nothing up front, $2K every Monday for 18 pots, enough for Relaxed or Steady tempo but not for Crunch.
 
 The Vendor Hall reopens at certain landmarks, usually at higher prices.
 
@@ -164,7 +165,7 @@ When the clock stops, the player sees numbered options (layout unchanged from th
 2. **Take an action**: open the action list (section 7).
 3. **Check the team**: roster with each member's burnout (Good / Fair / Poor / Very poor).
 4. **Set the tempo**: Relaxed, Steady, or Crunch (the "pace" setting).
-5. **Send the intern for coffee**: the existing street minigame.
+5. **Send the intern for fancy coffee**: the existing street minigame, once a week. Surviving brings back 6 pots and takes 8 burnout off every analyst.
 
 Tempo is a standing setting rather than an action:
 
@@ -206,7 +207,7 @@ Posture is always hidden: no numbers, meters, or grades on screen. Six hidden va
 
 Every area also gets a bonus from analysts with conference expertise in it (section 5.3), which does not decay.
 
-Posture slowly decays (new SaaS apps, new hires, configuration drift), so it has to be maintained, not just bought. The player gets fuzzy hints: the CISO's comments in the log, the board briefing reaction, and the pen test report card. The report card is a one-time snapshot and is not kept on screen afterward.
+Posture slowly decays (new SaaS apps, new hires, configuration drift), so it has to be maintained, not just bought. The player gets fuzzy hints: the board briefing reaction, result cards that say an area improved or weakened, and the pen test report card. The report card is a one-time snapshot and is not kept on screen afterward.
 
 ## 9. The attacker
 
@@ -283,13 +284,7 @@ At 100 burnout an analyst leaves, with Oregon Trail-style messages:
 
 ### 11.2 Leadership
 
-Same cast as the MVP, with clearer jobs:
-
-- **CISO**: your boss. Gives hints about posture. Fired if corporate trust gets too low, which makes future trust gains smaller.
-- **CIO**: brings pet projects and conflicting priorities through events.
-- **SOC Manager**: let go if the budget gets too low, after which burnout rises faster.
-
-The CEO and the board appear only through events and landmarks.
+The team is only the analysts you hire. Leadership (the CEO, CIO, CISO, and the board) appears only in events and landmarks, such as the CIO's data center migration and the board briefing, and has no roster, salary, or burnout of its own.
 
 ## 12. Meters and endings
 

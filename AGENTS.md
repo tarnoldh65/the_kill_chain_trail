@@ -7,7 +7,7 @@
 - Progression is a calendar toward IPO day, shown as a persistent timeline along the top of the screen. Days pass continuously, actions take days or weeks, and random events, alerts, and incidents interrupt, like Oregon Trail.
 - Landmarks are fixed dates on the calendar (board briefing, security conference, SOC 2 audit, S-1 filing, pen test, roadshow, IPO day). Some failures delay the IPO.
 - The defender does not know what stage an attacker is in. Attackers move through the kill chain in the background against a hidden security posture that the player's actions improve. Successful attacks become incidents that hurt valuation and change the actions available.
-- Like Oregon Trail there are characters: analysts the player hires and names, and leadership (CIO, CISO, and Managers).
+- Like Oregon Trail there are characters: the analysts the player hires, names, and can fire. Leadership (CEO, CIO, CISO, and the board) appears only in events and landmarks.
 - The games graphics and sound should be in 8 bit format like Oregon Trail.
 - Game play music should be original and have a cyber like techno sound.
 - Valuation, corporate trust, brand loyalty, budget, and coffee are tracked as the game progresses.
