@@ -1,3 +1,4 @@
+mod art;
 mod attack;
 mod audio;
 mod conference;
@@ -5,6 +6,7 @@ mod draw;
 mod events;
 mod game;
 mod landmarks;
+mod scores;
 mod street;
 mod ui;
 
@@ -47,10 +49,25 @@ fn inputs() -> Vec<Input> {
     inputs
 }
 
-/// Plays the sound for a screen change and swaps music when entering or leaving the street.
-fn transition(audio: &Audio, music: Music, before: &Screen, after: &Screen) {
+/// Plays the sound for a screen change, swaps music when entering or leaving the street,
+/// and records the score when a game ends.
+fn transition(
+    audio: &Audio,
+    music: Music,
+    scores: &mut Vec<scores::Score>,
+    before: &Screen,
+    after: &Screen,
+) {
     if let Some(cue) = ui::cue(before, after) {
         audio.play(cue);
+    }
+    if let (Some(old), Some(new)) = (before.game(), after.game())
+        && old.outcome.is_none()
+        && new.outcome.is_some()
+        && new.score().is_some()
+    {
+        scores::record(scores, new);
+        scores::save(scores);
     }
     let in_traffic = |screen: &Screen| matches!(screen, Screen::Coffee(_));
     match (in_traffic(before), in_traffic(after)) {
@@ -72,6 +89,7 @@ async fn main() {
     let mut music = Music::Track(0);
     audio.play_music(music);
     let mut screen = Screen::Title;
+    let mut scores = scores::load();
 
     loop {
         for input in inputs() {
@@ -81,16 +99,16 @@ async fn main() {
                 audio.play(Cue::Select);
             }
             let next = screen.clone().update(input);
-            transition(&audio, music, &screen, &next);
+            transition(&audio, music, &mut scores, &screen, &next);
             screen = next;
         }
         // Cap the step so a slow frame cannot carry a car straight through the intern.
         let next = screen.clone().tick(get_frame_time().min(0.05));
-        transition(&audio, music, &screen, &next);
+        transition(&audio, music, &mut scores, &screen, &next);
         screen = next;
 
         set_camera(&camera);
-        draw::screen(&screen, &font, music);
+        draw::screen(&screen, &font, music, &scores);
 
         // Scale the 640x480 frame to the window in whole steps when it fits, letterboxed.
         set_default_camera();

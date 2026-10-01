@@ -7,7 +7,7 @@ Plan for the redesign in [REDESIGN.md](REDESIGN.md), based on [AGENTS.md](AGENTS
 - Rust 2024 edition, latest stable toolchain.
 - [macroquad](https://crates.io/crates/macroquad) for window, scaling, 2D drawing, input, and audio.
 - [font8x8](https://crates.io/crates/font8x8) for a public domain 8x8 pixel font.
-- [quad-storage](https://crates.io/crates/quad-storage) for the top-ten scoreboard (a file natively, localStorage in the browser). Added in Phase 19 only.
+- The top-ten scoreboard is saved without a library: a plain file natively, and a small `web/top-ten.js` plugin for localStorage in the browser. (quad-storage was planned, but its JavaScript depends on sapp_jsutils helpers that the current macroquad bundle keeps private.)
 - Sound effects and music are synthesized in code, so no external audio assets are required.
 
 ## Approach
@@ -163,14 +163,14 @@ Tasks:
 - Final 640x480 layout from REDESIGN.md section 13: timeline, status panel with status tags and roster, log, numbered options.
 - Sprites in the existing palette: timeline marker (an analyst pushing a server rack), landmark icons, one illustration per incident type, one per conference track, the IPO bell.
 - New sound cues: day tick, payday, alert klaxon, incident sting, landmark fanfare, IPO bell.
-- Top-ten scoreboard of IPO scores on the title screen, saved with quad-storage natively and in the browser.
+- Top-ten scoreboard of IPO scores on the title screen, saved to `top_ten.txt` natively and to localStorage through `web/top-ten.js` in the browser.
 
 Success criteria:
-- [ ] Every new sprite fits its size and uses only the game palette (unit tested).
-- [ ] Every new sound cue is synthesized and never clips (unit tested).
-- [ ] The scoreboard keeps the ten best IPO scores in order and ignores other endings (unit tested).
-- [ ] The scoreboard survives restarting the game natively and reloading the page in the browser.
-- [ ] Every screen is readable at 640x480 and scales cleanly when resized, natively and in the browser.
+- [x] Every new sprite fits its size and uses only the game palette (unit tested).
+- [x] Every new sound cue is synthesized and never clips (unit tested).
+- [x] The scoreboard keeps the ten best IPO scores in order and ignores other endings (unit tested).
+- [x] The scoreboard survives restarting the game natively and reloading the page in the browser.
+- [x] Every screen is readable at 640x480 and scales cleanly when resized, natively and in the browser.
 
 ## Phase 20: Balance, playtest, and release
 
@@ -203,5 +203,5 @@ Success criteria:
 - [x] Phase 16: Random events
 - [x] Phase 17: Landmarks and IPO delays
 - [x] Phase 18: The Security Conference
-- [ ] Phase 19: Presentation
+- [x] Phase 19: Presentation
 - [ ] Phase 20: Balance, playtest, and release

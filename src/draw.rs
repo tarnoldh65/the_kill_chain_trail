@@ -1,6 +1,7 @@
 use font8x8::legacy::BASIC_LEGACY;
 use macroquad::prelude::*;
 
+use crate::art::{self, Sprite};
 use crate::audio::TRACKS;
 use crate::conference::Track;
 use crate::game::{
@@ -8,6 +9,7 @@ use crate::game::{
     Role, TeamMember, money,
 };
 use crate::landmarks::Landmark;
+use crate::scores::Score;
 use crate::street::{self, Leg, Street};
 use crate::ui::{ActionMenu, CoffeeRun, Music, Screen, Shop, wrap};
 
@@ -79,10 +81,10 @@ impl Font {
     }
 }
 
-pub fn screen(screen: &Screen, font: &Font, music: Music) {
+pub fn screen(screen: &Screen, font: &Font, music: Music, scores: &[Score]) {
     clear_background(BG);
     match screen {
-        Screen::Title => title(font, music),
+        Screen::Title => title(font, music, scores),
         Screen::Company(company) => {
             name_entry(font, "Name the company you are protecting:", company)
         }
@@ -163,7 +165,7 @@ fn server_racks(y: f32) {
     }
 }
 
-fn title(font: &Font, music: Music) {
+fn title(font: &Font, music: Music, scores: &[Score]) {
     binary_band(font, 16.0);
     font.centered("THE KILL CHAIN", WIDTH / 2.0, 96.0, 4.0, GREEN);
     font.centered("TRAIL", WIDTH / 2.0, 136.0, 4.0, GREEN);
@@ -174,12 +176,66 @@ fn title(font: &Font, music: Music) {
         1.0,
         CYAN,
     );
-    server_racks(248.0);
+    if scores.is_empty() {
+        server_racks(248.0);
+    } else {
+        top_ten(font, scores);
+    }
     music_menu(font, music);
     if blink() {
         font.centered("PRESS ENTER TO BEGIN", WIDTH / 2.0, 400.0, 2.0, AMBER);
     }
     binary_band(font, 456.0);
+}
+
+fn top_ten(font: &Font, scores: &[Score]) {
+    font.centered("TOP TEN IPOS", WIDTH / 2.0, 212.0, 1.0, AMBER);
+    for (i, score) in scores.iter().enumerate() {
+        let line = format!(
+            "{:>2}. {:>6}  {} ({})",
+            i + 1,
+            score.points,
+            score.company,
+            score.lead
+        );
+        font.text(&line, 152.0, 228.0 + i as f32 * 10.0, 1.0, INK);
+    }
+}
+
+/// Draws a sprite with its top-left at (x, y), each pixel a `scale`-sized block.
+fn sprite(sprite: Sprite, x: f32, y: f32, scale: f32) {
+    for (row, pixels) in sprite.iter().enumerate() {
+        for (col, pixel) in pixels.chars().enumerate() {
+            let color = match pixel {
+                'k' => BG,
+                'n' => NAVY,
+                'd' => DIM,
+                'l' => LIGHT,
+                'w' => INK,
+                'g' => GREEN,
+                'G' => DARK_GREEN,
+                'c' => CYAN,
+                'a' => AMBER,
+                'r' => RED,
+                'b' => BROWN,
+                'y' => YELLOW,
+                _ => continue,
+            };
+            draw_rectangle(
+                x + col as f32 * scale,
+                y + row as f32 * scale,
+                scale,
+                scale,
+                color,
+            );
+        }
+    }
+}
+
+/// Draws a sprite centered horizontally on `center_x`.
+fn centered_sprite(art: Sprite, center_x: f32, y: f32, scale: f32) {
+    let width = art[0].len() as f32 * scale;
+    sprite(art, (center_x - width / 2.0).floor(), y, scale);
 }
 
 fn music_menu(font: &Font, music: Music) {
@@ -639,6 +695,9 @@ fn card_popup(font: &Font, game: &GameState) {
         line_y += 12.0;
     }
     font.text(&card.effect, x + 16.0, line_y + 12.0, 1.0, GREEN);
+    if let Some(track) = card.track {
+        centered_sprite(art::track(track), WIDTH / 2.0, y + 124.0, 4.0);
+    }
     let more = match game.cards.len() - 1 {
         0 => "Press ENTER to finish the report".to_string(),
         n => format!("Press ENTER for the next card ({n} more)"),
@@ -723,6 +782,7 @@ fn incident_popup(font: &Font, game: &GameState) {
         );
         line_y += 16.0;
     }
+    centered_sprite(art::incident(actor), WIDTH / 2.0, y + 144.0, 4.0);
     let condition = actor.condition();
     font.text(
         &format!("Some choices leave {}:", condition.tag()),
@@ -790,18 +850,17 @@ fn timeline(font: &Font, game: &GameState) {
     draw_line(left, y, now, y, 2.0, GREEN);
     for (i, (landmark, &day)) in Landmark::ALL.iter().zip(&game.landmark_days).enumerate() {
         let color = if i < game.next_landmark { GREEN } else { CYAN };
-        draw_rectangle(x_of(day) - 3.0, y - 3.0, 6.0, 6.0, color);
-        font.centered(landmark.short(), x_of(day), y - 13.0, 1.0, color);
+        let icon = if landmark.is_fort() {
+            art::FORT
+        } else {
+            art::RIVER
+        };
+        centered_sprite(icon, x_of(day), y - 4.0, 1.0);
+        font.centered(landmark.short(), x_of(day), y - 14.0, 1.0, color);
     }
-    draw_rectangle(end - 4.0, y - 4.0, 8.0, 8.0, AMBER);
+    centered_sprite(art::BELL, end, y - 4.0, 1.0);
     font.text("IPO", end + 8.0, y - 4.0, 1.0, AMBER);
-    draw_rectangle(
-        now - 3.0,
-        y - 7.0,
-        6.0,
-        14.0,
-        if blink() { AMBER } else { INK },
-    );
+    centered_sprite(art::MARKER, now, y + 5.0, 1.0);
 
     font.text(
         &format!("DAY {} {}", game.day, WEEKDAYS[game.weekday() as usize]),

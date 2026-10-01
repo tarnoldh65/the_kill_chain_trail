@@ -13,6 +13,27 @@ pub enum Cue {
     Alarm,
     Win,
     Lose,
+    Tick,
+    Payday,
+    Klaxon,
+    Sting,
+    Fanfare,
+    Bell,
+}
+
+impl Cue {
+    pub const ALL: [Cue; 10] = [
+        Self::Select,
+        Self::Alarm,
+        Self::Win,
+        Self::Lose,
+        Self::Tick,
+        Self::Payday,
+        Self::Klaxon,
+        Self::Sting,
+        Self::Fanfare,
+        Self::Bell,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,16 +74,30 @@ pub fn cue(before: &Screen, after: &Screen) -> Option<Cue> {
             && let Some(outcome) = new.outcome
         {
             return Some(if outcome == Outcome::Ipo {
-                Cue::Win
+                Cue::Bell
             } else {
                 Cue::Lose
             });
         }
-        let trouble = |g: &GameState| {
-            g.pending_alert().is_some() || g.incident.is_some() || g.event.is_some()
-        };
-        if new.team.len() < old.team.len() || trouble(new) && !trouble(old) {
+        if new.incident.is_some() && old.incident.is_none() {
+            return Some(Cue::Sting);
+        }
+        if new.pending_alert().is_some() && old.pending_alert().is_none() {
+            return Some(Cue::Klaxon);
+        }
+        let arrived = new.stop.is_some() && old.stop.is_none();
+        if arrived && new.day > old.day {
+            return Some(Cue::Fanfare);
+        }
+        if new.team.len() < old.team.len() || new.event.is_some() && old.event.is_none() {
             return Some(Cue::Alarm);
+        }
+        if new.day > old.day {
+            return Some(if new.weekday() == 0 {
+                Cue::Payday
+            } else {
+                Cue::Tick
+            });
         }
     }
     if let (Screen::Travel(_), Screen::Travel(_)) = (before, after) {
@@ -1156,10 +1191,30 @@ mod tests {
     }
 
     #[test]
-    fn alerts_and_incidents_sound_the_alarm() {
+    fn alerts_incidents_events_and_landmarks_each_have_a_sound() {
         let before = new_game();
+        let incident = with_game(new_game(), |game| {
+            game.incident = Some(crate::attack::Actor::Hacktivists)
+        });
+        let event = with_game(new_game(), |game| {
+            game.event = Some(crate::game::PendingEvent {
+                index: 1,
+                patient: 3,
+            })
+        });
 
-        assert_eq!(cue(&before, &alerted()), Some(Cue::Alarm));
+        assert_eq!(cue(&before, &alerted()), Some(Cue::Klaxon));
+        assert_eq!(cue(&before, &incident), Some(Cue::Sting));
+        assert_eq!(cue(&before, &event), Some(Cue::Alarm));
+
+        let traveling = with_game(new_game(), |game| {
+            game.next_landmark = 0;
+            game.day = crate::landmarks::Landmark::BoardBriefing.day() - 1;
+        })
+        .update(Input::Char('1'));
+        let arrived = traveling.clone().tick(DAY_SECONDS);
+        assert!(game(&arrived).stop.is_some());
+        assert_eq!(cue(&traveling, &arrived), Some(Cue::Fanfare));
     }
 
     #[test]
@@ -1174,15 +1229,26 @@ mod tests {
     }
 
     #[test]
-    fn ignored_input_and_quiet_days_are_silent() {
+    fn ignored_input_and_waiting_are_silent() {
         let before = Screen::Company(String::new());
         let after = before.clone().update(Input::Enter);
         assert_eq!(cue(&before, &after), None);
 
         let before = new_game().update(Input::Char('1'));
+        let after = before.clone().tick(DAY_SECONDS / 2.0);
+        assert_eq!(cue(&before, &after), None);
+    }
+
+    #[test]
+    fn days_tick_and_mondays_pay() {
+        let before = new_game().update(Input::Char('1'));
         let after = before.clone().tick(DAY_SECONDS);
         assert_eq!(game(&after).day, 2);
-        assert_eq!(cue(&before, &after), None);
+        assert_eq!(cue(&before, &after), Some(Cue::Tick));
+
+        let sunday = with_game(new_game(), |game| game.day = 7).update(Input::Char('1'));
+        let monday = sunday.clone().tick(DAY_SECONDS);
+        assert_eq!(cue(&sunday, &monday), Some(Cue::Payday));
     }
 
     #[test]
@@ -1195,7 +1261,7 @@ mod tests {
     }
 
     #[test]
-    fn outcomes_cue_win_only_for_an_ipo() {
+    fn the_ipo_rings_the_bell_and_other_endings_lose() {
         let last_day = |trust| {
             with_game(new_game(), |game| {
                 game.day = IPO_DAY - 1;
@@ -1205,7 +1271,7 @@ mod tests {
         };
         let (won, lost) = (last_day(60), last_day(0));
 
-        assert_eq!(cue(&won, &won.clone().tick(DAY_SECONDS)), Some(Cue::Win));
+        assert_eq!(cue(&won, &won.clone().tick(DAY_SECONDS)), Some(Cue::Bell));
         assert_eq!(cue(&lost, &lost.clone().tick(DAY_SECONDS)), Some(Cue::Lose));
     }
 

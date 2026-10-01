@@ -560,6 +560,8 @@ impl TeamMember {
 pub struct Revealed {
     pub text: String,
     pub effect: String,
+    /// The attendee's track, or `None` for the lead's card.
+    pub track: Option<Track>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1237,7 +1239,11 @@ impl GameState {
             };
             let text = card.text.replace("{name}", &member.name);
             self.log.push(text.clone());
-            self.cards.push(Revealed { text, effect });
+            self.cards.push(Revealed {
+                text,
+                effect,
+                track: Some(track),
+            });
         }
 
         let lead = LEAD_CARDS[self.chance() as usize % LEAD_CARDS.len()];
@@ -1257,6 +1263,7 @@ impl GameState {
         self.cards.push(Revealed {
             text: lead.text.to_string(),
             effect,
+            track: None,
         });
         self.stop = Some(Stop {
             landmark: Landmark::Conference,
