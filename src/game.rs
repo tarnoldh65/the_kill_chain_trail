@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// Fatigue every team member gains each stage regardless of the choice.
-const BASE_FATIGUE: i32 = 4;
+const BASE_FATIGUE: i32 = 3;
 /// Extra fatigue when the coffee runs out.
 const NO_COFFEE_FATIGUE: i32 = 15;
 /// Containment each remaining analyst adds per stage.
@@ -66,7 +66,7 @@ impl Stage {
         12 * (self as i32 + 1)
     }
 
-    pub fn choices(self) -> [Choice; 3] {
+    pub fn choices(self) -> [Choice; 6] {
         match self {
             Self::Reconnaissance => RECONNAISSANCE,
             Self::Weaponization => WEAPONIZATION,
@@ -77,6 +77,28 @@ impl Stage {
             Self::ActionsOnObjectives => ACTIONS_ON_OBJECTIVES,
         }
     }
+
+    pub fn events(self) -> [Event; 4] {
+        match self {
+            Self::Reconnaissance => RECONNAISSANCE_EVENTS,
+            Self::Weaponization => WEAPONIZATION_EVENTS,
+            Self::Delivery => DELIVERY_EVENTS,
+            Self::Exploitation => EXPLOITATION_EVENTS,
+            Self::Installation => INSTALLATION_EVENTS,
+            Self::CommandAndControl => COMMAND_AND_CONTROL_EVENTS,
+            Self::ActionsOnObjectives => ACTIONS_ON_OBJECTIVES_EVENTS,
+        }
+    }
+}
+
+/// A well-mixed pseudo-random number from a seed and a salt (the murmur3 finalizer).
+fn roll(seed: u32, salt: u32) -> u32 {
+    let mut x = seed ^ salt.wrapping_mul(0x9E37_79B9);
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x85EB_CA6B);
+    x ^= x >> 13;
+    x = x.wrapping_mul(0xC2B2_AE35);
+    x ^ x >> 16
 }
 
 impl fmt::Display for Stage {
@@ -141,7 +163,7 @@ const NONE: Choice = Choice {
     brand: 0,
 };
 
-const RECONNAISSANCE: [Choice; 3] = [
+const RECONNAISSANCE: [Choice; 6] = [
     Choice {
         label: "Hunt for scanning activity",
         text: "The team combs the firewall logs and finds a port scan from a server in a country nobody can pronounce.",
@@ -168,9 +190,35 @@ const RECONNAISSANCE: [Choice; 3] = [
         trust: -5,
         ..NONE
     },
+    Choice {
+        label: "Scan your own perimeter first",
+        text: "You find 14 forgotten servers, a printer from 2008, and a Minecraft server in Finance.",
+        scene: Scene::Hunt,
+        cost: 5,
+        fatigue: 8,
+        containment: 6,
+        ..NONE
+    },
+    Choice {
+        label: "Set up a honeypot",
+        text: "The attacker falls for a decoy file named passwords_FINAL_v2.xlsx. So does the CFO.",
+        scene: Scene::Spend,
+        cost: 20,
+        fatigue: 4,
+        containment: 8,
+        ..NONE
+    },
+    Choice {
+        label: "Ask the CIO what they think",
+        text: "The CIO suggests moving everything to the cloud. The meeting runs 90 minutes.",
+        scene: Scene::Press,
+        containment: 2,
+        trust: 5,
+        ..NONE
+    },
 ];
 
-const WEAPONIZATION: [Choice; 3] = [
+const WEAPONIZATION: [Choice; 6] = [
     Choice {
         label: "Patch the internet-facing servers",
         text: "Servers are patched overnight. Three of them now need a reboot nobody approved.",
@@ -200,9 +248,37 @@ const WEAPONIZATION: [Choice; 3] = [
         containment: 1,
         ..NONE
     },
+    Choice {
+        label: "Update the antivirus signatures",
+        text: "Signatures are updated. The antivirus can now detect 2011 with great confidence.",
+        scene: Scene::Patch,
+        cost: 5,
+        fatigue: 6,
+        containment: 6,
+        ..NONE
+    },
+    Choice {
+        label: "Brief the board on the threat",
+        text: "The board nods along and asks if this is related to the blockchain.",
+        scene: Scene::Press,
+        fatigue: 2,
+        containment: 3,
+        trust: 8,
+        ..NONE
+    },
+    Choice {
+        label: "Buy everyone energy drinks",
+        text: "Analysts can now hear colors. Productivity is up. Heart rates are concerning.",
+        scene: Scene::Coffee,
+        cost: 5,
+        coffee: 6,
+        fatigue: -6,
+        containment: 3,
+        ..NONE
+    },
 ];
 
-const DELIVERY: [Choice; 3] = [
+const DELIVERY: [Choice; 6] = [
     Choice {
         label: "Quarantine the phishing emails",
         text: "Hundreds of \"Urgent Invoice\" emails vanish. Accounts payable finds the silence suspicious.",
@@ -229,9 +305,37 @@ const DELIVERY: [Choice; 3] = [
         trust: -10,
         ..NONE
     },
+    Choice {
+        label: "Block suspicious attachments",
+        text: "All .zip files are blocked. Marketing can no longer send their 4GB brochure.",
+        scene: Scene::Block,
+        cost: 5,
+        fatigue: 8,
+        containment: 7,
+        brand: -3,
+        ..NONE
+    },
+    Choice {
+        label: "Turn on MFA for everyone",
+        text: "MFA is on. The CEO approves 47 push prompts by accident, then complains about MFA.",
+        scene: Scene::Isolate,
+        cost: 15,
+        fatigue: 10,
+        containment: 10,
+        brand: -5,
+        ..NONE
+    },
+    Choice {
+        label: "Tell users to think before clicking",
+        text: "An all-staff email goes out. It is flagged as phishing and nobody reads it.",
+        scene: Scene::Phish,
+        containment: 2,
+        trust: -3,
+        ..NONE
+    },
 ];
 
-const EXPLOITATION: [Choice; 3] = [
+const EXPLOITATION: [Choice; 6] = [
     Choice {
         label: "Isolate the phished laptops",
         text: "Infected laptops are yanked off the network, including the one running the CFO's slideshow.",
@@ -261,9 +365,37 @@ const EXPLOITATION: [Choice; 3] = [
         containment: 2,
         ..NONE
     },
+    Choice {
+        label: "Emergency patch the exploited bug",
+        text: "The vendor patch arrives with a 600-page readme. It installs on the third try.",
+        scene: Scene::Patch,
+        cost: 10,
+        fatigue: 12,
+        containment: 10,
+        ..NONE
+    },
+    Choice {
+        label: "Disable the vulnerable service",
+        text: "The service is off. So is the customer portal, which needed it for reasons nobody remembers.",
+        scene: Scene::Unplug,
+        fatigue: 6,
+        containment: 8,
+        brand: -8,
+        ..NONE
+    },
+    Choice {
+        label: "Hold an all-hands war room",
+        text: "Forty people join the call. Six talk. One is on mute explaining the fix to nobody.",
+        scene: Scene::Press,
+        cost: 5,
+        fatigue: 5,
+        containment: 6,
+        trust: 3,
+        ..NONE
+    },
 ];
 
-const INSTALLATION: [Choice; 3] = [
+const INSTALLATION: [Choice; 6] = [
     Choice {
         label: "Reimage the infected servers",
         text: "Infected servers are wiped and rebuilt. Nobody backed up the wiki. Nobody notices.",
@@ -291,9 +423,37 @@ const INSTALLATION: [Choice; 3] = [
         trust: -5,
         ..NONE
     },
+    Choice {
+        label: "Rotate every service account",
+        text: "Service accounts are rotated. Three apps break, including the one that orders coffee.",
+        scene: Scene::Isolate,
+        cost: 5,
+        coffee: -3,
+        fatigue: 8,
+        containment: 10,
+        ..NONE
+    },
+    Choice {
+        label: "Restore from backups",
+        text: "Backups are restored. They were last tested in 2017, but somehow they work.",
+        scene: Scene::Patch,
+        cost: 15,
+        fatigue: 6,
+        containment: 8,
+        ..NONE
+    },
+    Choice {
+        label: "Pay an MSSP to babysit overnight",
+        text: "The managed provider watches your alerts all night and sends a 90-page PDF at dawn.",
+        scene: Scene::Spend,
+        cost: 25,
+        fatigue: -8,
+        containment: 6,
+        ..NONE
+    },
 ];
 
-const COMMAND_AND_CONTROL: [Choice; 3] = [
+const COMMAND_AND_CONTROL: [Choice; 6] = [
     Choice {
         label: "Block the C2 servers at the firewall",
         text: "Firewall rules cut off the attacker's servers. They spin up new ones, but it slows them down.",
@@ -322,9 +482,36 @@ const COMMAND_AND_CONTROL: [Choice; 3] = [
         brand: -15,
         ..NONE
     },
+    Choice {
+        label: "Watch the C2 traffic quietly",
+        text: "You watch the attacker work. They type slower than your analysts. Morale improves.",
+        scene: Scene::Hunt,
+        fatigue: 10,
+        containment: 7,
+        ..NONE
+    },
+    Choice {
+        label: "Block DNS to brand-new domains",
+        text: "Newly registered domains are blocked, including the CEO's pet startup.",
+        scene: Scene::Block,
+        cost: 10,
+        fatigue: 6,
+        containment: 9,
+        brand: -3,
+        ..NONE
+    },
+    Choice {
+        label: "Call the FBI",
+        text: "The FBI is very interested. They ask for the logs you deleted last spring.",
+        scene: Scene::Press,
+        fatigue: 3,
+        containment: 5,
+        trust: 5,
+        ..NONE
+    },
 ];
 
-const ACTIONS_ON_OBJECTIVES: [Choice; 3] = [
+const ACTIONS_ON_OBJECTIVES: [Choice; 6] = [
     Choice {
         label: "Reset every domain password",
         text: "Every password is reset. The help desk queue hits 4,000 tickets before lunch.",
@@ -352,6 +539,219 @@ const ACTIONS_ON_OBJECTIVES: [Choice; 3] = [
         trust: 10,
         brand: 15,
         ..NONE
+    },
+    Choice {
+        label: "Encrypt the crown jewels",
+        text: "The sensitive data is encrypted. The key is on a sticky note, but a different sticky note.",
+        scene: Scene::Isolate,
+        cost: 20,
+        fatigue: 10,
+        containment: 11,
+        ..NONE
+    },
+    Choice {
+        label: "Kill every active session",
+        text: "Every session is terminated, including the attacker's and the CEO's call with investors.",
+        scene: Scene::Unplug,
+        fatigue: 15,
+        containment: 11,
+        brand: -6,
+        ..NONE
+    },
+    Choice {
+        label: "Offer the attacker a job",
+        text: "The attacker declines, but refers a friend. HR calls it a pipeline win.",
+        scene: Scene::Spend,
+        cost: 15,
+        containment: 8,
+        trust: -5,
+        brand: 5,
+        ..NONE
+    },
+];
+
+/// Something that happens alongside a decision, for better or worse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Event {
+    pub text: &'static str,
+    pub budget: i32,
+    pub coffee: i32,
+    pub fatigue: i32,
+    pub containment: i32,
+    pub trust: i32,
+    pub brand: i32,
+}
+
+/// No event at all.
+const CALM: Event = Event {
+    text: "",
+    budget: 0,
+    coffee: 0,
+    fatigue: 0,
+    containment: 0,
+    trust: 0,
+    brand: 0,
+};
+
+const RECONNAISSANCE_EVENTS: [Event; 4] = [
+    Event {
+        text: "Meanwhile, a pen tester you forgot you hired files a report. It is surprisingly useful.",
+        containment: 4,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, the office Wi-Fi password appears on a sticky note in a public Instagram photo.",
+        containment: -4,
+        trust: -3,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, nothing else happens. Everyone finds this deeply suspicious.",
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, the vending machine eats $5 of the budget. Nobody can prove it.",
+        budget: -5,
+        ..CALM
+    },
+];
+
+const WEAPONIZATION_EVENTS: [Event; 4] = [
+    Event {
+        text: "Meanwhile, a researcher tweets about the attacker's malware. Your SOC reads it first.",
+        containment: 4,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, Facilities schedules a fire drill during the patch window.",
+        fatigue: 5,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, Finance approves a surprise budget top-up after a very scary slide deck.",
+        budget: 15,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, a calendar invite titled \"quick sync\" lasts two hours.",
+        fatigue: 3,
+        ..CALM
+    },
+];
+
+const DELIVERY_EVENTS: [Event; 4] = [
+    Event {
+        text: "Meanwhile, a user forwards the phish to all staff asking \"is this legit?\"",
+        containment: -5,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, the spam filter catches a wave of phish on its own. Nobody is more surprised than the vendor.",
+        containment: 5,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, someone microwaves fish in the break room. Morale plummets.",
+        fatigue: 5,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, a customer praises your response on social media. It was an accident, but you take it.",
+        brand: 5,
+        ..CALM
+    },
+];
+
+const EXPLOITATION_EVENTS: [Event; 4] = [
+    Event {
+        text: "Meanwhile, the coffee machine catches fire. Facilities says it is \"not a priority\".",
+        coffee: -6,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, the exploit crashes on your ancient servers. Legacy tech saves the day.",
+        containment: 5,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, the CEO asks for hourly updates, in person, with slides.",
+        fatigue: 6,
+        trust: 3,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, a vendor's free \"AI SOC\" trial flags itself as malware.",
+        ..CALM
+    },
+];
+
+const INSTALLATION_EVENTS: [Event; 4] = [
+    Event {
+        text: "Meanwhile, an analyst finds the attacker's to-do list. It is better organized than yours.",
+        containment: 5,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, Windows decides now is the time for updates. Every machine reboots.",
+        fatigue: 5,
+        containment: -3,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, Legal asks everyone to preserve evidence and to please stop deleting things.",
+        trust: 3,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, a board member's nephew offers to help because he is \"good with computers\".",
+        trust: -3,
+        ..CALM
+    },
+];
+
+const COMMAND_AND_CONTROL_EVENTS: [Event; 4] = [
+    Event {
+        text: "Meanwhile, the attacker's server goes down for maintenance. Even hackers have change windows.",
+        containment: 5,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, the attacker starts tunneling over DNS. Your entire DNS team is one guy named Gary.",
+        containment: -5,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, a pizza shop mistakes the SOC for a party and delivers 20 free pizzas.",
+        fatigue: -5,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, a reporter calls for comment. PR says \"no comment\" with great confidence.",
+        brand: -4,
+        ..CALM
+    },
+];
+
+const ACTIONS_ON_OBJECTIVES_EVENTS: [Event; 4] = [
+    Event {
+        text: "Meanwhile, the attacker posts a ransom note in Comic Sans. The board is more offended by the font.",
+        trust: -3,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, cyber insurance agrees to cover part of the bill after only 40 forms.",
+        budget: 20,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, an analyst spots data leaving at 3 AM and pulls the plug just in time.",
+        containment: 6,
+        ..CALM
+    },
+    Event {
+        text: "Meanwhile, the attacker leaks the org chart. Everyone learns their manager's real title.",
+        brand: -5,
+        ..CALM
     },
 ];
 
@@ -405,10 +805,12 @@ pub struct GameState {
     pub outcome: Option<Outcome>,
     /// Whether the intern has already been sent for coffee this stage.
     pub coffee_run_made: bool,
+    /// Picks which choices are offered and which events happen.
+    pub seed: u32,
 }
 
 impl GameState {
-    pub fn new(company: &str, lead: &str) -> Self {
+    pub fn new(company: &str, lead: &str, seed: u32) -> Self {
         let member = |name, role, burnout| TeamMember {
             name,
             role,
@@ -436,7 +838,19 @@ impl GameState {
             )],
             outcome: None,
             coffee_run_made: false,
+            seed,
         }
+    }
+
+    /// The three choices offered at this stage, picked by the seed.
+    pub fn options(&self) -> [Choice; 3] {
+        let mut pool = self.stage.choices();
+        for i in 0..3 {
+            let salt = self.stage as u32 * 8 + i as u32;
+            let j = i + roll(self.seed, salt) as usize % (pool.len() - i);
+            pool.swap(i, j);
+        }
+        [pool[0], pool[1], pool[2]]
     }
 
     pub fn analysts(&self) -> i32 {
@@ -477,27 +891,49 @@ impl GameState {
         self.check_bankrupt();
     }
 
-    /// Ends the game when no choice at the current stage is affordable.
+    /// Ends the game when none of the offered choices is affordable.
     fn check_bankrupt(&mut self) {
-        if self.outcome.is_none() && !self.stage.choices().iter().any(|c| self.can_afford(c)) {
+        if self.outcome.is_none() && !self.options().iter().any(|c| self.can_afford(c)) {
             self.outcome = Some(Outcome::Bankrupt);
         }
     }
 
-    /// Plays a choice and returns the worst setback it caused.
+    /// Plays a choice alongside a random event for this stage and returns the worst setback.
     pub fn play(&mut self, choice: &Choice) -> Option<Setback> {
+        let events = self.stage.events();
+        let salt = [
+            self.stage as i32,
+            self.budget,
+            self.containment,
+            self.coffee,
+        ]
+        .iter()
+        .fold(0u32, |hash, &v| {
+            hash.wrapping_mul(31).wrapping_add(v as u32)
+        });
+        let event = events[roll(self.seed, salt) as usize % events.len()];
+        self.resolve(choice, &event)
+    }
+
+    fn resolve(&mut self, choice: &Choice, event: &Event) -> Option<Setback> {
         let mut setback = None;
         self.log.push(format!("{}: {}.", self.stage, choice.label));
+        if !event.text.is_empty() {
+            self.log.push(event.text.to_string());
+        }
 
-        self.budget -= choice.cost;
-        self.coffee = (self.coffee + choice.coffee).min(COFFEE_CAPACITY) - self.team.len() as i32;
-        self.trust = (self.trust + choice.trust).clamp(0, 100);
-        self.brand = (self.brand + choice.brand).clamp(0, 100);
-        self.containment =
-            (self.containment + choice.containment + ANALYST_CONTAINMENT * self.analysts())
-                .min(100);
+        self.budget = (self.budget - choice.cost + event.budget).max(0);
+        self.coffee = (self.coffee + choice.coffee + event.coffee).min(COFFEE_CAPACITY)
+            - self.team.len() as i32;
+        self.trust = (self.trust + choice.trust + event.trust).clamp(0, 100);
+        self.brand = (self.brand + choice.brand + event.brand).clamp(0, 100);
+        self.containment = (self.containment
+            + choice.containment
+            + event.containment
+            + ANALYST_CONTAINMENT * self.analysts())
+        .clamp(0, 100);
 
-        let mut fatigue = BASE_FATIGUE + choice.fatigue;
+        let mut fatigue = BASE_FATIGUE + choice.fatigue + event.fatigue;
         if self.coffee < 0 {
             self.coffee = 0;
             fatigue += NO_COFFEE_FATIGUE;
@@ -578,39 +1014,59 @@ impl GameState {
 mod tests {
     use super::*;
 
+    use std::sync::OnceLock;
+
+    /// Games played per seed in the balance tests.
+    const SEEDS: u32 = 40;
+
     fn game() -> GameState {
-        GameState::new("Acme", "Alex")
+        GameState::new("Acme", "Alex", 1)
     }
 
-    /// Plays the given choice index at each stage.
+    /// A new game at `stage` with the first seed whose offered choices pass `wanted`.
+    fn game_offering(stage: Stage, wanted: impl Fn(&[Choice; 3]) -> bool) -> GameState {
+        (0..)
+            .map(|seed| GameState {
+                stage,
+                ..GameState::new("Acme", "Alex", seed)
+            })
+            .find(|game| wanted(&game.options()))
+            .unwrap()
+    }
+
+    /// Plays the given choice index at each stage with no events.
     fn play_path(path: &[usize]) -> GameState {
         let mut game = game();
         for &i in path {
             let choice = game.stage.choices()[i];
-            game.play(&choice);
+            game.resolve(&choice, &CALM);
         }
         game
     }
 
-    /// Plays every affordable choice path and returns each path with its outcome.
-    fn all_endings() -> Vec<(Vec<usize>, Outcome)> {
-        let mut endings = Vec::new();
-        let mut pending = vec![(game(), Vec::new())];
-        while let Some((game, path)) = pending.pop() {
-            match game.outcome {
-                Some(outcome) => endings.push((path, outcome)),
-                None => {
-                    for (i, choice) in game.stage.choices().iter().enumerate() {
-                        if game.can_afford(choice) {
+    /// Plays every affordable offered path, with events, for many seeds and
+    /// returns each path's choice labels with its outcome.
+    fn all_endings() -> &'static [(Vec<&'static str>, Outcome)] {
+        static ENDINGS: OnceLock<Vec<(Vec<&'static str>, Outcome)>> = OnceLock::new();
+        ENDINGS.get_or_init(|| {
+            let mut endings = Vec::new();
+            let mut pending: Vec<_> = (0..SEEDS)
+                .map(|seed| (GameState::new("Acme", "Alex", seed), Vec::new()))
+                .collect();
+            while let Some((game, path)) = pending.pop() {
+                match game.outcome {
+                    Some(outcome) => endings.push((path, outcome)),
+                    None => {
+                        for choice in game.options().iter().filter(|c| game.can_afford(c)) {
                             let mut next = game.clone();
                             next.play(choice);
-                            pending.push((next, [path.as_slice(), &[i]].concat()));
+                            pending.push((next, [path.as_slice(), &[choice.label]].concat()));
                         }
                     }
                 }
             }
-        }
-        endings
+            endings
+        })
     }
 
     #[test]
@@ -642,13 +1098,13 @@ mod tests {
     fn playing_a_choice_applies_its_effects_and_advances() {
         let mut game = game();
 
-        game.play(&RECONNAISSANCE[1]);
+        game.resolve(&RECONNAISSANCE[1], &CALM);
 
         assert_eq!(game.budget, 120);
         assert_eq!(game.coffee, 18);
         assert_eq!(game.trust, 65);
         assert_eq!(game.containment, 13);
-        assert_eq!(game.team[0].burnout, 44);
+        assert_eq!(game.team[0].burnout, 40 + BASE_FATIGUE);
         assert_eq!(game.stage, Stage::Weaponization);
     }
 
@@ -656,7 +1112,7 @@ mod tests {
     fn falling_behind_the_attacker_costs_trust_and_brand() {
         let mut game = game();
 
-        game.play(&RECONNAISSANCE[2]);
+        game.resolve(&RECONNAISSANCE[2], &CALM);
 
         assert_eq!(game.containment, 6);
         assert_eq!(game.trust, 40);
@@ -677,7 +1133,7 @@ mod tests {
         let mut game = game();
         game.coffee = 0;
 
-        game.play(&RECONNAISSANCE[0]);
+        game.resolve(&RECONNAISSANCE[0], &CALM);
 
         assert_eq!(game.coffee, 0);
         assert_eq!(
@@ -692,7 +1148,7 @@ mod tests {
         let mut game = game();
         game.team[0].burnout = 95;
 
-        game.play(&RECONNAISSANCE[0]);
+        game.resolve(&RECONNAISSANCE[0], &CALM);
 
         assert_eq!(game.analysts(), 2);
         assert!(
@@ -709,7 +1165,7 @@ mod tests {
         game.team[0].burnout = 95;
         game.team[1].burnout = 95;
 
-        game.play(&WEAPONIZATION[0]);
+        game.resolve(&WEAPONIZATION[0], &CALM);
 
         assert_eq!(game.analysts(), 1);
         assert!(
@@ -729,7 +1185,7 @@ mod tests {
         let mut game = game();
         game.budget = 25;
 
-        game.play(&RECONNAISSANCE[0]);
+        game.resolve(&RECONNAISSANCE[0], &CALM);
 
         assert!(game.team.iter().all(|m| m.role != Role::Manager));
         assert!(
@@ -742,12 +1198,94 @@ mod tests {
     #[test]
     fn play_reports_the_worst_setback() {
         let mut game = game();
-        assert_eq!(game.clone().play(&RECONNAISSANCE[0]), None);
-        assert_eq!(game.clone().play(&RECONNAISSANCE[2]), Some(Setback::Behind));
+        assert_eq!(game.clone().resolve(&RECONNAISSANCE[0], &CALM), None);
+        assert_eq!(
+            game.clone().resolve(&RECONNAISSANCE[2], &CALM),
+            Some(Setback::Behind)
+        );
 
         game.trust = 20;
         game.team[0].burnout = 95;
-        assert_eq!(game.play(&RECONNAISSANCE[0]), Some(Setback::Departed));
+        assert_eq!(
+            game.resolve(&RECONNAISSANCE[0], &CALM),
+            Some(Setback::Departed)
+        );
+    }
+
+    #[test]
+    fn options_are_three_different_choices_from_the_stage() {
+        for seed in 0..SEEDS {
+            for stage in Stage::ALL {
+                let game = GameState {
+                    stage,
+                    ..GameState::new("Acme", "Alex", seed)
+                };
+                let options = game.options();
+
+                assert!(options.iter().all(|c| stage.choices().contains(c)));
+                assert!(options[0] != options[1] && options[1] != options[2]);
+                assert!(options[0] != options[2]);
+                assert_eq!(options, game.options(), "options must be stable");
+            }
+        }
+    }
+
+    #[test]
+    fn every_choice_and_event_turns_up_across_seeds() {
+        for stage in Stage::ALL {
+            let mut offered = Vec::new();
+            let mut happened = Vec::new();
+            for seed in 0..SEEDS {
+                for budget in [100, 150] {
+                    let mut game = GameState {
+                        stage,
+                        budget,
+                        ..GameState::new("Acme", "Alex", seed)
+                    };
+                    offered.extend(game.options());
+                    let choice = game.options()[0];
+                    game.play(&choice);
+                    happened.extend(
+                        game.log
+                            .iter()
+                            .filter(|e| e.starts_with("Meanwhile"))
+                            .cloned(),
+                    );
+                }
+            }
+
+            for choice in stage.choices() {
+                assert!(
+                    offered.contains(&choice),
+                    "{} is never offered",
+                    choice.label
+                );
+            }
+            for event in stage.events() {
+                assert!(
+                    happened.iter().any(|e| e == event.text),
+                    "{} never happens",
+                    event.text
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn events_apply_their_effects_and_are_logged() {
+        let mut game = game();
+        let windfall = Event {
+            text: "Meanwhile, a test happens.",
+            budget: 15,
+            containment: 5,
+            ..CALM
+        };
+
+        game.resolve(&RECONNAISSANCE[1], &windfall);
+
+        assert_eq!(game.budget, 150 - 30 + 15);
+        assert_eq!(game.containment, 13 + 5);
+        assert_eq!(game.log[2], "Meanwhile, a test happens.");
     }
 
     #[test]
@@ -765,7 +1303,7 @@ mod tests {
 
         assert_eq!(game.budget, 150 - COFFEE_RUN_COST);
         assert!(!game.can_send_intern());
-        game.play(&RECONNAISSANCE[0]);
+        game.resolve(&RECONNAISSANCE[0], &CALM);
         assert!(game.can_send_intern());
         game.budget = COFFEE_RUN_COST - 1;
         assert!(!game.can_send_intern());
@@ -789,7 +1327,7 @@ mod tests {
         game.intern_returns(true);
         assert_eq!(game.coffee, COFFEE_CAPACITY);
 
-        game.play(&WEAPONIZATION[2]);
+        game.resolve(&WEAPONIZATION[2], &CALM);
         assert_eq!(game.coffee, COFFEE_CAPACITY - 6);
     }
 
@@ -818,7 +1356,7 @@ mod tests {
         let mut game = game();
         game.trust = 20;
 
-        game.play(&RECONNAISSANCE[0]);
+        game.resolve(&RECONNAISSANCE[0], &CALM);
 
         assert!(game.team.iter().all(|m| m.role != Role::Ciso));
         assert!(game.log.iter().any(|e| e.contains("fired Ravi the CISO")));
@@ -829,7 +1367,7 @@ mod tests {
         let mut game = game();
         game.team.retain(|m| m.name != "Maya");
 
-        game.play(&RECONNAISSANCE[0]);
+        game.resolve(&RECONNAISSANCE[0], &CALM);
 
         assert_eq!(game.containment, 8 + 2 * ANALYST_CONTAINMENT);
     }
@@ -865,10 +1403,11 @@ mod tests {
 
     #[test]
     fn running_out_of_money_without_a_free_choice_is_bankruptcy() {
-        let mut game = game();
+        let mut game = game_offering(Stage::Weaponization, |o| o.iter().all(|c| c.cost > 4));
+        game.stage = Stage::Reconnaissance;
         game.budget = 4;
 
-        game.play(&RECONNAISSANCE[2]);
+        game.resolve(&RECONNAISSANCE[2], &CALM);
 
         assert_eq!(game.stage, Stage::Weaponization);
         assert_eq!(game.outcome, Some(Outcome::Bankrupt));
@@ -876,11 +1415,11 @@ mod tests {
 
     #[test]
     fn a_free_choice_keeps_a_broke_team_playing() {
-        let mut game = game();
+        let mut game = game_offering(Stage::Delivery, |o| o.iter().any(|c| c.cost == 0));
         game.stage = Stage::Weaponization;
         game.budget = 5;
 
-        game.play(&WEAPONIZATION[0]);
+        game.resolve(&WEAPONIZATION[0], &CALM);
 
         assert_eq!(game.stage, Stage::Delivery);
         assert_eq!(game.outcome, None);
@@ -888,8 +1427,7 @@ mod tests {
 
     #[test]
     fn a_coffee_run_that_empties_the_budget_ends_the_game() {
-        let mut game = game();
-        game.stage = Stage::Weaponization;
+        let mut game = game_offering(Stage::Weaponization, |o| o.iter().all(|c| c.cost > 0));
         game.budget = COFFEE_RUN_COST;
 
         game.send_intern();
@@ -900,7 +1438,7 @@ mod tests {
 
     #[test]
     fn every_outcome_is_reachable() {
-        let outcomes: Vec<_> = all_endings().into_iter().map(|(_, o)| o).collect();
+        let outcomes: Vec<_> = all_endings().iter().map(|(_, o)| *o).collect();
 
         for outcome in [
             Outcome::Contained,
@@ -929,15 +1467,14 @@ mod tests {
     fn every_choice_is_part_of_some_winning_path() {
         let endings = all_endings();
 
-        for (stage, _) in Stage::ALL.iter().enumerate() {
-            for choice in 0..3 {
-                assert!(
-                    endings
-                        .iter()
-                        .any(|(path, o)| *o == Outcome::Contained && path[stage] == choice),
-                    "choice {choice} at stage {stage} never wins"
-                );
-            }
+        for choice in Stage::ALL.iter().flat_map(|s| s.choices()) {
+            assert!(
+                endings
+                    .iter()
+                    .any(|(path, o)| *o == Outcome::Contained && path.contains(&choice.label)),
+                "{} never wins",
+                choice.label
+            );
         }
     }
 }
