@@ -248,7 +248,7 @@ Tasks:
 - The grant appears in the log and as a result card, and the next funding day shows on the SOC Status panel.
 - The Public S-1 Flip top-up is removed; the random "board approves $100K" event stays.
 - Starting budgets drop to $600K, $450K, and $300K; with grants, total money over a game is about 50% higher than before.
-- The Vendor Hall's spare after costs becomes the lowest the budget reaches before the IPO, stepping through each week's costs and each grant at today's trust.
+- The Vendor Hall's spare after costs becomes the lowest the budget reaches before the IPO, stepping through each week's costs and each grant at today's trust. (Later removed from the screen as confusing; the Vendor Hall was renamed Procurement.)
 
 Success criteria:
 - [x] Grants arrive only on funding days, keep coming after IPO delays, and scale with trust as documented (unit tested).

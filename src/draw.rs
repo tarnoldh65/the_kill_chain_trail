@@ -328,28 +328,14 @@ fn price_text(game: &GameState, item: Item) -> String {
 
 fn vendor_hall(font: &Font, shop: &Shop) {
     let game = &shop.game;
-    font.text("THE VENDOR HALL", MARGIN, 8.0, 2.0, AMBER);
+    font.text("PROCUREMENT", MARGIN, 8.0, 2.0, AMBER);
     right(font, &game.company, 12.0, CYAN);
     let costs = format!(
-        "Budget {}   Weekly costs {}   Spare after costs ",
+        "Budget {}   Weekly costs {}",
         money(game.budget),
         money(game.weekly_costs())
     );
     font.text(&costs, MARGIN, 36.0, 1.0, INK);
-    // What can be spent without missing a payday before the IPO; red if overcommitted.
-    let spare = game.spare();
-    let (spare, color) = if spare < 0 {
-        (format!("-{}", money(-spare)), RED)
-    } else {
-        (money(spare), GREEN)
-    };
-    font.text(
-        &spare,
-        MARGIN + costs.len() as f32 * GLYPH,
-        36.0,
-        1.0,
-        color,
-    );
     divider(52.0);
 
     // Tabs: staff, the six defense areas, and services.
@@ -396,7 +382,7 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     let exit = if game.day == 1 {
         "Open for business"
     } else {
-        "Leave the Vendor Hall"
+        "Leave Procurement"
     };
     font.text(
         exit,
@@ -464,15 +450,28 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
     font.text("TAKE AN ACTION", MARGIN, 72.0, 2.0, AMBER);
     right(font, &format!("Budget {}", money(game.budget)), 76.0, INK);
     font.text(
-        &format!("{:<38}{:<8}COST", "ACTION", "DAYS"),
+        &format!("{:<38}{:<8}COST", "", "DAYS"),
         MARGIN + 24.0,
         100.0,
         1.0,
-        CYAN,
+        DIM,
     );
+    // Actions under a header for each kind; the cursor only lands on actions and Back.
     let actions = game.actions();
-    let row_y = |i: usize| 116.0 + i as f32 * 16.0;
+    let mut y = 102.0;
+    let mut rows = Vec::new();
     for (i, action) in actions.iter().enumerate() {
+        if i == 0 || actions[i - 1].kind() != action.kind() {
+            y += 16.0;
+            font.text(
+                &action.kind().to_string().to_uppercase(),
+                MARGIN,
+                y,
+                1.0,
+                CYAN,
+            );
+        }
+        y += 12.0;
         let cost = match action.cost() {
             0 => "-".to_string(),
             cost => money(cost),
@@ -480,13 +479,16 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
         font.text(
             &format!("{:<38}{:<8}{cost}", action.label(), game.duration(*action)),
             MARGIN + 24.0,
-            row_y(i),
+            y,
             1.0,
             INK,
         );
+        rows.push(y);
     }
-    font.text("Back", MARGIN + 24.0, row_y(actions.len()), 1.0, AMBER);
-    font.text(">", MARGIN + 8.0, row_y(menu.cursor), 1.0, AMBER);
+    y += 16.0;
+    font.text("Back", MARGIN + 24.0, y, 1.0, AMBER);
+    rows.push(y);
+    font.text(">", MARGIN + 8.0, rows[menu.cursor], 1.0, AMBER);
     divider(384.0);
     let note = menu
         .action()
@@ -707,7 +709,7 @@ fn landmark_popup(font: &Font, game: &GameState) {
         ]
     } else if landmark.is_fort() {
         vec![
-            ("Visit the Vendor Hall".to_string(), true),
+            ("Visit Procurement".to_string(), true),
             ("Rest (no time passes)".to_string(), !stop.rested),
             ("Move on".to_string(), true),
         ]
@@ -1178,7 +1180,7 @@ fn day_menu(font: &Font, game: &GameState) {
         ("Check the team", true),
         (tempo.as_str(), true),
         (intern.as_str(), game.can_send_intern()),
-        ("Visit the Vendor Hall", true),
+        ("Go through Procurement", true),
     ];
     for (i, (label, available)) in options.iter().enumerate() {
         let color = if *available { INK } else { DIM };

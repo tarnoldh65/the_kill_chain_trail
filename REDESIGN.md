@@ -47,7 +47,7 @@ Enter the company name and your name as incident lead (unchanged from the MVP).
 
 The profile sets the starting budget, the starting valuation, which threat actors are most likely, and the final score multiplier. All numbers in this document are starting points for tuning.
 
-### 4.3 Outfitting at the Vendor Hall (the "general store")
+### 4.3 Outfitting through Procurement (the "general store")
 
 A shop screen where the player spends the starting budget. A leftover balance carries into the game and pays weekly costs.
 
@@ -67,7 +67,7 @@ A shop screen where the player spends the starting budget. A leftover balance ca
 | Resilience | Incident runbooks $8K | Immutable backups $30K | Disaster recovery site $80K |
 | Detection | Log collection $15K | SIEM $80K | Managed detection service $100K |
 
-The Vendor Hall has a tab for staff, one for each area, and one for services. The IMPROVES row lights up the areas the selected tool helps.
+Procurement has a tab for staff, one for each area, and one for services. The IMPROVES row lights up the areas the selected tool helps.
 
 **Services and supplies**:
 - Incident response retainer: unlocks "Call the IR firm" during incidents.
@@ -75,14 +75,14 @@ The Vendor Hall has a tab for staff, one for each area, and one for services. Th
 - Coffee: cases of 12 pots for the break room (capacity 36).
 - Coffee subscription: nothing up front, $2K every Monday for 18 pots, enough for Relaxed or Steady tempo but not for Crunch.
 
-The Vendor Hall stays open: visit it from the day menu any day to pivot as threats change. After day 1, hiring starts a week-long search; only the conference job fair hires on the spot.
+Procurement stays open: visit it from the day menu any day to pivot as threats change. After day 1, hiring starts a week-long search; only the conference job fair hires on the spot.
 
 ## 5. The calendar and timeline
 
 - The run is scheduled for 26 weeks (182 days), but IPO delays can extend it (section 5.2). Day 1 is a Monday.
 - A persistent timeline bar spans the top of every gameplay screen: a line from today to IPO day with landmark icons along it, a marker for the current day, and text such as `DAY 43  -  139 DAYS TO IPO`.
 - Every Monday is payday: salaries and the coffee subscription are deducted. The log notes it.
-- Every sixth Monday (days 43, 85, 127, 169, and on through delays) the board releases a grant scaled by trust: the full amount at trust 60 (Fintech $180K, Healthtech $160K, Gaming startup $120K), half at 30, one and a half at 90. Starting budgets are $600K, $450K, and $300K. The Vendor Hall's spare after costs is the lowest the budget reaches before the IPO, counting grants at today's trust.
+- Every sixth Monday (days 43, 85, 127, 169, and on through delays) the board releases a grant scaled by trust: the full amount at trust 60 (Fintech $180K, Healthtech $160K, Gaming startup $120K), half at 30, one and a half at 90. Starting budgets are $600K, $450K, and $300K.
 - Threat activity ramps up as the IPO approaches and the company becomes more visible.
 
 ### 5.1 Landmarks
@@ -155,11 +155,11 @@ The week 7 landmark is a small minigame. You always attend; the question is who 
 | Card | Effect |
 | --- | --- |
 | "You gave a lightning talk about your SOC. The CISO saw it on LinkedIn." | Trust up |
-| "You let a vendor scan your badge. You now get 40 emails a day and a 20% discount at the Vendor Hall." | Vendor Hall discount at this conference |
+| "You let a vendor scan your badge. You now get 40 emails a day and a 20% discount through Procurement." | Procurement discount at this conference |
 | "You met a senior analyst at the after-party who wants a job." | A senior candidate waits at the job fair with no hiring fee |
 | "You spent the whole conference answering Slack from your hotel room." | Nothing; your team is grateful you were reachable |
 
-After the report, the fort opens: the Vendor Hall with any perks, the job fair (hiring on the spot), and a rest.
+After the report, the fort opens: Procurement with any perks, the job fair (hiring on the spot), and a rest.
 
 ## 6. The day menu
 
@@ -170,7 +170,7 @@ When the clock stops, the player sees numbered options (layout unchanged from th
 3. **Check the team**: roster with each member's burnout (Good / Fair / Poor / Very poor).
 4. **Set the tempo**: Relaxed, Steady, or Crunch (the "pace" setting).
 5. **Send the intern for fancy coffee**: the existing street minigame, once a week. Surviving brings back 6 pots and takes 8 burnout off every analyst.
-6. **Visit the Vendor Hall**: buy, hire, and subscribe any day.
+6. **Go through Procurement**: buy, hire, and subscribe any day.
 
 From any play screen, L opens the full log and D opens the defenses screen: each area's pen test grade, who it slows, and what is helping it.
 

@@ -135,9 +135,9 @@ pub enum Screen {
         company: String,
         lead: String,
     },
-    /// The Vendor Hall before day 1.
+    /// Procurement before day 1.
     Shop(Shop),
-    /// Naming the analyst being hired at the Vendor Hall.
+    /// Naming the analyst being hired through Procurement.
     Hire {
         shop: Shop,
         name: String,
@@ -185,7 +185,7 @@ pub struct Travel {
     elapsed_ms: u32,
 }
 
-/// Vendor Hall tabs: staff, one per defense area, then services.
+/// Procurement tabs: staff, one per defense area, then services.
 pub const TABS: usize = 8;
 
 /// The tab an item is listed under.
@@ -213,7 +213,7 @@ pub fn tab_name(tab: usize) -> String {
     }
 }
 
-/// The Vendor Hall, open on one tab with a cursor on one of its items or on the exit below.
+/// Procurement, open on one tab with a cursor on one of its items or on the exit below.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shop {
     pub game: GameState,
@@ -727,7 +727,7 @@ mod tests {
         screen
     }
 
-    /// The Vendor Hall for a Healthtech company.
+    /// Procurement for a Healthtech company.
     fn vendor_hall() -> Screen {
         let screen = Screen::Title.update(Input::Enter);
         let screen = type_text(screen, "Acme").update(Input::Enter);
@@ -749,7 +749,7 @@ mod tests {
         type_text(screen, name).update(Input::Enter)
     }
 
-    /// Leaves the Vendor Hall through the exit row.
+    /// Leaves Procurement through the exit row.
     fn open_for_business(screen: Screen) -> Screen {
         arrows(screen, Hop::Down, Item::ALL.len()).update(Input::Enter)
     }
@@ -1020,7 +1020,7 @@ mod tests {
         let start = new_game();
         let screen = start.clone().update(Input::Char('2'));
         let count = action_menu(&screen).game.actions().len();
-        assert_eq!(action_menu(&screen).action(), Some(Action::PhishingSim));
+        assert_eq!(action_menu(&screen).action(), Some(Action::PatchSprint));
 
         let screen = arrows(screen, Hop::Down, count + 3);
         assert_eq!(action_menu(&screen).cursor, count);

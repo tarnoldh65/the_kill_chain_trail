@@ -59,7 +59,7 @@ impl Landmark {
                 "The board wants a security briefing. How you pitch it decides how much they trust you."
             }
             Self::Conference => {
-                "The security conference is in town. The Vendor Hall is open and recruiters are everywhere."
+                "The security conference is in town. Vendors and recruiters are everywhere."
             }
             Self::Audit => {
                 "The SOC 2 Type II auditors have arrived with clipboards. Fail, and the IPO slips."

@@ -14,14 +14,14 @@ const MAX_DELAY: u32 = 42;
 /// Extra daily odds of new attackers, in thousandths, once the S-1 is public.
 const FLIP_THREAT: u32 = 20;
 /// Days between the board's funding releases, starting from day 1.
-const FUNDING_INTERVAL: u32 = 42;
+pub const FUNDING_INTERVAL: u32 = 42;
 /// Trust at which the board releases its full quarterly grant.
 const FUNDING_TRUST: i64 = 60;
 /// What each analyst's conference expertise adds to their area.
 const EXPERTISE_BONUS: i32 = 10;
 /// Extra daily burnout for analysts left holding the fort during the conference.
 const STAY_HOME_BURNOUT: i32 = 2;
-/// Percent of list price at the Vendor Hall with the conference badge-scan discount.
+/// Percent of list price through Procurement with the conference badge-scan discount.
 const DISCOUNT_PERCENT: i64 = 80;
 /// Posture below this is a weak area on the pen test report.
 const WEAK_POSTURE: i32 = 40;
@@ -30,7 +30,7 @@ const WEAK_POSTURE: i32 = 40;
 pub const COFFEE_CAPACITY: i32 = 36;
 /// Cost in dollars of sending the intern across the street for coffee.
 pub const COFFEE_RUN_COST: i64 = 10;
-/// Pots of coffee in a case from the Vendor Hall.
+/// Pots of coffee in a case from Procurement.
 const CASE_POTS: i32 = 12;
 /// Pots the coffee subscription delivers every Monday, and what it costs each week.
 const SUBSCRIPTION_POTS: i32 = 18;
@@ -205,7 +205,7 @@ impl fmt::Display for Profile {
     }
 }
 
-/// Everything for sale at the Vendor Hall, in shop order.
+/// Everything for sale through Procurement, in shop order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Item {
     Junior,
@@ -405,6 +405,33 @@ impl Item {
     }
 }
 
+/// The sections of the action list, in the order they appear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Kind {
+    /// Clearing what an incident left behind.
+    Recovery,
+    /// Rolling out tools.
+    Implementation,
+    /// Keeping tools at full strength.
+    Maintenance,
+    /// Hands-on security work.
+    Operations,
+    /// Looking after the team and leadership.
+    Management,
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Recovery => "Recovery",
+            Self::Implementation => "Implementation",
+            Self::Maintenance => "Maintenance",
+            Self::Operations => "Operations",
+            Self::Management => "Management",
+        })
+    }
+}
+
 /// Each area on its own, for naming the area a maintenance action restores.
 const AREA_TAGS: [(Area, i32); 6] = [
     (Area::Identity, 0),
@@ -443,7 +470,7 @@ impl Tool {
 /// Something the SOC spends days (and sometimes money) on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
-    /// Rolls out an owned tool from the Vendor Hall.
+    /// Rolls out an owned tool from Procurement.
     Deploy(Item),
     PhishingSim,
     PatchSprint,
@@ -508,6 +535,18 @@ impl Action {
             Self::Clear(Condition::RegulatorInquiry) => 20_000,
             Self::Clear(Condition::Downtime) => 30_000,
             _ => 0,
+        }
+    }
+
+    pub fn kind(self) -> Kind {
+        match self {
+            Self::Clear(_) => Kind::Recovery,
+            Self::Deploy(_) => Kind::Implementation,
+            Self::Maintain(_) => Kind::Maintenance,
+            Self::PhishingSim | Self::PatchSprint | Self::Tabletop | Self::ThreatHunt => {
+                Kind::Operations
+            }
+            Self::DayOff | Self::Offsite | Self::BriefLeadership => Kind::Management,
         }
     }
 
@@ -603,7 +642,7 @@ pub struct Task {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Search {
     pub name: String,
-    /// The Vendor Hall's `Junior` or `Senior` listing.
+    /// Procurement's `Junior` or `Senior` listing.
     pub level: Item,
     pub days_left: u32,
 }
@@ -841,7 +880,7 @@ pub struct GameState {
     pub conference_days: u32,
     /// Conference cards waiting to be revealed.
     pub cards: Vec<Revealed>,
-    /// Badge-scan discount at this conference's Vendor Hall.
+    /// Badge-scan discount at Procurement during this conference.
     discount: bool,
     /// A senior analyst from the after-party, hired with no fee.
     free_senior: bool,
@@ -855,7 +894,7 @@ pub struct GameState {
     /// Indexed by `Area`; kept private so it can never be drawn.
     posture: [i32; Area::ALL.len()],
     pub team: Vec<TeamMember>,
-    /// Tools and services bought at the Vendor Hall. Tools need deploying before they help.
+    /// Tools and services bought through Procurement. Tools need deploying before they help.
     pub owned: Vec<Item>,
     pub deployed: Vec<Tool>,
     pub task: Option<Task>,
@@ -886,7 +925,7 @@ pub struct GameState {
 }
 
 impl GameState {
-    /// A new game with leadership in place and no analysts yet; hire them at the Vendor Hall.
+    /// A new game with no analysts yet; hire them through Procurement.
     pub fn new(company: &str, lead: &str, profile: Profile, seed: u32) -> Self {
         Self {
             company: company.to_string(),
@@ -1016,7 +1055,7 @@ impl GameState {
         }
     }
 
-    /// Hires an analyst from the Vendor Hall's `Junior` or `Senior` listing.
+    /// Hires an analyst from Procurement's `Junior` or `Senior` listing.
     /// Hires an analyst: at once on day 1 and at the conference job fair, otherwise after
     /// a week-long search. The recruiter's fee is paid now either way.
     pub fn hire(&mut self, item: Item, name: &str) {
@@ -1111,7 +1150,8 @@ impl GameState {
         (self.posture[area as usize] + EXPERTISE_BONUS * experts + tools).min(100)
     }
 
-    /// Actions the SOC can start now: prerequisites met, affordable, and nothing else under way.
+    /// Actions the SOC can start now, grouped by kind: prerequisites met, affordable, and
+    /// nothing else under way.
     pub fn actions(&self) -> Vec<Action> {
         if self.task.is_some() || self.outcome.is_some() {
             return Vec::new();
@@ -1139,13 +1179,13 @@ impl GameState {
             .map(Action::Maintain);
         cures
             .chain(deployable)
-            .chain([
-                Action::PhishingSim,
-                Action::PatchSprint,
-                Action::Tabletop,
-                Action::ThreatHunt,
-            ])
             .chain(upkeep)
+            .chain([
+                Action::PatchSprint,
+                Action::PhishingSim,
+                Action::ThreatHunt,
+                Action::Tabletop,
+            ])
             .chain([Action::DayOff, Action::Offsite, Action::BriefLeadership])
             .filter(|action| self.affords(action.cost()))
             .collect()
@@ -1164,7 +1204,7 @@ impl GameState {
         days.saturating_sub(self.seniors() / 2).max(1)
     }
 
-    /// Pays for an action and puts it under way; `name` names a recruit.
+    /// Pays for an action and puts it under way.
     pub fn start(&mut self, action: Action) {
         self.budget -= action.cost();
         let days = self.duration(action);
@@ -1663,9 +1703,9 @@ impl GameState {
         let effect = if lead.trust != 0 {
             format!("Trust +{}", lead.trust)
         } else if lead.discount {
-            "20% off at the Vendor Hall".to_string()
+            "20% off through Procurement".to_string()
         } else if lead.recruit {
-            "A senior hire with no fee at the Vendor Hall".to_string()
+            "A senior hire with no fee through Procurement".to_string()
         } else {
             "No effect".to_string()
         };
@@ -2116,22 +2156,6 @@ impl GameState {
         self.funding_days().next()
     }
 
-    /// What can be spent now without missing a payday: the lowest the budget gets before the
-    /// IPO if weekly costs stay the same and the board keeps funding at today's trust.
-    pub fn spare(&self) -> i64 {
-        let (mut cash, mut lowest) = (self.budget, self.budget);
-        let mut monday = self.day + 7 - self.weekday();
-        while monday < self.ipo_day {
-            if (monday - 1).is_multiple_of(FUNDING_INTERVAL) {
-                cash += self.grant();
-            }
-            cash -= self.weekly_costs();
-            lowest = lowest.min(cash);
-            monday += 7;
-        }
-        lowest
-    }
-
     fn fund(&mut self) {
         let before = self.glance();
         let grant = self.grant();
@@ -2435,7 +2459,7 @@ mod tests {
         assert_eq!(game.day, 1);
         assert_eq!(game.weekday(), 0);
         assert_eq!(game.days_to_ipo(), IPO_DAY - 1);
-        assert!(game.team.is_empty(), "hire analysts at the Vendor Hall");
+        assert!(game.team.is_empty(), "hire analysts through Procurement");
         assert!(game.owned.is_empty());
         assert!(game.log[0].contains("Acme") && game.log[0].contains("Alex"));
         assert_eq!(game.outcome, None);
@@ -4128,21 +4152,6 @@ mod tests {
     }
 
     #[test]
-    fn spare_is_the_lowest_the_budget_gets_before_the_ipo() {
-        let mut game = game();
-        game.team.truncate(1);
-        game.budget = 40_000;
-
-        // $6K a week; five paydays (days 8-36) before the first $160K grant on day 43.
-        assert_eq!(game.spare(), 40_000 - 5 * 6_000);
-        game.budget = 20_000;
-        assert_eq!(game.spare(), 20_000 - 5 * 6_000, "short before the grant");
-
-        game.trust = 0;
-        assert_eq!(game.spare(), 20_000 - 25 * 6_000, "no grants at zero trust");
-    }
-
-    #[test]
     fn funding_keeps_coming_through_ipo_delays() {
         let mut game = game();
         assert_eq!(game.next_funding(), Some(43));
@@ -4600,6 +4609,30 @@ mod tests {
                     "{tool:?} {area}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn actions_are_listed_by_kind() {
+        let mut game = game();
+        game.owned.push(Item::Edr);
+        game.deployed.push(Tool {
+            item: Item::Waf,
+            condition: 50,
+        });
+        game.conditions.push(Condition::Downtime);
+
+        let kinds: Vec<Kind> = game.actions().iter().map(|a| a.kind()).collect();
+
+        assert_eq!(kinds.first(), Some(&Kind::Recovery));
+        assert!(kinds.windows(2).all(|w| w[0] <= w[1]), "{kinds:?}");
+        for kind in [
+            Kind::Implementation,
+            Kind::Maintenance,
+            Kind::Operations,
+            Kind::Management,
+        ] {
+            assert!(kinds.contains(&kind), "{kind}");
         }
     }
 

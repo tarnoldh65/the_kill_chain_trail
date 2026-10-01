@@ -156,7 +156,7 @@ const HALLWAY: [Card; 4] = [
 pub struct LeadCard {
     pub text: &'static str,
     pub trust: i32,
-    /// 20% off at this conference's Vendor Hall.
+    /// 20% off at Procurement during this conference.
     pub discount: bool,
     /// A senior analyst waits at the job fair with no hiring fee.
     pub recruit: bool,
@@ -170,7 +170,7 @@ pub const LEAD_CARDS: [LeadCard; 4] = [
         recruit: false,
     },
     LeadCard {
-        text: "You let a vendor scan your badge. You now get 40 emails a day and 20% off at the Vendor Hall.",
+        text: "You let a vendor scan your badge. You now get 40 emails a day and 20% off through Procurement.",
         trust: 0,
         discount: true,
         recruit: false,

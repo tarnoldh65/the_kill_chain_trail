@@ -4,7 +4,9 @@ use std::mem::discriminant;
 
 use crate::conference::Track;
 use crate::events::PET_PROJECT;
-use crate::game::{Action, GameState, IR_FEE, Item, Outcome, Profile, Reply, Tempo};
+use crate::game::{
+    Action, FUNDING_INTERVAL, GameState, IR_FEE, Item, Outcome, Profile, Reply, Tempo,
+};
 use crate::landmarks::Landmark;
 
 const SEEDS: u32 = 100;
@@ -68,6 +70,22 @@ fn average_burnout(game: &GameState) -> i32 {
 /// Money kept spare for incidents and surprises on top of every payday.
 const CUSHION: i64 = 150_000;
 
+/// The lowest the budget gets before the IPO if weekly costs stay the same and the board
+/// keeps funding at today's trust: what can be spent now without missing a payday.
+fn spare(game: &GameState) -> i64 {
+    let (mut cash, mut lowest) = (game.budget, game.budget);
+    let mut monday = game.day + 7 - game.weekday();
+    while monday < game.ipo_day {
+        if (monday - 1).is_multiple_of(FUNDING_INTERVAL) {
+            cash += game.grant();
+        }
+        cash -= game.weekly_costs();
+        lowest = lowest.min(cash);
+        monday += 7;
+    }
+    lowest
+}
+
 /// Mondays left before IPO day, each one a payday.
 fn paydays_left(game: &GameState) -> i64 {
     ((game.ipo_day - 1) / 7 - (game.day - 1) / 7) as i64
@@ -75,7 +93,7 @@ fn paydays_left(game: &GameState) -> i64 {
 
 /// Whether spending `cost` now and `weekly` more each week still leaves the cushion.
 fn affordable(game: &GameState, cost: i64, weekly: i64) -> bool {
-    game.spare() - cost - weekly * paydays_left(game) > CUSHION
+    spare(game) - cost - weekly * paydays_left(game) > CUSHION
 }
 
 fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
@@ -295,7 +313,7 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
                 let action = actions[rng.below(actions.len())];
                 game.start(action);
             }
-            // An impulse buy at the Vendor Hall now and then.
+            // An impulse buy through Procurement now and then.
             let item = Item::ALL[rng.below(Item::ALL.len())];
             if rng.chance(3) && game.can_buy(item) {
                 match item {
@@ -315,7 +333,7 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
                 game.send_intern();
                 game.intern_returns(true);
             }
-            // A weekly trip to the Vendor Hall for anything missing, and a new hire if short.
+            // A weekly trip to Procurement for anything missing, and a new hire if short.
             if game.weekday() == 0 {
                 shop(game, style);
                 let short = analysts(game).len() + game.searches.len() < 3;
