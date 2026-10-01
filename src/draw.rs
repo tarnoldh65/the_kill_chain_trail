@@ -5,8 +5,8 @@ use crate::art::{self, Sprite};
 use crate::audio::TRACKS;
 use crate::conference::Track;
 use crate::game::{
-    Action, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Outcome, Profile, Reply,
-    Role, SECOND_THOUGHTS, TeamMember, money,
+    Area, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Outcome, Profile, Reply, Role,
+    SECOND_THOUGHTS, TeamMember, money,
 };
 use crate::landmarks::Landmark;
 use crate::scores::Score;
@@ -103,18 +103,14 @@ pub fn screen(screen: &Screen, font: &Font, music: Music, scores: &[Score]) {
             } else {
                 "junior"
             };
-            name_popup(font, &format!("Name your new {level} analyst:"), name);
+            let prompt = if shop.game.hires_now() {
+                format!("Name your new {level} analyst:")
+            } else {
+                format!("Name the {level} analyst to look for:")
+            };
+            name_popup(font, &prompt, name);
         }
         Screen::Actions(menu) => action_menu(font, menu),
-        Screen::Recruit { menu, name } => {
-            action_menu(font, menu);
-            let level = if menu.action() == Some(Action::Recruit(Item::Senior)) {
-                "senior"
-            } else {
-                "junior"
-            };
-            name_popup(font, &format!("Name the {level} analyst to recruit:"), name);
-        }
         Screen::Play(game) => play(font, game, false),
         Screen::Travel(travel) => play(font, &travel.game, true),
         Screen::Team {
@@ -130,6 +126,7 @@ pub fn screen(screen: &Screen, font: &Font, music: Music, scores: &[Score]) {
         Screen::Coffee(run) => coffee_run(font, run),
         Screen::Report(game) => after_action(font, game),
         Screen::Log { game, page } => full_log(font, game, *page),
+        Screen::Defenses(game) => defenses(font, game),
         Screen::Attendees { game, picked } => attendees(font, game, picked),
         Screen::Tracks {
             game,
@@ -333,17 +330,25 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     let game = &shop.game;
     font.text("THE VENDOR HALL", MARGIN, 8.0, 2.0, AMBER);
     right(font, &game.company, 12.0, CYAN);
+    let costs = format!(
+        "Budget {}   Weekly costs {}   Spare after costs ",
+        money(game.budget),
+        money(game.weekly_costs())
+    );
+    font.text(&costs, MARGIN, 36.0, 1.0, INK);
+    // What is left once every payday through the IPO is covered; red if overcommitted.
+    let spare = game.budget - game.weekly_costs() * game.paydays_left();
+    let (spare, color) = if spare < 0 {
+        (format!("-{}", money(-spare)), RED)
+    } else {
+        (money(spare), GREEN)
+    };
     font.text(
-        &format!(
-            "Budget {}   Weekly costs {}/wk, {} to IPO",
-            money(game.budget),
-            money(game.weekly_costs()),
-            money(game.weekly_costs() * game.paydays_left())
-        ),
-        MARGIN,
+        &spare,
+        MARGIN + costs.len() as f32 * GLYPH,
         36.0,
         1.0,
-        INK,
+        color,
     );
     divider(52.0);
 
@@ -398,6 +403,9 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     divider(exit_y + 20.0);
 
     let note = match shop.item() {
+        Some(Item::Junior | Item::Senior) if !game.hires_now() => {
+            "Starts a week-long search. The recruiter's fee is paid now."
+        }
         Some(item) => item.description(),
         None if can_open => "Start day 1. Leftover budget pays the weekly payroll.",
         None => "Hire at least one analyst first.",
@@ -408,11 +416,17 @@ fn vendor_hall(font: &Font, shop: &Shop) {
         .team
         .iter()
         .map(|m| format!("{} ({})", m.name, short_role(m.role)))
+        .chain(
+            game.searches
+                .iter()
+                .map(|s| format!("{} (starts in {} days)", s.name, s.days_left)),
+        )
         .collect();
     let roster = format!("Analysts: {}", analysts.join(", "));
     for (i, line) in wrap(&roster, 76).iter().take(4).enumerate() {
         font.text(line, MARGIN, exit_y + 56.0 + i as f32 * 12.0, 1.0, INK);
     }
+    improves_strip(font, shop.item().map_or(&[], |i| i.boosts()), 432.0);
     font.text("UP/DOWN to choose, ENTER to buy.", MARGIN, 460.0, 1.0, DIM);
 }
 
@@ -466,8 +480,90 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
         .action()
         .map_or("Return to the day menu.", |a| a.description());
     font.text(note, MARGIN, 396.0, 1.0, CYAN);
+    improves_strip(font, menu.action().map_or(&[], |a| a.boosts()), 424.0);
     font.text(
         "UP/DOWN to choose, ENTER to start. Days pass while the SOC works.",
+        MARGIN,
+        460.0,
+        1.0,
+        DIM,
+    );
+}
+
+/// The six defense areas in a row, with the ones `improved` lit up.
+fn improves_strip(font: &Font, improved: &[(Area, i32)], y: f32) {
+    font.text("IMPROVES", MARGIN, y, 1.0, CYAN);
+    let mut x = MARGIN + 80.0;
+    for area in Area::ALL {
+        let lit = improved.iter().any(|&(a, _)| a == area);
+        let name = area.to_string();
+        font.text(&name, x, y, 1.0, if lit { GREEN } else { DIM });
+        x += (name.len() + 2) as f32 * GLYPH;
+    }
+}
+
+/// Each defense area: its pen test grade, who it stops, and what is helping it.
+fn defenses(font: &Font, game: &GameState) {
+    font.text("DEFENSES", MARGIN, 8.0, 2.0, AMBER);
+    let pen_test = match game.pen_test {
+        Some((day, _)) => format!("Pen test grades from day {day}"),
+        None => format!(
+            "Pen test on day {}",
+            game.landmark_days[Landmark::PenTest as usize]
+        ),
+    };
+    right(font, &pen_test, 12.0, INK);
+    divider(32.0);
+    for (i, area) in Area::ALL.iter().enumerate() {
+        let y = 44.0 + i as f32 * 66.0;
+        font.text(&area.to_string().to_uppercase(), MARGIN, y, 1.0, CYAN);
+        let grade = game
+            .pen_test
+            .and_then(|(_, grades)| grades.iter().find(|(a, _)| a == area).map(|(_, g)| *g))
+            .unwrap_or('?');
+        let color = match grade {
+            'A' | 'B' => GREEN,
+            'C' => AMBER,
+            '?' => DIM,
+            _ => RED,
+        };
+        font.text(&grade.to_string(), WIDTH - MARGIN - 16.0, y, 2.0, color);
+        let stops: Vec<String> = area.stops().iter().map(|a| a.to_string()).collect();
+        let softens = if *area == Area::Resilience {
+            "Softens every incident. "
+        } else {
+            ""
+        };
+        font.text(
+            &format!("{softens}Slows: {}", stops.join(", ")),
+            MARGIN + 16.0,
+            y + 14.0,
+            1.0,
+            INK,
+        );
+        let helping = game.defenders(*area);
+        // Amber when a tool is bought but still waiting to be deployed.
+        let color = match &helping {
+            h if h.is_empty() => DIM,
+            h if h.iter().any(|d| d.ends_with("(not deployed)")) => AMBER,
+            _ => GREEN,
+        };
+        let helping = if helping.is_empty() {
+            "Nothing yet".to_string()
+        } else {
+            helping.join(", ")
+        };
+        for (j, line) in wrap(&format!("Helping: {helping}"), 70)
+            .iter()
+            .take(2)
+            .enumerate()
+        {
+            font.text(line, MARGIN + 16.0, y + 26.0 + j as f32 * 10.0, 1.0, color);
+        }
+    }
+    divider(448.0);
+    font.text(
+        "Tools, actions, and expertise build these up. ENTER to return.",
         MARGIN,
         460.0,
         1.0,
@@ -942,11 +1038,24 @@ fn status_panel(font: &Font, game: &GameState) {
         None => "-".to_string(),
     };
     font.text(&investigating, value_x, row(4), 1.0, AMBER);
+    font.text("Hiring", x, row(5), 1.0, INK);
+    let hiring = match game.searches.as_slice() {
+        [] => "-".to_string(),
+        [search] => format!("{}d {}", search.days_left, search.name),
+        searches => format!("{} searches", searches.len()),
+    };
+    font.text(
+        &hiring.chars().take(15).collect::<String>(),
+        value_x,
+        row(5),
+        1.0,
+        AMBER,
+    );
 
     // Morale: each person's burnout.
-    font.text("MORALE", x, 232.0, 1.0, CYAN);
+    font.text("MORALE", x, 246.0, 1.0, CYAN);
     for (i, member) in game.team.iter().enumerate() {
-        let y = 248.0 + i as f32 * 12.0;
+        let y = 262.0 + i as f32 * 12.0;
         let name: String = member.name.chars().take(10).collect();
         font.text(
             &format!("{name:<10} {}", short_role(member.role)),
@@ -987,7 +1096,7 @@ fn draw_lines(font: &Font, lines: &[LogLine], x: f32, top: f32) {
 
 fn event_log(font: &Font, game: &GameState) {
     font.text("LOG", LOG_X, 72.0, 1.0, CYAN);
-    font.text("L for the full log", LOG_X + 128.0, 72.0, 1.0, DIM);
+    font.text("L: full log  D: defenses", LOG_X + 168.0, 72.0, 1.0, DIM);
     let width = ((WIDTH - MARGIN - LOG_X) / GLYPH) as usize;
     let lines = log_lines(&game.log, width);
     // The newest lines that fit, newest at the bottom.
@@ -1045,6 +1154,7 @@ fn day_menu(font: &Font, game: &GameState) {
         ("Check the team", true),
         (tempo.as_str(), true),
         (intern.as_str(), game.can_send_intern()),
+        ("Visit the Vendor Hall", true),
     ];
     for (i, (label, available)) in options.iter().enumerate() {
         let color = if *available { INK } else { DIM };
@@ -1057,7 +1167,7 @@ fn day_menu(font: &Font, game: &GameState) {
         );
     }
     font.text(
-        "Press 1-5. Grey choices are unavailable.",
+        "Press 1-6. Grey choices are unavailable.",
         MARGIN,
         464.0,
         1.0,

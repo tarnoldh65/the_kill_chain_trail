@@ -46,6 +46,8 @@ const SENIOR_REST: i32 = 2;
 /// Weekly pay for each analyst level.
 const JUNIOR_SALARY: i64 = 4_000;
 const SENIOR_SALARY: i64 = 8_000;
+/// Days a search for a new analyst takes.
+const SEARCH_DAYS: u32 = 7;
 /// Most analysts the SOC has desks for.
 pub const MAX_ANALYSTS: i32 = 8;
 /// Posture each area loses every Monday as systems drift.
@@ -284,6 +286,19 @@ impl Item {
         }
     }
 
+    /// Posture each tool adds once deployed; nothing for analysts, services, or coffee.
+    pub fn boosts(self) -> &'static [(Area, i32)] {
+        match self {
+            Self::Edr => &[(Area::Endpoint, 25), (Area::Detection, 10)],
+            Self::Siem => &[(Area::Detection, 30)],
+            Self::MfaTokens => &[(Area::Identity, 30)],
+            Self::EmailGateway => &[(Area::People, 20)],
+            Self::Waf => &[(Area::Perimeter, 30)],
+            Self::Backups => &[(Area::Resilience, 25)],
+            _ => &[],
+        }
+    }
+
     /// Analysts and coffee can be bought again; tools and services cannot.
     fn once(self) -> bool {
         !matches!(self, Self::Junior | Self::Senior | Self::Coffee)
@@ -299,8 +314,6 @@ pub enum Action {
     PatchSprint,
     Tabletop,
     BackupTest,
-    /// Recruits an analyst of the Vendor Hall's `Junior` or `Senior` level.
-    Recruit(Item),
     DayOff,
     Offsite,
     BriefLeadership,
@@ -319,8 +332,6 @@ impl Action {
             Self::PatchSprint => "Patch sprint".to_string(),
             Self::Tabletop => "Tabletop exercise".to_string(),
             Self::BackupTest => "Backup restore test".to_string(),
-            Self::Recruit(Item::Senior) => "Recruit a senior analyst".to_string(),
-            Self::Recruit(_) => "Recruit a junior analyst".to_string(),
             Self::DayOff => "Give everyone the day off".to_string(),
             Self::Offsite => "Team offsite".to_string(),
             Self::BriefLeadership => "Brief leadership".to_string(),
@@ -338,7 +349,6 @@ impl Action {
             Self::PatchSprint => "Hardens endpoints and the perimeter. Tiring.",
             Self::Tabletop => "Practice for the worst day. Leadership likes it.",
             Self::BackupTest => "Proves the backups actually restore.",
-            Self::Recruit(_) => "Find and hire a new analyst. Takes a week.",
             Self::DayOff => "Everyone recovers. Nobody is watching for a day.",
             Self::Offsite => "A week of trust falls. Large burnout recovery.",
             Self::BriefLeadership => "Tell the board what the SOC is doing.",
@@ -354,10 +364,21 @@ impl Action {
         match self {
             Self::PhishingSim => 5_000,
             Self::Offsite => 20_000,
-            Self::Recruit(level) => level.price(),
             Self::Clear(Condition::RegulatorInquiry) => 20_000,
             Self::Clear(Condition::Downtime) => 30_000,
             _ => 0,
+        }
+    }
+
+    /// Posture the action adds when it finishes.
+    pub fn boosts(self) -> &'static [(Area, i32)] {
+        match self {
+            Self::Deploy(item) => item.boosts(),
+            Self::PhishingSim => &[(Area::People, 8)],
+            Self::PatchSprint => &[(Area::Endpoint, 8), (Area::Perimeter, 5)],
+            Self::Tabletop | Self::BackupTest => &[(Area::Resilience, 6)],
+            Self::TuneSiem => &[(Area::Detection, 5)],
+            _ => &[],
         }
     }
 
@@ -372,7 +393,6 @@ impl Action {
             Self::PhishingSim | Self::BackupTest => 2,
             Self::PatchSprint => 4,
             Self::Tabletop | Self::DayOff | Self::BriefLeadership => 1,
-            Self::Recruit(_) => 7,
             Self::Offsite => 5,
             Self::ThreatHunt | Self::TuneSiem => 3,
             Self::Clear(Condition::SystemsDown) => 7,
@@ -385,10 +405,7 @@ impl Action {
 
     /// Whether tempo and seniors leave the duration alone.
     fn fixed(self) -> bool {
-        matches!(
-            self,
-            Self::Recruit(_) | Self::DayOff | Self::Offsite | Self::BriefLeadership
-        )
+        matches!(self, Self::DayOff | Self::Offsite | Self::BriefLeadership)
     }
 
     /// Burnout everyone sheds each day instead of working, for rest actions.
@@ -423,10 +440,17 @@ struct Glance {
 pub struct Task {
     pub action: Action,
     pub days_left: u32,
-    /// The new analyst's name, for `Recruit`.
-    pub name: String,
     /// Average analyst burnout when the action started, to show what resting did.
     start_burnout: i32,
+}
+
+/// A week-long search for a new analyst, running in the background.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Search {
+    pub name: String,
+    /// The Vendor Hall's `Junior` or `Senior` listing.
+    pub level: Item,
+    pub days_left: u32,
 }
 
 /// An alert being looked into in the background while other work goes on.
@@ -544,6 +568,14 @@ impl fmt::Display for Area {
 }
 
 impl Area {
+    /// The attackers this area slows down.
+    pub fn stops(self) -> Vec<Actor> {
+        Actor::ALL
+            .into_iter()
+            .filter(|actor| actor.defenses().contains(&self))
+            .collect()
+    }
+
     pub const ALL: [Area; 6] = [
         Self::Identity,
         Self::Endpoint,
@@ -646,6 +678,8 @@ pub struct GameState {
     delay: u32,
     /// Incidents left out of the S-1, waiting to surface.
     hidden: u32,
+    /// The pen test's grades and the day they were given, kept for the defenses screen.
+    pub pen_test: Option<(u32, [(Area, char); 6])>,
     /// Whether a leak has already forced an amended S-1 (it only happens once).
     amended: bool,
     /// Days left at the conference.
@@ -671,6 +705,8 @@ pub struct GameState {
     pub deployed: Vec<Item>,
     pub task: Option<Task>,
     pub investigation: Option<Investigation>,
+    /// Analysts being recruited; they join when their search ends.
+    pub searches: Vec<Search>,
     pub siem_tuned: bool,
     pub conditions: Vec<Condition>,
     /// Hidden from the player until the after-action report.
@@ -709,6 +745,7 @@ impl GameState {
             stop: None,
             delay: 0,
             hidden: 0,
+            pen_test: None,
             amended: false,
             conference_days: 0,
             cards: Vec::new(),
@@ -727,6 +764,7 @@ impl GameState {
             deployed: Vec::new(),
             task: None,
             investigation: None,
+            searches: Vec::new(),
             siem_tuned: false,
             conditions: Vec::new(),
             campaigns: Vec::new(),
@@ -806,7 +844,10 @@ impl GameState {
         self.affords(self.price(item))
             && !(item.once() && self.owned.contains(&item))
             && match item {
-                Item::Junior | Item::Senior => self.analysts() < MAX_ANALYSTS,
+                Item::Junior | Item::Senior => {
+                    self.analysts() + (self.searches.len() as i32) < MAX_ANALYSTS
+                        && !self.conditions.contains(&Condition::Paranoia)
+                }
                 Item::Coffee => !self.coffee_full(),
                 _ => true,
             }
@@ -823,12 +864,56 @@ impl GameState {
     }
 
     /// Hires an analyst from the Vendor Hall's `Junior` or `Senior` listing.
+    /// Hires an analyst: at once on day 1 and at the conference job fair, otherwise after
+    /// a week-long search. The recruiter's fee is paid now either way.
     pub fn hire(&mut self, item: Item, name: &str) {
         self.budget -= self.price(item);
         if item == Item::Senior {
             self.free_senior = false;
         }
-        self.add_analyst(item, name);
+        if self.hires_now() {
+            self.add_analyst(item, name);
+        } else {
+            self.searches.push(Search {
+                name: name.to_string(),
+                level: item,
+                days_left: SEARCH_DAYS,
+            });
+            self.note(format!(
+                "The search for a new analyst begins. {name} should start in a week."
+            ));
+        }
+    }
+
+    /// Whether hiring is instant: on day 1, or at the conference job fair.
+    pub fn hires_now(&self) -> bool {
+        self.day == 1
+            || self
+                .stop
+                .as_ref()
+                .is_some_and(|s| s.landmark == Landmark::Conference && s.attended)
+    }
+
+    /// Counts down every search and welcomes the analysts whose searches end today.
+    fn recruit(&mut self) -> bool {
+        for search in &mut self.searches {
+            search.days_left -= 1;
+        }
+        let (done, waiting) = self.searches.drain(..).partition(|s| s.days_left == 0);
+        self.searches = waiting;
+        let found = !done.is_empty();
+        for search in done {
+            let before = self.glance();
+            self.add_analyst(search.level, &search.name);
+            let message = format!(
+                "{} the {} joins the SOC.",
+                search.name,
+                self.team.last().unwrap().role
+            );
+            self.note(message.clone());
+            self.card("New hire", &message, &before);
+        }
+        found
     }
 
     fn add_analyst(&mut self, item: Item, name: &str) {
@@ -886,11 +971,6 @@ impl GameState {
             .then_some(Action::BackupTest);
         let tune =
             (self.deployed.contains(&Item::Siem) && !self.siem_tuned).then_some(Action::TuneSiem);
-        let recruits = (self.analysts() < MAX_ANALYSTS
-            && !self.conditions.contains(&Condition::Paranoia))
-        .then_some([Action::Recruit(Item::Junior), Action::Recruit(Item::Senior)])
-        .into_iter()
-        .flatten();
         cures
             .chain(deployable)
             .chain([
@@ -901,7 +981,6 @@ impl GameState {
             ])
             .chain(tune)
             .chain(backup_test)
-            .chain(recruits)
             .chain([Action::DayOff, Action::Offsite, Action::BriefLeadership])
             .filter(|action| self.affords(action.cost()))
             .collect()
@@ -921,14 +1000,13 @@ impl GameState {
     }
 
     /// Pays for an action and puts it under way; `name` names a recruit.
-    pub fn start(&mut self, action: Action, name: &str) {
+    pub fn start(&mut self, action: Action) {
         self.budget -= action.cost();
         let days = self.duration(action);
         self.note(format!("Started: {} ({days} days).", action.label()));
         self.task = Some(Task {
             action,
             days_left: days,
-            name: name.to_string(),
             start_burnout: self.glance().burnout,
         });
     }
@@ -1040,25 +1118,14 @@ impl GameState {
         if action.rest().is_some() {
             before.burnout = task.start_burnout;
         }
+        for &(area, amount) in action.boosts() {
+            self.boost(area, amount);
+        }
         let message = match task.action {
             Action::Deploy(item) => {
                 self.deployed.push(item);
-                match item {
-                    Item::Edr => {
-                        self.boost(Area::Endpoint, 25);
-                        self.boost(Area::Detection, 10);
-                    }
-                    Item::Siem => self.boost(Area::Detection, 30),
-                    Item::MfaTokens => {
-                        self.boost(Area::Identity, 30);
-                        self.trust -= 3;
-                    }
-                    Item::EmailGateway => self.boost(Area::People, 20),
-                    Item::Waf => self.boost(Area::Perimeter, 30),
-                    Item::Backups => self.boost(Area::Resilience, 25),
-                    _ => unreachable!("only tools are deployed"),
-                }
                 if item == Item::MfaTokens {
+                    self.trust -= 3;
                     "MFA is enforced everywhere. The help desk is drowning in \"I lost my phone\" tickets.".to_string()
                 } else {
                     format!(
@@ -1068,7 +1135,6 @@ impl GameState {
                 }
             }
             Action::PhishingSim => {
-                self.boost(Area::People, 8);
                 if self.chance() < 333 {
                     self.trust -= 3;
                     "The VP of Sales clicked the test phish and is furious about being \"tricked\"."
@@ -1079,8 +1145,6 @@ impl GameState {
                 }
             }
             Action::PatchSprint => {
-                self.boost(Area::Endpoint, 8);
-                self.boost(Area::Perimeter, 5);
                 for member in self.team.iter_mut() {
                     member.burnout += 8;
                 }
@@ -1088,20 +1152,12 @@ impl GameState {
                     .to_string()
             }
             Action::Tabletop => {
-                self.boost(Area::Resilience, 6);
                 self.trust += 2;
                 "The tabletop exercise went well. The CEO learned what ransomware is.".to_string()
             }
             Action::BackupTest => {
-                self.boost(Area::Resilience, 6);
                 "Backup restore test passed. Someone finally knows where the backups are."
                     .to_string()
-            }
-            Action::Recruit(level) => {
-                // The recruiter's fee was paid when the search started.
-                self.add_analyst(level, &task.name);
-                let role = self.team.last().unwrap().role;
-                format!("{} the {role} joins the SOC.", task.name)
             }
             Action::DayOff => "The team is back from a day off, slightly less haunted.".to_string(),
             Action::Offsite => {
@@ -1114,7 +1170,6 @@ impl GameState {
             Action::ThreatHunt => self.hunt(),
             Action::TuneSiem => {
                 self.siem_tuned = true;
-                self.boost(Area::Detection, 5);
                 "The SIEM is tuned. It now cries wolf only occasionally.".to_string()
             }
             Action::Clear(condition) => {
@@ -1252,6 +1307,7 @@ impl GameState {
         self.next_landmark += 1;
         self.note(format!("You have reached the {landmark}."));
         match landmark {
+            Landmark::PenTest => self.pen_test = Some((self.day, self.report_card())),
             Landmark::Flip => {
                 self.threat += FLIP_THREAT;
                 if self.trust >= TOP_UP_TRUST {
@@ -1801,6 +1857,28 @@ impl GameState {
         self.raise(None);
     }
 
+    /// What is helping an area: deployed tools, tools still waiting to be deployed, and
+    /// analysts with expertise in it.
+    pub fn defenders(&self, area: Area) -> Vec<String> {
+        let tools = self
+            .owned
+            .iter()
+            .filter(|item| item.boosts().iter().any(|&(a, _)| a == area))
+            .map(|item| {
+                if self.deployed.contains(item) {
+                    item.label().to_string()
+                } else {
+                    format!("{} (not deployed)", item.label())
+                }
+            });
+        let experts = self
+            .team
+            .iter()
+            .filter(|m| m.expertise == Some(area))
+            .map(|m| format!("{}'s expertise", m.name));
+        tools.chain(experts).collect()
+    }
+
     /// What really happened, shown only once the game is over.
     pub fn after_action(&self) -> Vec<String> {
         if self.outcome.is_none() {
@@ -1920,6 +1998,7 @@ impl GameState {
             stop |= self.work();
             stop |= self.progress();
             stop |= self.investigate();
+            stop |= self.recruit();
             stop |= self.conferencing();
             self.linger();
             stop |= self.attack();
@@ -2590,7 +2669,7 @@ mod tests {
 
     /// Starts an action and advances until it finishes, keeping the coffee topped up.
     fn run(game: &mut GameState, action: Action) {
-        game.start(action, "Priya");
+        game.start(action);
         while game.task.is_some() {
             game.coffee = COFFEE_CAPACITY;
             game.advance();
@@ -2728,32 +2807,57 @@ mod tests {
     }
 
     #[test]
-    fn a_recruited_analyst_is_named_and_joins_after_a_week() {
+    fn hiring_after_day_one_starts_a_week_long_search() {
         let mut game = game();
+        game.day = 2;
 
-        game.start(Action::Recruit(Item::Senior), "Priya");
-        assert_eq!(game.budget, 500_000 - Item::Senior.price());
+        game.hire(Item::Senior, "Priya");
+        assert_eq!(game.budget, 500_000 - Item::Senior.price(), "fee paid now");
         assert_eq!(game.analysts(), 3);
+        assert_eq!(game.searches[0].days_left, 7);
 
-        while game.task.is_some() {
-            game.advance();
+        for _ in 0..6 {
+            game.coffee = COFFEE_CAPACITY;
+            assert!(!game.recruit());
         }
-        assert_eq!(game.day, 8);
-        assert_eq!(game.analysts(), 4);
+        assert!(game.recruit(), "the new hire stops the clock");
+        assert!(game.searches.is_empty());
         assert_eq!(
             game.team.last().unwrap(),
             &member("Priya", Role::Senior, 0, Item::Senior.weekly())
         );
-        assert_eq!(game.payroll(), 18_000 + Item::Senior.weekly());
-        assert_eq!(
-            game.budget,
-            500_000 - Item::Senior.price() - 18_000,
-            "fee paid once, new hire not yet on payroll"
-        );
-        assert_eq!(
-            game.log.last().unwrap().text,
-            "Priya the Senior Analyst joins the SOC."
-        );
+        let card = game.cards.last().unwrap();
+        assert_eq!(card.title, "NEW HIRE");
+        assert!(card.effect.contains("Priya joins the team"));
+    }
+
+    #[test]
+    fn hiring_is_instant_on_day_one_and_at_the_conference_job_fair() {
+        let mut game = game();
+        game.hire(Item::Junior, "Ann");
+        assert_eq!(game.analysts(), 4);
+
+        let mut fair = at(Landmark::Conference, 1, 30);
+        fair.stop.as_mut().unwrap().attended = true;
+        fair.hire(Item::Junior, "Bo");
+        assert_eq!(fair.analysts(), 4);
+        assert!(fair.searches.is_empty());
+    }
+
+    #[test]
+    fn searches_count_against_the_desks_and_paranoia_stops_hiring() {
+        let mut busy = game();
+        busy.day = 2;
+        for i in 0..5 {
+            busy.hire(Item::Junior, &format!("A{i}"));
+        }
+        assert_eq!(busy.searches.len(), 5);
+        assert!(!busy.can_buy(Item::Junior), "every desk is spoken for");
+
+        let mut paranoid = game();
+        paranoid.conditions.push(Condition::Paranoia);
+        assert!(!paranoid.can_buy(Item::Junior));
+        assert!(!paranoid.can_buy(Item::Senior));
     }
 
     #[test]
@@ -2772,23 +2876,14 @@ mod tests {
         let offered = game.actions();
         assert!(!offered.contains(&Action::PhishingSim));
         assert!(!offered.contains(&Action::Offsite));
-        assert!(!offered.contains(&Action::Recruit(Item::Junior)));
         assert!(offered.contains(&Action::PatchSprint));
-
-        game.team
-            .extend((0..5).map(|_| member("A", Role::Junior, 0, 0)));
-        game.budget = 500_000;
-        assert!(
-            !game.actions().contains(&Action::Recruit(Item::Junior)),
-            "no desks"
-        );
     }
 
     #[test]
     fn nothing_else_starts_while_an_action_is_under_way() {
         let mut game = game();
 
-        game.start(Action::PatchSprint, "");
+        game.start(Action::PatchSprint);
 
         assert!(game.actions().is_empty());
     }
@@ -2812,14 +2907,14 @@ mod tests {
 
         game.tempo = Tempo::Crunch;
         assert_eq!(game.duration(Action::Tabletop), 1, "never under a day");
-        assert_eq!(game.duration(Action::Recruit(Item::Junior)), 7, "fixed");
+        assert_eq!(game.duration(Action::DayOff), 1, "fixed");
     }
 
     #[test]
     fn an_interrupted_action_resumes_where_it_left_off() {
         let mut game = game();
         game.coffee = 2;
-        game.start(Action::PatchSprint, "");
+        game.start(Action::PatchSprint);
 
         assert!(game.advance(), "running out of coffee stops the clock");
         assert_eq!(game.task.as_ref().unwrap().days_left, 3);
@@ -2834,7 +2929,7 @@ mod tests {
     #[test]
     fn days_off_replace_the_workload() {
         let mut game = game();
-        game.start(Action::DayOff, "");
+        game.start(Action::DayOff);
 
         game.advance();
 
@@ -3217,12 +3312,7 @@ mod tests {
 
         let mut paranoid = game();
         paranoid.conditions.push(Condition::Paranoia);
-        assert!(
-            !paranoid
-                .actions()
-                .iter()
-                .any(|a| matches!(a, Action::Recruit(_)))
-        );
+        assert!(!paranoid.can_buy(Item::Junior), "nobody can be recruited");
     }
 
     #[test]
@@ -3312,10 +3402,10 @@ mod tests {
         let mut game = game();
         let normal = game.watch();
 
-        game.start(Action::Offsite, "");
+        game.start(Action::Offsite);
         let offsite = game.watch();
         game.task = None;
-        game.start(Action::DayOff, "");
+        game.start(Action::DayOff);
         let day_off = game.watch();
 
         assert!(day_off < offsite && offsite < normal);
@@ -3494,7 +3584,7 @@ mod tests {
         let projects = (0..30)
             .filter(|&seed| {
                 let mut game = GameState { seed, ..game() };
-                game.start(Action::BriefLeadership, "");
+                game.start(Action::BriefLeadership);
                 game.progress();
                 game.event.as_ref().map(|e| e.index) == Some(PET_PROJECT)
             })
@@ -4116,6 +4206,50 @@ mod tests {
         game.fire(0);
         assert_eq!(game.analysts(), 1);
         assert!(!game.can_fire(0), "someone has to watch the alerts");
+    }
+
+    #[test]
+    fn every_area_can_be_improved_and_stops_someone() {
+        for area in Area::ALL {
+            let improved_by = |boosts: &[(Area, i32)]| boosts.iter().any(|&(a, _)| a == area);
+            assert!(
+                Item::ALL.iter().any(|i| improved_by(i.boosts())),
+                "no tool for {area}"
+            );
+            assert!(!area.stops().is_empty(), "{area} stops nobody");
+        }
+        assert_eq!(Area::Perimeter.stops(), [Actor::Hacktivists]);
+    }
+
+    #[test]
+    fn the_pen_test_grades_are_kept_from_that_day() {
+        let mut game = game();
+        game.posture = [85, 65, 45, 25, 5, 100];
+        game.day = Landmark::PenTest.day() - 1;
+        game.next_landmark = 4;
+
+        game.advance();
+        game.posture = [0; 6];
+
+        let (day, grades) = game.pen_test.unwrap();
+        assert_eq!(day, Landmark::PenTest.day());
+        assert_eq!(grades[0], (Area::Identity, 'A'));
+        assert_eq!(grades[4], (Area::Resilience, 'F'));
+    }
+
+    #[test]
+    fn defenders_list_tools_and_experts_for_an_area() {
+        let mut game = game();
+        assert!(game.defenders(Area::Endpoint).is_empty());
+
+        game.owned.push(Item::Edr);
+        game.team[0].expertise = Some(Area::Endpoint);
+        assert_eq!(
+            game.defenders(Area::Endpoint),
+            ["EDR (not deployed)", "Maya's expertise"]
+        );
+        game.deployed.push(Item::Edr);
+        assert_eq!(game.defenders(Area::Detection), ["EDR"]);
     }
 
     #[test]

@@ -28,7 +28,7 @@ Like Oregon Trail, the game alternates between traveling and stopping.
 1. **Outfit**: before day 1, spend the starting budget on staff, tools, and supplies.
 2. **Travel**: choose "Continue". Days tick by along the timeline automatically, one day every half second or so, until something stops you: an alert, an event, an incident, a landmark, or the player pressing a key.
 3. **Stop**: when the clock stops, the player gets the day menu (section 6), deals with whatever happened, and continues.
-4. **Landmarks**: fixed dates on the calendar that act as forts (shop, hire, rest) and/or rivers (a challenge you must get across).
+4. **Landmarks**: fixed dates on the calendar that act as forts (rest, perks) and/or rivers (a challenge you must get across).
 5. **IPO day**: the game ends, the valuation is final, and the after-action report shows what happened behind the scenes.
 
 ## 4. Setup
@@ -72,7 +72,7 @@ A tool bought but never deployed is shelfware, and the end report says so.
 - Coffee: cases of 12 pots for the break room (capacity 36).
 - Coffee subscription: nothing up front, $2K every Monday for 18 pots, enough for Relaxed or Steady tempo but not for Crunch.
 
-The Vendor Hall reopens at certain landmarks, usually at higher prices.
+The Vendor Hall stays open: visit it from the day menu any day to pivot as threats change. After day 1, hiring starts a week-long search; only the conference job fair hires on the spot.
 
 ## 5. The calendar and timeline
 
@@ -87,15 +87,15 @@ The Vendor Hall reopens at certain landmarks, usually at higher prices.
 | --- | --- | --- | --- |
 | 0 | IPO Kickoff | Fort | Outfitting (section 4.3) |
 | 4 | Board Security Briefing | River | Board judges your progress; trust rises or falls based on posture and incidents so far |
-| 7 | Security Conference | Fort | Send yourself and chosen teammates for 3 days (section 5.3); Vendor Hall reopens; hire at the job fair |
+| 7 | Security Conference | Fort | Send yourself and chosen teammates for 3 days (section 5.3); hire on the spot at the job fair |
 | 10 | SOC 2 Type II Audit | River | Choose how to cross: rely on your controls, hire consultants (budget), or crunch to fix findings (days and fatigue). Failing hurts valuation and trust and delays the IPO |
 | 13 | Confidential S-1 Filing | Fort | Decide whether to disclose past incidents in the risk factors: disclosure costs valuation now; hiding it risks a much bigger hit if it surfaces later |
 | 16 | Third-Party Pen Test | River | Testers grade your posture as letter grades, the only time it is ever shown; weak areas cost valuation |
-| 19 | Public S-1 Flip | Fort | The company is now public knowledge; threat level jumps. Vendor Hall and hiring reopen; budget top-up if trust is high |
+| 19 | Public S-1 Flip | Fort | The company is now public knowledge; threat level jumps. Budget top-up if trust is high |
 | 23 | Roadshow | River | Executives travel; whaling and travel-related attacks spike. Choose how much to protect them |
 | 26 | IPO Day | End | The bell rings. Final valuation is calculated |
 
-Forts are where the player can buy, hire, and rest without the clock moving. Rivers are a single decision with a risky outcome, like fording, caulking, or taking the ferry.
+Forts are where the team can rest without the clock moving, and the conference adds its job fair and perks. Rivers are a single decision with a risky outcome, like fording, caulking, or taking the ferry.
 
 ### 5.2 IPO delays
 
@@ -155,7 +155,7 @@ The week 7 landmark is a small minigame. You always attend; the question is who 
 | "You met a senior analyst at the after-party who wants a job." | A senior candidate waits at the job fair with no hiring fee |
 | "You spent the whole conference answering Slack from your hotel room." | Nothing; your team is grateful you were reachable |
 
-After the report, the Vendor Hall and the job fair open as at any fort.
+After the report, the fort opens: the Vendor Hall with any perks, the job fair (hiring on the spot), and a rest.
 
 ## 6. The day menu
 
@@ -189,7 +189,6 @@ Actions cost money, days, or both. While an action is running, days pass and the
 | Tabletop exercise | 1 | None | Resilience boost; small trust boost with leadership |
 | Backup restore test | 2 | None (needs backups) | Resilience boost |
 | Tune the SIEM | 3 | None (needs SIEM) | Fewer false positives |
-| Recruit an analyst | 7 | Hiring fee | Hire and name a new analyst |
 | Give everyone the day off | 1 | None | Large burnout recovery; nobody watching for a day |
 | Team offsite | 5 | Medium | Very large burnout recovery; reduced watch for the week |
 | Brief leadership | 1 | None | Trust boost; the CIO may assign a pet project |

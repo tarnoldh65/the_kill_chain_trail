@@ -144,11 +144,6 @@ pub enum Screen {
     },
     /// Picking something for the SOC to spend its days on.
     Actions(ActionMenu),
-    /// Naming the analyst about to be recruited.
-    Recruit {
-        menu: ActionMenu,
-        name: String,
-    },
     /// Picking who goes to the conference, as team indices.
     Attendees {
         game: GameState,
@@ -172,6 +167,8 @@ pub enum Screen {
         confirming: bool,
     },
     Coffee(CoffeeRun),
+    /// The six defense areas, what helps each, and the pen test grades.
+    Defenses(GameState),
     /// The whole log, one page at a time; page 0 is the oldest.
     Log {
         game: GameState,
@@ -230,14 +227,11 @@ impl Screen {
             | Self::Team { game, .. }
             | Self::Report(game)
             | Self::Log { game, .. }
+            | Self::Defenses(game)
             | Self::Attendees { game, .. }
             | Self::Tracks { game, .. }
             | Self::Shop(Shop { game, .. })
             | Self::Actions(ActionMenu { game, .. })
-            | Self::Recruit {
-                menu: ActionMenu { game, .. },
-                ..
-            }
             | Self::Hire {
                 shop: Shop { game, .. },
                 ..
@@ -333,6 +327,8 @@ impl Screen {
                 shop,
                 name: edit(name, input),
             },
+            (Self::Play(game), Input::Char('d' | 'D')) => Self::Defenses(game),
+            (Self::Defenses(game), Input::Enter) => Self::Play(game),
             (Self::Play(game), Input::Char('l' | 'L')) => {
                 let page = log_pages(&game.log).len() - 1;
                 Self::Log { game, page }
@@ -481,32 +477,13 @@ impl Screen {
             }
             (Self::Actions(mut menu), Input::Enter) => match menu.action() {
                 None => Self::Play(menu.game),
-                Some(Action::Recruit(_)) => Self::Recruit {
-                    menu,
-                    name: String::new(),
-                },
                 Some(action) => {
-                    menu.game.start(action, "");
+                    menu.game.start(action);
                     Self::Travel(Travel {
                         game: menu.game,
                         elapsed_ms: 0,
                     })
                 }
-            },
-            (Self::Recruit { mut menu, name }, Input::Enter) => {
-                if name.trim().is_empty() {
-                    return Self::Actions(menu);
-                }
-                let action = menu.action().expect("recruiting from an action row");
-                menu.game.start(action, name.trim());
-                Self::Travel(Travel {
-                    game: menu.game,
-                    elapsed_ms: 0,
-                })
-            }
-            (Self::Recruit { menu, name }, input) => Self::Recruit {
-                menu,
-                name: edit(name, input),
             },
             (Self::Log { game, page }, Input::Arrow(Hop::Left)) => Self::Log {
                 game,
@@ -527,6 +504,7 @@ impl Screen {
                     street: Street::new(),
                 })
             }
+            (Self::Play(game), Input::Char('6')) => Self::Shop(Shop { game, cursor: 0 }),
             (Self::Travel(travel), _) => Self::Play(travel.game),
             (
                 Self::Team {
@@ -1018,22 +996,32 @@ mod tests {
     }
 
     #[test]
-    fn recruiting_asks_for_the_new_analysts_name() {
-        let screen = choose(new_game(), Action::Recruit(Item::Junior)).update(Input::Enter);
-        assert!(matches!(screen, Screen::Recruit { .. }));
+    fn six_opens_the_vendor_hall_any_day() {
+        let start = with_game(new_game(), |game| game.day = 20);
+        let screen = start.clone().update(Input::Char('6'));
+        assert!(matches!(screen, Screen::Shop(_)));
 
+        let screen = arrows(screen, Hop::Down, 3).update(Input::Enter);
+        assert_eq!(game(&screen).owned, [Item::ALL[3]], "bought mid-game");
+
+        let screen = arrows(screen, Hop::Up, 10).update(Input::Enter);
         let screen = type_text(screen, "Priya").update(Input::Enter);
-        let task = game(&screen).task.as_ref().unwrap();
-        assert_eq!(task.action, Action::Recruit(Item::Junior));
-        assert_eq!(task.name, "Priya");
+        assert_eq!(
+            game(&screen).searches[0].name,
+            "Priya",
+            "a search, not a hire"
+        );
+        assert_eq!(game(&screen).analysts(), 2);
+
+        let screen = arrows(screen, Hop::Down, 20).update(Input::Enter);
+        assert!(matches!(screen, Screen::Play(_)), "back to the day menu");
     }
 
     #[test]
-    fn an_empty_recruit_name_goes_back_to_the_actions() {
-        let menu = choose(new_game(), Action::Recruit(Item::Junior));
-        let screen = menu.clone().update(Input::Enter).update(Input::Enter);
+    fn the_vendor_hall_waits_while_something_is_pending() {
+        let screen = alerted();
 
-        assert_eq!(screen, menu);
+        assert_eq!(screen.clone().update(Input::Char('6')), screen);
     }
 
     fn page(screen: &Screen) -> usize {
@@ -1120,6 +1108,19 @@ mod tests {
         assert_eq!(page(&screen), 1);
 
         assert_eq!(screen.update(Input::Enter), start);
+    }
+
+    #[test]
+    fn d_opens_the_defenses_from_any_play_screen() {
+        let screen = alerted().update(Input::Char('d'));
+        assert!(matches!(screen, Screen::Defenses(_)));
+        assert_eq!(screen.clone().update(Input::Char('1')), screen);
+
+        let screen = screen.update(Input::Enter);
+        assert!(
+            game(&screen).pending_alert().is_some(),
+            "the alert still waits"
+        );
     }
 
     #[test]

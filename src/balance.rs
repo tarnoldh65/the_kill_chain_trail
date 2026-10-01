@@ -67,7 +67,7 @@ fn average_burnout(game: &GameState) -> i32 {
 
 /// Money the rest of the payroll needs, plus a cushion.
 fn reserve(game: &GameState) -> i64 {
-    game.weekly_costs() * game.paydays_left() + 150_000
+    game.weekly_costs() * game.paydays_left() + 200_000
 }
 
 fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
@@ -277,7 +277,15 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
             let actions = game.actions();
             if !actions.is_empty() && rng.chance(10) {
                 let action = actions[rng.below(actions.len())];
-                game.start(action, "Recruit");
+                game.start(action);
+            }
+            // An impulse buy at the Vendor Hall now and then.
+            let item = Item::ALL[rng.below(Item::ALL.len())];
+            if rng.chance(3) && game.can_buy(item) {
+                match item {
+                    Item::Junior | Item::Senior => game.hire(item, "Random"),
+                    _ => game.buy(item),
+                }
             }
         }
         Style::Sensible(_) => {
@@ -291,8 +299,20 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
                 game.send_intern();
                 game.intern_returns(true);
             }
+            // A weekly trip to the Vendor Hall for anything missing, and a new hire if short.
+            if game.weekday() == 0 {
+                shop(game, style);
+                let short = analysts(game).len() + game.searches.len() < 3;
+                if short
+                    && may_buy(style, Item::Junior)
+                    && game.can_buy(Item::Junior)
+                    && game.budget - game.price(Item::Junior) > reserve(game) + 25 * 4_000
+                {
+                    game.hire(Item::Junior, "Sensible");
+                }
+            }
             if let Some(action) = sensible_action(game, style, tired) {
-                game.start(action, "Recruit");
+                game.start(action);
             }
         }
     }
@@ -311,12 +331,6 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
         .or_else(|| (tired >= 55).then(|| offered(Action::DayOff)).flatten())
         .or_else(|| first(|a| matches!(a, Action::Deploy(_))))
         .or_else(|| offered(Action::TuneSiem))
-        .or_else(|| {
-            let short = analysts(game).len() < 3 && game.budget > reserve(game) + 100_000;
-            short
-                .then(|| offered(Action::Recruit(Item::Junior)))
-                .flatten()
-        })
         .or_else(|| {
             if tired >= 35 {
                 return None;
@@ -419,7 +433,6 @@ fn no_single_action_or_purchase_is_required_to_win() {
             Action::PatchSprint,
             Action::Tabletop,
             Action::BackupTest,
-            Action::Recruit(Item::Junior),
             Action::DayOff,
             Action::BriefLeadership,
             Action::ThreatHunt,
