@@ -21,6 +21,8 @@ pub struct Effect {
     pub holiday: u32,
     /// Plants a hidden attacker who is already inside.
     pub intruder: bool,
+    /// Pushes the IPO back two weeks.
+    pub delay: bool,
 }
 
 pub const NOTHING: Effect = Effect {
@@ -35,6 +37,7 @@ pub const NOTHING: Effect = Effect {
     threat: 0,
     holiday: 0,
     intruder: false,
+    delay: false,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

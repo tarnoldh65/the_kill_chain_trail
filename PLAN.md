@@ -132,12 +132,12 @@ Tasks:
 - Landmark icons appear on the timeline bar.
 
 Success criteria:
-- [ ] Every landmark triggers on its date, and every river outcome is reachable across seeds (unit tested).
-- [ ] Each delay trigger moves IPO day and all later landmarks by 2 weeks and costs valuation and trust (unit tested).
-- [ ] A delay past 6 weeks total ends the game as IPO pulled with no score (unit tested).
-- [ ] The pen test report card matches hidden posture as grades and is not shown afterward (unit tested for grades).
-- [ ] Hiding a past incident at the S-1 filing can surface later for a larger valuation hit (unit tested).
-- [ ] The timeline shows every landmark and rescales after a delay.
+- [x] Every landmark triggers on its date, and every river outcome is reachable across seeds (unit tested).
+- [x] Each delay trigger moves IPO day and all later landmarks by 2 weeks and costs valuation and trust (unit tested).
+- [x] A delay past 6 weeks total ends the game as IPO pulled with no score (unit tested).
+- [x] The pen test report card matches hidden posture as grades and is not shown afterward (unit tested for grades).
+- [x] Hiding a past incident at the S-1 filing can surface later for a larger valuation hit (unit tested).
+- [x] The timeline shows every landmark and rescales after a delay.
 
 ## Phase 18: The Security Conference
 
@@ -201,7 +201,7 @@ Success criteria:
 - [x] Phase 14: Defender actions
 - [x] Phase 15: The attacker
 - [x] Phase 16: Random events
-- [ ] Phase 17: Landmarks and IPO delays
+- [x] Phase 17: Landmarks and IPO delays
 - [ ] Phase 18: The Security Conference
 - [ ] Phase 19: Presentation
 - [ ] Phase 20: Balance, playtest, and release

@@ -3,6 +3,7 @@ mod audio;
 mod draw;
 mod events;
 mod game;
+mod landmarks;
 mod street;
 mod ui;
 

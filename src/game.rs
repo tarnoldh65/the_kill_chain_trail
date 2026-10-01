@@ -2,9 +2,21 @@ use std::fmt;
 
 use crate::attack::{Actor, Alert, Campaign, Condition, End, Response, Stage};
 use crate::events::{Choice, EVENTS, Effect, PET_PROJECT};
+use crate::landmarks::{Landmark, Odds};
 
-/// The day the IPO bell rings, 26 weeks after day 1.
+/// The day the IPO bell is scheduled to ring, 26 weeks after day 1.
 pub const IPO_DAY: u32 = 182;
+/// How far each delay pushes the IPO back.
+const DELAY_DAYS: u32 = 14;
+/// Total delay the board tolerates before pulling the IPO.
+const MAX_DELAY: u32 = 42;
+/// Extra daily odds of new attackers, in thousandths, once the S-1 is public.
+const FLIP_THREAT: u32 = 20;
+/// Trust needed at the Flip for a budget top-up.
+const TOP_UP_TRUST: i32 = 60;
+const TOP_UP: i64 = 100_000;
+/// Posture below this is a weak area on the pen test report.
+const WEAK_POSTURE: i32 = 40;
 
 /// Pots of coffee the break room can hold.
 pub const COFFEE_CAPACITY: i32 = 36;
@@ -23,8 +35,6 @@ const JUNIOR_SALARY: i64 = 4_000;
 const SENIOR_SALARY: i64 = 8_000;
 /// Most analysts the SOC has desks for.
 pub const MAX_ANALYSTS: i32 = 8;
-/// Weeks of payroll between day 1 and IPO day.
-pub const PAYDAYS: i64 = 25;
 /// Trust below this gets the CISO fired.
 const FIRING_TRUST: i32 = 30;
 /// Budget in dollars below which the SOC Manager is made redundant.
@@ -371,6 +381,14 @@ pub struct Investigation {
     pub days_left: u32,
 }
 
+/// A landmark the SOC has reached and has not moved on from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stop {
+    pub landmark: Landmark,
+    /// Whether the team has already rested at this fort.
+    pub rested: bool,
+}
+
 /// A random event waiting for a choice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingEvent {
@@ -443,7 +461,7 @@ impl fmt::Display for Tempo {
     }
 }
 
-/// Hidden security posture areas, never shown to the player.
+/// Hidden security posture areas, shown to the player only on the pen test report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Area {
     Identity,
@@ -452,6 +470,19 @@ pub enum Area {
     Perimeter,
     Resilience,
     Detection,
+}
+
+impl fmt::Display for Area {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Identity => "Identity",
+            Self::Endpoint => "Endpoint",
+            Self::People => "People",
+            Self::Perimeter => "Perimeter",
+            Self::Resilience => "Resilience",
+            Self::Detection => "Detection",
+        })
+    }
 }
 
 impl Area {
@@ -516,8 +547,19 @@ pub struct GameState {
     pub company: String,
     pub lead: String,
     pub profile: Profile,
-    /// Day 1 is a Monday; the game ends as an IPO on `IPO_DAY`.
+    /// Day 1 is a Monday; the game ends as an IPO on `ipo_day`.
     pub day: u32,
+    /// `IPO_DAY` plus any delays.
+    pub ipo_day: u32,
+    /// When each landmark in `Landmark::ALL` comes up, moved back by delays.
+    pub landmark_days: [u32; Landmark::ALL.len()],
+    /// Index of the next landmark to reach.
+    pub next_landmark: usize,
+    pub stop: Option<Stop>,
+    /// Total days the IPO has slipped.
+    delay: u32,
+    /// Incidents left out of the S-1, waiting to surface.
+    hidden: u32,
     pub base_valuation: i64,
     pub valuation: i64,
     pub trust: i32,
@@ -571,6 +613,12 @@ impl GameState {
             lead: lead.to_string(),
             profile,
             day: 1,
+            ipo_day: IPO_DAY,
+            landmark_days: Landmark::ALL.map(Landmark::day),
+            next_landmark: 0,
+            stop: None,
+            delay: 0,
+            hidden: 0,
             base_valuation: profile.valuation(),
             valuation: profile.valuation(),
             trust: 60,
@@ -850,14 +898,18 @@ impl GameState {
         for member in self.team.iter_mut().filter(|m| m.role.is_analyst()) {
             member.burnout = (member.burnout + effect.burnout).max(0);
         }
-        let patient = &mut self.team[patient];
-        patient.burnout = (patient.burnout + effect.patient).max(0);
+        if let Some(patient) = self.team.get_mut(patient) {
+            patient.burnout = (patient.burnout + effect.patient).max(0);
+        }
         for &(area, change) in effect.posture {
             self.boost(area, change);
         }
         self.coffee = (self.coffee + effect.coffee).clamp(0, COFFEE_CAPACITY);
         self.threat += effect.threat;
         self.holiday = self.holiday.max(effect.holiday);
+        if effect.delay {
+            self.slip();
+        }
         if effect.intruder {
             self.campaigns.push(Campaign {
                 actor: Actor::Apt,
@@ -867,6 +919,171 @@ impl GameState {
                 end: None,
             });
         }
+    }
+
+    /// Pushes the IPO and every landmark still ahead back two weeks, or pulls the IPO.
+    fn slip(&mut self) {
+        self.delay += DELAY_DAYS;
+        if self.delay > MAX_DELAY {
+            self.log.push(
+                "Too many delays. The board pulls the IPO \"until market conditions improve\"."
+                    .to_string(),
+            );
+            self.outcome = Some(Outcome::Pulled);
+            return;
+        }
+        self.ipo_day += DELAY_DAYS;
+        for day in &mut self.landmark_days[self.next_landmark..] {
+            *day += DELAY_DAYS;
+        }
+        self.valuation -= self.base_valuation * 20 / 1000;
+        self.trust = (self.trust - 5).max(0);
+        self.log.push(format!(
+            "The IPO slips two weeks, to day {}. Investors grumble.",
+            self.ipo_day
+        ));
+    }
+
+    fn incidents(&self) -> u32 {
+        self.campaigns
+            .iter()
+            .filter(|c| c.end == Some(End::Succeeded))
+            .count() as u32
+    }
+
+    /// Chance in thousandths of making it across a river.
+    pub fn crossing_odds(&self, odds: &Odds) -> u32 {
+        let average = self.posture.iter().sum::<i32>() as u32 / self.posture.len() as u32;
+        (odds.base + odds.posture * average / 100)
+            .saturating_sub(odds.per_incident * self.incidents())
+            .min(1000)
+    }
+
+    /// Letter grades for each posture area, as the pen testers see it.
+    pub fn report_card(&self) -> [(Area, char); 6] {
+        Area::ALL.map(|area| {
+            let grade = match self.posture[area as usize] {
+                80.. => 'A',
+                60.. => 'B',
+                40.. => 'C',
+                20.. => 'D',
+                _ => 'F',
+            };
+            (area, grade)
+        })
+    }
+
+    /// A hidden S-1 incident comes out half the time it gets a chance to.
+    fn surface(&mut self) {
+        if self.hidden == 0 || self.chance() >= 500 {
+            return;
+        }
+        self.valuation -= self.base_valuation * 60 * self.hidden as i64 / 1000;
+        self.trust = (self.trust - 10).max(0);
+        self.hidden = 0;
+        self.log.push(
+            "A journalist found the incidents you left out of the S-1. The SEC would like a word."
+                .to_string(),
+        );
+    }
+
+    /// Reaches the next landmark if today is its day.
+    fn arrive(&mut self) -> bool {
+        if self.landmark_days.get(self.next_landmark) != Some(&self.day) {
+            return false;
+        }
+        let landmark = Landmark::ALL[self.next_landmark];
+        self.next_landmark += 1;
+        self.log.push(format!("You have reached the {landmark}."));
+        match landmark {
+            Landmark::Flip => {
+                self.threat += FLIP_THREAT;
+                if self.trust >= TOP_UP_TRUST {
+                    self.budget += TOP_UP;
+                    self.log.push(format!(
+                        "The board is confident in the SOC and adds {} to the budget.",
+                        money(TOP_UP)
+                    ));
+                }
+                self.surface();
+            }
+            Landmark::Roadshow => {
+                self.surface();
+                if self.conditions.contains(&Condition::SystemsDown) {
+                    self.log
+                        .push("You cannot pitch investors while systems are down.".to_string());
+                    self.slip();
+                }
+            }
+            _ => {}
+        }
+        if self.outcome.is_none() {
+            self.stop = Some(Stop {
+                landmark,
+                rested: false,
+            });
+        }
+        true
+    }
+
+    pub fn can_cross(&self, index: usize) -> bool {
+        self.stop
+            .as_ref()
+            .and_then(|s| s.landmark.crossings().get(index))
+            .is_some_and(|c| c.cost <= self.budget)
+    }
+
+    /// Crosses the river at the current landmark one of its ways.
+    pub fn cross(&mut self, index: usize) {
+        let landmark = self.stop.take().expect("a river to cross").landmark;
+        let crossing = landmark.crossings()[index];
+        self.budget -= crossing.cost;
+        let (text, effect) = if self.chance() < self.crossing_odds(&crossing.odds) {
+            crossing.success
+        } else {
+            crossing.failure
+        };
+        self.log.push(text.to_string());
+        self.apply(&effect, usize::MAX);
+        match landmark {
+            Landmark::S1Filing if index == 0 => {
+                self.valuation -= self.base_valuation * 15 * self.incidents() as i64 / 1000;
+            }
+            Landmark::S1Filing => self.hidden = self.incidents(),
+            Landmark::PenTest => {
+                let weak = self.posture.iter().filter(|&&p| p < WEAK_POSTURE).count() as i64;
+                let cost = self.base_valuation * 10 * weak / 1000 / (index as i64 + 1);
+                if cost > 0 {
+                    self.valuation -= cost;
+                    self.log.push(format!(
+                        "{weak} weak areas in the report cost {} in valuation.",
+                        money(cost)
+                    ));
+                }
+            }
+            _ => {}
+        }
+        self.check_outcome();
+    }
+
+    /// Rests the team at a fort, once per visit, without time passing.
+    pub fn rest_at_fort(&mut self) {
+        let Some(stop) = &mut self.stop else {
+            return;
+        };
+        if stop.rested {
+            return;
+        }
+        stop.rested = true;
+        for member in &mut self.team {
+            member.burnout = (member.burnout - 15).max(0);
+        }
+        self.log
+            .push("The team rests. Nobody checks chat for a whole afternoon.".to_string());
+    }
+
+    pub fn leave_fort(&mut self) {
+        self.stop = None;
     }
 
     /// The choices for the event waiting on the player, if any.
@@ -1051,6 +1268,11 @@ impl GameState {
             self.conditions.push(condition);
         }
         self.log.push(response.text.to_string());
+        let flipped = self.next_landmark > Landmark::Flip as usize;
+        if flipped && matches!(actor, Actor::DataThief | Actor::Insider) {
+            self.log.push("The leak forces an amended S-1.".to_string());
+            self.slip();
+        }
         self.check_outcome();
     }
 
@@ -1238,8 +1460,13 @@ impl GameState {
         (self.day - 1) % 7
     }
 
+    /// Mondays left before IPO day, each one a payday.
+    pub fn paydays_left(&self) -> i64 {
+        ((self.ipo_day - 1) / 7 - (self.day - 1) / 7) as i64
+    }
+
     pub fn days_to_ipo(&self) -> u32 {
-        IPO_DAY - self.day
+        self.ipo_day - self.day
     }
 
     pub fn payroll(&self) -> i64 {
@@ -1299,6 +1526,9 @@ impl GameState {
             stop |= self.maybe_event();
             stop |= self.leadership_changes();
             self.check_outcome();
+        }
+        if self.outcome.is_none() {
+            stop |= self.arrive();
         }
         stop || self.outcome.is_some()
     }
@@ -1436,6 +1666,9 @@ impl GameState {
     }
 
     fn check_outcome(&mut self) {
+        if self.outcome == Some(Outcome::Pulled) {
+            return;
+        }
         self.outcome = if self.trust <= 0 {
             Some(Outcome::Fired)
         } else if self.brand <= 0 {
@@ -1444,7 +1677,7 @@ impl GameState {
             Some(Outcome::Pulled)
         } else if self.analysts() == 0 {
             Some(Outcome::TeamCollapsed)
-        } else if self.day >= IPO_DAY {
+        } else if self.day >= self.ipo_day {
             Some(Outcome::Ipo)
         } else {
             None
@@ -2222,6 +2455,7 @@ mod tests {
             if game.event.is_some() {
                 game.choose(0);
             }
+            pass_landmark(game);
             if let Some(actor) = game.incident {
                 incidents.push(actor);
                 let i = actor
@@ -2231,6 +2465,35 @@ mod tests {
                     .unwrap();
                 game.respond(i);
             }
+        }
+    }
+
+    /// Leaves a fort or crosses a river the first affordable way.
+    fn pass_landmark(game: &mut GameState) {
+        let Some(stop) = &game.stop else {
+            return;
+        };
+        if stop.landmark.is_fort() {
+            game.leave_fort();
+        } else {
+            let way = (0..).find(|&i| game.can_cross(i)).unwrap();
+            game.cross(way);
+        }
+    }
+
+    /// A game stopped at `landmark`, as if it had just arrived.
+    fn at(landmark: Landmark, seed: u32, posture: i32) -> GameState {
+        let index = Landmark::ALL.iter().position(|&l| l == landmark).unwrap();
+        GameState {
+            seed,
+            posture: [posture; 6],
+            day: landmark.day(),
+            next_landmark: index + 1,
+            stop: Some(Stop {
+                landmark,
+                rested: false,
+            }),
+            ..game()
         }
     }
 
@@ -2836,6 +3099,269 @@ mod tests {
         assert_eq!(game.campaigns[0].stage, Stage::InitialAccess);
         advance_to(&mut game, 8);
         assert_eq!(game.holiday, 0, "the holiday ends");
+    }
+
+    #[test]
+    fn every_landmark_comes_up_on_its_day() {
+        let mut game = game();
+        let mut arrivals = Vec::new();
+        while game.outcome.is_none() {
+            game.coffee = COFFEE_CAPACITY;
+            game.posture = [100; 6];
+            game.team.iter_mut().for_each(|m| m.burnout = 0);
+            game.advance();
+            game.alert = None;
+            game.event = None;
+            game.incident = None;
+            if let Some(stop) = &game.stop {
+                arrivals.push((stop.landmark, game.day));
+                pass_landmark(&mut game);
+            }
+        }
+
+        let expected: Vec<_> = Landmark::ALL.iter().map(|&l| (l, l.day())).collect();
+        assert_eq!(arrivals, expected);
+        assert_eq!(game.outcome, Some(Outcome::Ipo));
+    }
+
+    #[test]
+    fn every_way_across_every_river_can_succeed_or_fail() {
+        for landmark in Landmark::ALL {
+            for (i, crossing) in landmark.crossings().iter().enumerate() {
+                let (mut succeeded, mut failed) = (false, false);
+                for seed in 0..60 {
+                    for posture in [0, 100] {
+                        let mut game = at(landmark, seed, posture);
+                        game.cross(i);
+                        assert_eq!(game.stop, None);
+                        let log = &game.log;
+                        succeeded |= log.iter().any(|e| e == crossing.success.0);
+                        failed |= log.iter().any(|e| e == crossing.failure.0);
+                    }
+                }
+
+                assert!(succeeded, "{landmark}: {} never succeeds", crossing.label);
+                let certain = crossing.odds == crate::landmarks::CERTAIN;
+                assert_eq!(failed, !certain, "{landmark}: {}", crossing.label);
+            }
+        }
+    }
+
+    #[test]
+    fn crossings_cost_money_up_front() {
+        let mut game = at(Landmark::Audit, 1, 30);
+        game.budget = 59_999;
+        assert!(!game.can_cross(1));
+        game.budget = 60_000;
+        assert!(game.can_cross(1));
+
+        game.cross(1);
+
+        assert_eq!(game.budget, 0, "consultants paid");
+    }
+
+    #[test]
+    fn incidents_make_the_board_harder_to_please() {
+        let mut game = at(Landmark::BoardBriefing, 1, 50);
+        let odds = crate::landmarks::Landmark::BoardBriefing.crossings()[0].odds;
+        let calm = game.crossing_odds(&odds);
+
+        let i = plant(&mut game, Actor::DataThief, Stage::Objective);
+        game.campaigns[i].end = Some(End::Succeeded);
+
+        assert_eq!(game.crossing_odds(&odds), calm - 150);
+    }
+
+    #[test]
+    fn failing_the_audit_delays_the_ipo_and_later_landmarks() {
+        let mut game = (0..)
+            .map(|seed| at(Landmark::Audit, seed, 0))
+            .find(|g| {
+                let mut g = g.clone();
+                g.cross(0);
+                g.ipo_day > IPO_DAY
+            })
+            .unwrap();
+        let before = game.clone();
+
+        game.cross(0);
+
+        assert_eq!(game.ipo_day, IPO_DAY + 14);
+        assert_eq!(game.landmark_days[..3], before.landmark_days[..3]);
+        for i in 3..Landmark::ALL.len() {
+            assert_eq!(game.landmark_days[i], before.landmark_days[i] + 14);
+        }
+        assert_eq!(game.valuation, before.valuation - 20_000_000);
+        assert_eq!(game.trust, before.trust - 5 - 5, "audit and delay");
+        assert_eq!(game.days_to_ipo(), IPO_DAY + 14 - game.day);
+    }
+
+    #[test]
+    fn a_delayed_ipo_rings_on_its_new_day() {
+        let mut game = game();
+        game.slip();
+        game.day = IPO_DAY;
+
+        game.advance();
+
+        assert_eq!(game.outcome, None);
+        advance_to(&mut game, IPO_DAY + 14);
+        assert_eq!(game.outcome, Some(Outcome::Ipo));
+    }
+
+    #[test]
+    fn leaks_after_the_flip_force_an_amended_s1() {
+        for (next, delayed) in [(Landmark::Flip as usize, false), (6, true)] {
+            for actor in [Actor::DataThief, Actor::Insider] {
+                let mut game = GameState {
+                    next_landmark: next,
+                    ..game()
+                };
+                game.incident = Some(actor);
+
+                game.respond(0);
+
+                assert_eq!(game.ipo_day > IPO_DAY, delayed, "{actor} at {next}");
+            }
+        }
+
+        let mut game = GameState {
+            next_landmark: 6,
+            ..game()
+        };
+        game.incident = Some(Actor::Hacktivists);
+        game.respond(0);
+        assert_eq!(game.ipo_day, IPO_DAY);
+    }
+
+    #[test]
+    fn systems_down_at_the_roadshow_delays_the_ipo() {
+        let mut game = game();
+        game.next_landmark = 6;
+        game.day = Landmark::Roadshow.day() - 1;
+        game.conditions.push(Condition::SystemsDown);
+
+        assert!(game.advance());
+
+        assert_eq!(game.ipo_day, IPO_DAY + 14);
+        assert_eq!(game.stop.as_ref().unwrap().landmark, Landmark::Roadshow);
+    }
+
+    #[test]
+    fn more_than_six_weeks_of_delays_pulls_the_ipo() {
+        let mut game = game();
+        for _ in 0..3 {
+            game.slip();
+        }
+        assert_eq!(game.outcome, None);
+        assert_eq!(game.ipo_day, IPO_DAY + 42);
+
+        game.slip();
+
+        assert_eq!(game.outcome, Some(Outcome::Pulled));
+        assert_eq!(game.score(), None);
+        game.advance();
+        assert_eq!(game.outcome, Some(Outcome::Pulled));
+    }
+
+    #[test]
+    fn the_pen_test_grades_hidden_posture() {
+        let mut game = game();
+        game.posture = [85, 65, 45, 25, 5, 100];
+
+        let grades: Vec<char> = game.report_card().iter().map(|(_, g)| *g).collect();
+
+        assert_eq!(grades, ['A', 'B', 'C', 'D', 'F', 'A']);
+        assert_eq!(game.report_card()[0].0, Area::Identity);
+    }
+
+    #[test]
+    fn weak_areas_on_the_pen_test_cost_valuation() {
+        let mut game = at(Landmark::PenTest, 1, 50);
+        game.posture[0] = 10;
+        game.posture[1] = 39;
+        let mut softened = game.clone();
+
+        game.cross(0);
+        softened.cross(1);
+
+        assert_eq!(game.valuation, 1_000_000_000 - 20_000_000);
+        assert_eq!(softened.valuation, 1_000_000_000 - 10_000_000);
+        assert_eq!(softened.budget, 500_000 - 40_000);
+    }
+
+    #[test]
+    fn hiding_incidents_from_the_s1_can_cost_more_later() {
+        let with_incidents = |seed| {
+            let mut game = at(Landmark::S1Filing, seed, 50);
+            for _ in 0..2 {
+                let i = plant(&mut game, Actor::Ransomware, Stage::Objective);
+                game.campaigns[i].end = Some(End::Succeeded);
+            }
+            game
+        };
+
+        let mut honest = with_incidents(1);
+        honest.cross(0);
+        let disclosed = 1_000_000_000 - honest.valuation;
+        assert_eq!(disclosed, 30_000_000);
+
+        let (mut surfaced, mut stayed_hidden) = (false, false);
+        for seed in 0..20 {
+            let mut game = with_incidents(seed);
+            game.cross(1);
+            assert_eq!(game.valuation, 1_000_000_000, "nothing up front");
+            game.day = Landmark::Flip.day() - 1;
+            game.next_landmark = 5;
+            game.advance();
+            if game.valuation < 1_000_000_000 - disclosed {
+                surfaced = true;
+                assert!(game.log.iter().any(|e| e.contains("journalist")));
+            } else {
+                stayed_hidden = true;
+            }
+        }
+        assert!(surfaced && stayed_hidden);
+    }
+
+    #[test]
+    fn the_flip_raises_the_threat_and_rewards_trust() {
+        for (trust, top_up) in [(60, TOP_UP), (59, 0)] {
+            let mut game = game();
+            game.trust = trust;
+            game.day = Landmark::Flip.day() - 1;
+            game.next_landmark = 5;
+            let (budget, odds) = (game.budget, game.spawn_odds());
+
+            game.advance();
+
+            assert_eq!(game.stop.as_ref().unwrap().landmark, Landmark::Flip);
+            assert_eq!(game.budget, budget + top_up - 18_000, "Monday payroll too");
+            assert!(game.spawn_odds() >= odds + FLIP_THREAT);
+        }
+    }
+
+    #[test]
+    fn forts_offer_one_rest_and_let_you_move_on() {
+        let mut game = at(Landmark::Conference, 1, 30);
+
+        game.rest_at_fort();
+        assert_eq!(game.team[0].burnout, 5);
+        game.rest_at_fort();
+        assert_eq!(game.team[0].burnout, 5, "once per visit");
+
+        game.leave_fort();
+        assert_eq!(game.stop, None);
+    }
+
+    #[test]
+    fn paydays_left_count_the_mondays_before_the_ipo() {
+        let mut game = game();
+        assert_eq!(game.paydays_left(), 25);
+        game.day = 8;
+        assert_eq!(game.paydays_left(), 24);
+        game.slip();
+        assert_eq!(game.paydays_left(), 26);
     }
 
     #[test]

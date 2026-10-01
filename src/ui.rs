@@ -284,6 +284,23 @@ impl Screen {
                 }
                 Self::Play(game)
             }
+            (Self::Play(mut game), input)
+                if game.pending_alert().is_none() && game.stop.is_some() =>
+            {
+                let fort = game.stop.as_ref().unwrap().landmark.is_fort();
+                match input {
+                    Input::Char('1') if fort => return Self::Shop(Shop { game, cursor: 0 }),
+                    Input::Char('2') if fort => game.rest_at_fort(),
+                    Input::Char('3') if fort => game.leave_fort(),
+                    Input::Char(c @ '1'..='9')
+                        if !fort && game.can_cross(c as usize - '1' as usize) =>
+                    {
+                        game.cross(c as usize - '1' as usize)
+                    }
+                    _ => {}
+                }
+                Self::Play(game)
+            }
             (Self::Play(mut game), input) if game.pending_alert().is_some() => {
                 let reply = match input {
                     Input::Char('1') => Some(Reply::Investigate),
@@ -922,6 +939,50 @@ mod tests {
 
         assert_eq!(game(&screen).event, None);
         assert_eq!(game(&screen).trust, trust - 5);
+    }
+
+    fn at(landmark: crate::landmarks::Landmark) -> Screen {
+        with_game(new_game(), |game| {
+            game.stop = Some(crate::game::Stop {
+                landmark,
+                rested: false,
+            })
+        })
+    }
+
+    #[test]
+    fn forts_offer_the_vendor_hall_rest_and_the_road() {
+        let fort = at(crate::landmarks::Landmark::Conference);
+        assert_eq!(fort.clone().update(Input::Char('4')), fort);
+
+        let hall = fort.clone().update(Input::Char('1'));
+        assert!(matches!(hall, Screen::Shop(_)));
+        let back = open_for_business(hall);
+        assert!(game(&back).stop.is_some(), "back at the fort");
+
+        let rested = fort.clone().update(Input::Char('2'));
+        assert!(game(&rested).stop.as_ref().unwrap().rested);
+
+        let moved_on = fort.update(Input::Char('3'));
+        assert_eq!(game(&moved_on).stop, None);
+        assert!(matches!(
+            moved_on.update(Input::Char('1')),
+            Screen::Travel(_)
+        ));
+    }
+
+    #[test]
+    fn rivers_are_crossed_with_a_number_key() {
+        let river = at(crate::landmarks::Landmark::BoardBriefing);
+        assert!(matches!(
+            river.clone().update(Input::Char('1')),
+            Screen::Play(_)
+        ));
+        assert_eq!(river.clone().update(Input::Char('4')), river);
+
+        let crossed = river.update(Input::Char('2'));
+
+        assert_eq!(game(&crossed).stop, None);
     }
 
     #[test]

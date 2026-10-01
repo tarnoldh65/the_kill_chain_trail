@@ -3,9 +3,10 @@ use macroquad::prelude::*;
 
 use crate::audio::TRACKS;
 use crate::game::{
-    Action, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IPO_DAY, IR_FEE, Item, Outcome, PAYDAYS,
-    Profile, Reply, Role, TeamMember, money,
+    Action, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Outcome, Profile, Reply,
+    Role, TeamMember, money,
 };
+use crate::landmarks::Landmark;
 use crate::street::{self, Leg, Street};
 use crate::ui::{ActionMenu, CoffeeRun, Music, Screen, Shop, wrap};
 
@@ -262,7 +263,7 @@ fn vendor_hall(font: &Font, shop: &Shop) {
             "Budget {}   Payroll {}/wk, {} to IPO",
             money(game.budget),
             money(game.payroll()),
-            money(game.payroll() * PAYDAYS)
+            money(game.payroll() * game.paydays_left())
         ),
         MARGIN,
         36.0,
@@ -296,8 +297,13 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     }
     let exit_y = 64.0 + Item::ALL.len() as f32 * 16.0;
     let can_open = game.analysts() > 0;
+    let exit = if game.day == 1 {
+        "Open for business"
+    } else {
+        "Leave the Vendor Hall"
+    };
     font.text(
-        "Open for business",
+        exit,
         MARGIN + 24.0,
         exit_y,
         1.0,
@@ -463,9 +469,71 @@ fn play(font: &Font, game: &GameState, traveling: bool) {
         }
         None if game.incident.is_some() => incident_popup(font, game),
         None if game.event.is_some() => event_menu(font, game),
+        None if game.pending_alert().is_none() && game.stop.is_some() => landmark_popup(font, game),
         None if game.pending_alert().is_some() => alert_menu(font, game),
         None => day_menu(font, game),
     }
+}
+
+fn landmark_popup(font: &Font, game: &GameState) {
+    let stop = game.stop.as_ref().expect("a landmark");
+    let landmark = stop.landmark;
+    let (x, y, w, h) = (40.0, 72.0, WIDTH - 80.0, 312.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, CYAN);
+    font.centered(
+        &landmark.to_string().to_uppercase(),
+        WIDTH / 2.0,
+        y + 12.0,
+        2.0,
+        AMBER,
+    );
+    let width = ((w - 32.0) / GLYPH) as usize;
+    let mut line_y = y + 40.0;
+    for line in wrap(landmark.intro(), width) {
+        font.text(&line, x + 16.0, line_y, 1.0, INK);
+        line_y += 12.0;
+    }
+    line_y += 8.0;
+    if landmark == Landmark::PenTest {
+        for (area, grade) in game.report_card() {
+            let color = match grade {
+                'A' | 'B' => GREEN,
+                'C' => AMBER,
+                _ => RED,
+            };
+            font.text(&format!("{area:<12}"), x + 48.0, line_y, 1.0, INK);
+            font.text(&grade.to_string(), x + 160.0, line_y, 1.0, color);
+            line_y += 12.0;
+        }
+        line_y += 8.0;
+    }
+    let options: Vec<(String, bool)> = if landmark.is_fort() {
+        vec![
+            ("Visit the Vendor Hall".to_string(), true),
+            ("Rest (no time passes)".to_string(), !stop.rested),
+            ("Move on".to_string(), true),
+        ]
+    } else {
+        landmark
+            .crossings()
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.label.to_string(), game.can_cross(i)))
+            .collect()
+    };
+    for (i, (label, available)) in options.iter().enumerate() {
+        let color = if *available { AMBER } else { DIM };
+        font.text(&format!("{}) {label}", i + 1), x + 16.0, line_y, 1.0, color);
+        line_y += 16.0;
+    }
+    font.text(
+        &format!("Press 1-{}. Grey choices are unavailable.", options.len()),
+        x + 16.0,
+        y + h - 20.0,
+        1.0,
+        DIM,
+    );
 }
 
 fn event_menu(font: &Font, game: &GameState) {
@@ -603,13 +671,18 @@ fn timeline(font: &Font, game: &GameState) {
     right(font, &format!("Lead: {}", game.lead), 6.0, CYAN);
 
     let (left, end, y) = (MARGIN + 4.0, WIDTH - MARGIN - 36.0, 30.0);
-    let x_of = |day: u32| left + (end - left) * (day - 1) as f32 / (IPO_DAY - 1) as f32;
+    let x_of = |day: u32| left + (end - left) * (day - 1) as f32 / (game.ipo_day - 1) as f32;
     draw_line(left, y, end, y, 2.0, DIM);
-    for monday in (8..IPO_DAY).step_by(7) {
+    for monday in (8..game.ipo_day).step_by(7) {
         draw_line(x_of(monday), y - 3.0, x_of(monday), y + 3.0, 1.0, DIM);
     }
     let now = x_of(game.day);
     draw_line(left, y, now, y, 2.0, GREEN);
+    for (i, (landmark, &day)) in Landmark::ALL.iter().zip(&game.landmark_days).enumerate() {
+        let color = if i < game.next_landmark { GREEN } else { CYAN };
+        draw_rectangle(x_of(day) - 3.0, y - 3.0, 6.0, 6.0, color);
+        font.centered(landmark.short(), x_of(day), y - 13.0, 1.0, color);
+    }
     draw_rectangle(end - 4.0, y - 4.0, 8.0, 8.0, AMBER);
     font.text("IPO", end + 8.0, y - 4.0, 1.0, AMBER);
     draw_rectangle(
