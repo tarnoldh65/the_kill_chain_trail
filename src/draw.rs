@@ -3,11 +3,11 @@ use macroquad::prelude::*;
 
 use crate::audio::TRACKS;
 use crate::game::{
-    COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IPO_DAY, Item, Outcome, PAYDAYS, Profile, Role,
-    TeamMember, money,
+    Action, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IPO_DAY, Item, Outcome, PAYDAYS, Profile,
+    Role, TeamMember, money,
 };
 use crate::street::{self, Leg, Street};
-use crate::ui::{CoffeeRun, Music, Screen, Shop, wrap};
+use crate::ui::{ActionMenu, CoffeeRun, Music, Screen, Shop, wrap};
 
 pub const WIDTH: f32 = 640.0;
 pub const HEIGHT: f32 = 480.0;
@@ -93,7 +93,22 @@ pub fn screen(screen: &Screen, font: &Font, music: Music) {
         Screen::Shop(shop) => vendor_hall(font, shop),
         Screen::Hire { shop, name } => {
             vendor_hall(font, shop);
-            hire_popup(font, shop, name);
+            let level = if shop.item() == Some(Item::Senior) {
+                "senior"
+            } else {
+                "junior"
+            };
+            name_popup(font, &format!("Name your new {level} analyst:"), name);
+        }
+        Screen::Actions(menu) => action_menu(font, menu),
+        Screen::Recruit { menu, name } => {
+            action_menu(font, menu);
+            let level = if menu.action() == Some(Action::Recruit(Item::Senior)) {
+                "senior"
+            } else {
+                "junior"
+            };
+            name_popup(font, &format!("Name the {level} analyst to recruit:"), name);
         }
         Screen::Play(game) => play(font, game, false),
         Screen::Travel(travel) => play(font, &travel.game, true),
@@ -316,28 +331,60 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     font.text("UP/DOWN to choose, ENTER to buy.", MARGIN, 460.0, 1.0, DIM);
 }
 
-fn hire_popup(font: &Font, shop: &Shop, name: &str) {
+fn name_popup(font: &Font, prompt: &str, name: &str) {
     let (x, y, w, h) = (96.0, 160.0, WIDTH - 192.0, 112.0);
     draw_rectangle(x, y, w, h, NAVY);
     draw_rectangle_lines(x, y, w, h, 2.0, CYAN);
-    let level = if shop.item() == Some(Item::Senior) {
-        "senior"
-    } else {
-        "junior"
-    };
-    font.centered(
-        &format!("Name your new {level} analyst:"),
-        WIDTH / 2.0,
-        y + 16.0,
-        1.0,
-        INK,
-    );
+    font.centered(prompt, WIDTH / 2.0, y + 16.0, 1.0, INK);
     let cursor = if blink() { "_" } else { "" };
     font.text(&format!("{name}{cursor}"), x + 24.0, y + 44.0, 2.0, AMBER);
     font.centered(
-        "ENTER to hire, or ENTER with no name to cancel",
+        "ENTER to confirm, or ENTER with no name to cancel",
         WIDTH / 2.0,
         y + 84.0,
+        1.0,
+        DIM,
+    );
+}
+
+fn action_menu(font: &Font, menu: &ActionMenu) {
+    let game = &menu.game;
+    timeline(font, game);
+    font.text("TAKE AN ACTION", MARGIN, 72.0, 2.0, AMBER);
+    right(font, &format!("Budget {}", money(game.budget)), 76.0, INK);
+    font.text(
+        &format!("{:<38}{:<8}COST", "ACTION", "DAYS"),
+        MARGIN + 24.0,
+        100.0,
+        1.0,
+        CYAN,
+    );
+    let actions = game.actions();
+    let row_y = |i: usize| 116.0 + i as f32 * 16.0;
+    for (i, action) in actions.iter().enumerate() {
+        let cost = match action.cost() {
+            0 => "-".to_string(),
+            cost => money(cost),
+        };
+        font.text(
+            &format!("{:<38}{:<8}{cost}", action.label(), game.duration(*action)),
+            MARGIN + 24.0,
+            row_y(i),
+            1.0,
+            INK,
+        );
+    }
+    font.text("Back", MARGIN + 24.0, row_y(actions.len()), 1.0, AMBER);
+    font.text(">", MARGIN + 8.0, row_y(menu.cursor), 1.0, AMBER);
+    divider(384.0);
+    let note = menu
+        .action()
+        .map_or("Return to the day menu.", |a| a.description());
+    font.text(note, MARGIN, 396.0, 1.0, CYAN);
+    font.text(
+        "UP/DOWN to choose, ENTER to start. Days pass while the SOC works.",
+        MARGIN,
+        460.0,
         1.0,
         DIM,
     );
@@ -489,10 +536,16 @@ fn status_panel(font: &Font, game: &GameState) {
     );
     font.text("Tempo", x, row(5), 1.0, INK);
     font.text(&game.tempo.to_string(), value_x, row(5), 1.0, INK);
+    font.text("Task", x, row(6), 1.0, INK);
+    let task = match &game.task {
+        Some(task) => format!("{:.15} {}d", task.action.label(), task.days_left),
+        None => "-".to_string(),
+    };
+    font.text(&task, value_x, row(6), 1.0, AMBER);
 
-    font.text("TEAM", x, 184.0, 1.0, CYAN);
+    font.text("TEAM", x, 192.0, 1.0, CYAN);
     for (i, member) in game.team.iter().enumerate() {
-        let y = 200.0 + i as f32 * 14.0;
+        let y = 208.0 + i as f32 * 14.0;
         let name: String = member.name.chars().take(10).collect();
         font.text(
             &format!("{name:<10} {}", short_role(member.role)),
@@ -526,26 +579,35 @@ fn event_log(font: &Font, game: &GameState) {
 }
 
 fn day_menu(font: &Font, game: &GameState) {
-    font.text("What will you do?", MARGIN, 392.0, 1.0, AMBER);
+    font.text("What will you do?", MARGIN, 390.0, 1.0, AMBER);
+    let resume = match &game.task {
+        Some(task) => format!(
+            "Continue ({}, {} days left)",
+            task.action.label(),
+            task.days_left
+        ),
+        None => "Continue".to_string(),
+    };
     let tempo = format!("Set the tempo (now {})", game.tempo);
     let intern = format!(
         "Send the intern for coffee ({}, once a week)",
         money(COFFEE_RUN_COST)
     );
     let options = [
-        ("Continue", true),
+        (resume.as_str(), true),
+        ("Take an action", !game.actions().is_empty()),
         ("Check the team", true),
         (tempo.as_str(), true),
         (intern.as_str(), game.can_send_intern()),
     ];
     // The coffee run is not offered while the break room is full.
-    let shown = if game.coffee_full() { 3 } else { 4 };
+    let shown = if game.coffee_full() { 4 } else { 5 };
     for (i, (label, available)) in options[..shown].iter().enumerate() {
         let color = if *available { INK } else { DIM };
         font.text(
             &format!("{}) {label}", i + 1),
             MARGIN + 16.0,
-            406.0 + i as f32 * 12.0,
+            402.0 + i as f32 * 11.0,
             1.0,
             color,
         );
@@ -553,7 +615,7 @@ fn day_menu(font: &Font, game: &GameState) {
     font.text(
         &format!("Press 1-{shown}. Grey choices are unavailable."),
         MARGIN,
-        460.0,
+        462.0,
         1.0,
         DIM,
     );

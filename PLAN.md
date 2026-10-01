@@ -69,18 +69,19 @@ Success criteria:
 ## Phase 14: Defender actions
 
 Tasks:
-- "Take an action" in the day menu lists the actions in REDESIGN.md section 7 that are currently available.
+- "Take an action" in the day menu lists the actions in REDESIGN.md section 7 that are currently available. Threat hunting, SIEM tuning, and the reduced watch during days off and offsites need the attacker and come in Phase 15; the CIO's pet project after a leadership briefing is a random event in Phase 16.
+- Enforcing MFA is how MFA tokens are deployed; recruiting is named up front, the analyst joins when the week is over.
 - Actions cost budget, days, or both; tempo shortens or lengthens their duration; seniors speed them up.
 - Days pass during an action and the world keeps moving; an interruption pauses it and the player can resume it.
 - Prerequisites: deployment needs an owned tool, MFA enforcement needs MFA tokens, SIEM tuning needs a SIEM, backup tests need backups.
 - Effects on posture, burnout, trust, and roster (recruiting) as documented, with log messages.
 
 Success criteria:
-- [ ] Every action applies its documented cost, duration, and effects (unit tested per action).
-- [ ] Actions with unmet prerequisites or unaffordable costs are not offered (unit tested).
-- [ ] Tempo and seniors change action duration in the documented direction (unit tested).
-- [ ] An interrupted action resumes with its remaining days, not from the start (unit tested).
-- [ ] A recruited analyst is named by the player and joins the roster and payroll (unit tested).
+- [x] Every action applies its documented cost, duration, and effects (unit tested per action).
+- [x] Actions with unmet prerequisites or unaffordable costs are not offered (unit tested).
+- [x] Tempo and seniors change action duration in the documented direction (unit tested).
+- [x] An interrupted action resumes with its remaining days, not from the start (unit tested).
+- [x] A recruited analyst is named by the player and joins the roster and payroll (unit tested).
 
 ## Phase 15: The attacker
 
@@ -88,6 +89,8 @@ Tasks:
 - Campaigns start at random, more often as IPO day approaches, weighted by each company profile's threat mix (Fintech: money-motivated attackers; Healthtech: data thieves; Gaming startup: hacktivists and DDoS). Each has an actor, an objective, and hidden progress: Reconnaissance, Initial access, Foothold, Objective.
 - Each day every campaign rolls to advance against the posture areas that defend it; a failed advance can end it.
 - Detection rolls turn campaign steps into alerts; false positives are mixed in, fewer with a tuned SIEM.
+- Threat hunt action (3 days, better with seniors and a deployed SIEM) can find and evict hidden campaigns. Tune the SIEM action (3 days, needs a deployed SIEM) reduces false positives.
+- Days off and offsites reduce Detection while they last.
 - Alert choices: Investigate (1-3 days, better with seniors), Call the IR firm (needs retainer, costs budget), Ignore.
 - A campaign reaching its objective becomes an incident with response choices and a lingering condition (Systems down, Regulator inquiry, Leaky roadmap, Downtime, Persistent access, Paranoia). Conditions show as status tags, change available actions, and are cleared by a specific action.
 - Resilience and cyber insurance reduce incident damage.
@@ -100,6 +103,7 @@ Success criteria:
 - [ ] Investigating a real alert can evict its campaign; investigating a false positive only costs days; the IR firm needs a retainer (unit tested).
 - [ ] Every incident type occurs across seeds, applies its responses, and sets and clears its lingering condition (unit tested).
 - [ ] Each lingering condition changes the available actions as documented (unit tested).
+- [ ] Threat hunting finds campaigns more often with seniors and a SIEM, and days off and offsites lower Detection while they last (unit tested).
 - [ ] Resilience and insurance reduce incident damage (unit tested).
 - [ ] The after-action report lists every campaign of the game with its furthest stage and alerts marked real or false (unit tested).
 - [ ] Campaign stages are never shown to the player before the game ends.
@@ -108,6 +112,7 @@ Success criteria:
 
 Tasks:
 - Non-attacker events from REDESIGN.md section 10 interrupt the clock; some ask for a decision.
+- Briefing leadership can lead to the CIO assigning a pet project.
 - Events are seeded and can be good, bad, or neutral.
 
 Success criteria:
@@ -193,7 +198,7 @@ Success criteria:
 - [x] MVP (Phases 1-11)
 - [x] Phase 12: Calendar, meters, and endings
 - [x] Phase 13: Setup and the Vendor Hall
-- [ ] Phase 14: Defender actions
+- [x] Phase 14: Defender actions
 - [ ] Phase 15: The attacker
 - [ ] Phase 16: Random events
 - [ ] Phase 17: Landmarks and IPO delays

@@ -1,5 +1,5 @@
 use crate::audio::TRACKS;
-use crate::game::{GameState, Item, Outcome, Profile};
+use crate::game::{Action, GameState, Item, Outcome, Profile};
 use crate::street::{Hop, Street};
 
 const NAME_LIMIT: usize = 20;
@@ -94,6 +94,13 @@ pub enum Screen {
         shop: Shop,
         name: String,
     },
+    /// Picking something for the SOC to spend its days on.
+    Actions(ActionMenu),
+    /// Naming the analyst about to be recruited.
+    Recruit {
+        menu: ActionMenu,
+        name: String,
+    },
     /// The day menu, with the clock stopped.
     Play(GameState),
     /// Days passing on their own until something happens or a key is pressed.
@@ -123,6 +130,20 @@ impl Shop {
     }
 }
 
+/// The available actions, with a cursor on one of them or on the way back below them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionMenu {
+    pub game: GameState,
+    pub cursor: usize,
+}
+
+impl ActionMenu {
+    /// The action under the cursor, or `None` on the way back.
+    pub fn action(&self) -> Option<Action> {
+        self.game.actions().get(self.cursor).copied()
+    }
+}
+
 /// The intern's trip across the street, with the game waiting on the result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoffeeRun {
@@ -136,6 +157,11 @@ impl Screen {
             Self::Play(game)
             | Self::Team(game)
             | Self::Shop(Shop { game, .. })
+            | Self::Actions(ActionMenu { game, .. })
+            | Self::Recruit {
+                menu: ActionMenu { game, .. },
+                ..
+            }
             | Self::Hire {
                 shop: Shop { game, .. },
                 ..
@@ -189,7 +215,12 @@ impl Screen {
             (Self::Profile { company, lead }, Input::Char(c @ '1'..='3')) => {
                 let profile = Profile::ALL[c as usize - '1' as usize];
                 Self::Shop(Shop {
-                    game: GameState::new(company.trim(), lead.trim(), profile),
+                    game: GameState::new(
+                        company.trim(),
+                        lead.trim(),
+                        profile,
+                        macroquad::rand::rand(),
+                    ),
                     cursor: 0,
                 })
             }
@@ -232,12 +263,52 @@ impl Screen {
                 game,
                 elapsed_ms: 0,
             }),
-            (Self::Play(game), Input::Char('2')) => Self::Team(game),
-            (Self::Play(mut game), Input::Char('3')) => {
+            (Self::Play(game), Input::Char('2')) if !game.actions().is_empty() => {
+                Self::Actions(ActionMenu { game, cursor: 0 })
+            }
+            (Self::Play(game), Input::Char('3')) => Self::Team(game),
+            (Self::Play(mut game), Input::Char('4')) => {
                 game.tempo = game.tempo.next();
                 Self::Play(game)
             }
-            (Self::Play(mut game), Input::Char('4')) if game.can_send_intern() => {
+            (Self::Actions(mut menu), Input::Arrow(Hop::Up)) => {
+                menu.cursor = menu.cursor.saturating_sub(1);
+                Self::Actions(menu)
+            }
+            (Self::Actions(mut menu), Input::Arrow(Hop::Down)) => {
+                menu.cursor = (menu.cursor + 1).min(menu.game.actions().len());
+                Self::Actions(menu)
+            }
+            (Self::Actions(mut menu), Input::Enter) => match menu.action() {
+                None => Self::Play(menu.game),
+                Some(Action::Recruit(_)) => Self::Recruit {
+                    menu,
+                    name: String::new(),
+                },
+                Some(action) => {
+                    menu.game.start(action, "");
+                    Self::Travel(Travel {
+                        game: menu.game,
+                        elapsed_ms: 0,
+                    })
+                }
+            },
+            (Self::Recruit { mut menu, name }, Input::Enter) => {
+                if name.trim().is_empty() {
+                    return Self::Actions(menu);
+                }
+                let action = menu.action().expect("recruiting from an action row");
+                menu.game.start(action, name.trim());
+                Self::Travel(Travel {
+                    game: menu.game,
+                    elapsed_ms: 0,
+                })
+            }
+            (Self::Recruit { menu, name }, input) => Self::Recruit {
+                menu,
+                name: edit(name, input),
+            },
+            (Self::Play(mut game), Input::Char('5')) if game.can_send_intern() => {
                 game.send_intern();
                 Self::Coffee(CoffeeRun {
                     game,
@@ -527,20 +598,106 @@ mod tests {
     }
 
     #[test]
-    fn two_checks_the_team_until_enter() {
-        let screen = new_game().update(Input::Char('2'));
+    fn three_checks_the_team_until_enter() {
+        let start = new_game();
+        let screen = start.clone().update(Input::Char('3'));
         assert!(matches!(screen, Screen::Team(_)));
         assert_eq!(screen.clone().update(Input::Char('1')), screen);
 
-        assert_eq!(screen.update(Input::Enter), new_game());
+        assert_eq!(screen.update(Input::Enter), start);
+    }
+
+    fn action_menu(screen: &Screen) -> &ActionMenu {
+        match screen {
+            Screen::Actions(menu) => menu,
+            other => panic!("expected Actions, got {other:?}"),
+        }
+    }
+
+    /// Opens the action menu and moves the cursor to `action`.
+    fn choose(screen: Screen, action: Action) -> Screen {
+        let screen = screen.update(Input::Char('2'));
+        let index = action_menu(&screen)
+            .game
+            .actions()
+            .iter()
+            .position(|a| *a == action)
+            .unwrap();
+        arrows(screen, Hop::Down, index)
     }
 
     #[test]
-    fn three_cycles_the_tempo() {
-        let screen = new_game().update(Input::Char('3'));
+    fn two_lists_actions_and_back_returns_to_the_day_menu() {
+        let start = new_game();
+        let screen = start.clone().update(Input::Char('2'));
+        let count = action_menu(&screen).game.actions().len();
+        assert_eq!(action_menu(&screen).action(), Some(Action::PhishingSim));
+
+        let screen = arrows(screen, Hop::Down, count + 3);
+        assert_eq!(action_menu(&screen).cursor, count);
+        assert_eq!(screen.update(Input::Enter), start);
+    }
+
+    #[test]
+    fn choosing_an_action_starts_it_and_runs_the_clock() {
+        let screen = choose(new_game(), Action::PatchSprint).update(Input::Enter);
+
+        let Screen::Travel(travel) = &screen else {
+            panic!("expected Travel, got {screen:?}");
+        };
+        assert_eq!(
+            travel.game.task.as_ref().unwrap().action,
+            Action::PatchSprint
+        );
+
+        let screen = screen.tick(DAY_SECONDS * 10.0);
+        assert!(
+            matches!(screen, Screen::Play(_)),
+            "finishing stops the clock"
+        );
+        assert_eq!(game(&screen).task, None);
+        assert_eq!(game(&screen).day, 5);
+    }
+
+    #[test]
+    fn no_new_action_while_one_is_under_way() {
+        let screen = choose(new_game(), Action::PatchSprint)
+            .update(Input::Enter)
+            .update(Input::Char('x'));
+        assert!(matches!(screen, Screen::Play(_)));
+
+        assert_eq!(screen.clone().update(Input::Char('2')), screen);
+        assert!(
+            matches!(screen.update(Input::Char('1')), Screen::Travel(_)),
+            "resume"
+        );
+    }
+
+    #[test]
+    fn recruiting_asks_for_the_new_analysts_name() {
+        let screen = choose(new_game(), Action::Recruit(Item::Junior)).update(Input::Enter);
+        assert!(matches!(screen, Screen::Recruit { .. }));
+
+        let screen = type_text(screen, "Priya").update(Input::Enter);
+        let task = game(&screen).task.as_ref().unwrap();
+        assert_eq!(task.action, Action::Recruit(Item::Junior));
+        assert_eq!(task.name, "Priya");
+    }
+
+    #[test]
+    fn an_empty_recruit_name_goes_back_to_the_actions() {
+        let menu = choose(new_game(), Action::Recruit(Item::Junior));
+        let screen = menu.clone().update(Input::Enter).update(Input::Enter);
+
+        assert_eq!(screen, menu);
+    }
+
+    #[test]
+    fn four_cycles_the_tempo() {
+        let screen = new_game().update(Input::Char('4'));
         assert_eq!(game(&screen).tempo, Tempo::Crunch);
 
-        let screen = screen.update(Input::Char('3'));
+        let screen = screen.update(Input::Char('4'));
         assert_eq!(game(&screen).tempo, Tempo::Relaxed);
     }
 
@@ -552,9 +709,9 @@ mod tests {
     }
 
     #[test]
-    fn four_sends_the_intern_across_the_street() {
+    fn five_sends_the_intern_across_the_street() {
         let before = new_game();
-        let mut screen = before.clone().update(Input::Char('4'));
+        let mut screen = before.clone().update(Input::Char('5'));
 
         assert_eq!(game(&screen).budget, game(&before).budget - COFFEE_RUN_COST);
         assert_eq!(street(&mut screen).row, 0);
@@ -565,7 +722,7 @@ mod tests {
     #[test]
     fn enter_only_leaves_the_street_once_the_run_is_over() {
         let coffee = game(&new_game()).coffee;
-        let mut screen = new_game().update(Input::Char('4'));
+        let mut screen = new_game().update(Input::Char('5'));
         let running = screen.clone();
         assert_eq!(running.clone().update(Input::Enter), running);
 
@@ -574,15 +731,16 @@ mod tests {
 
         assert!(matches!(screen, Screen::Play(_)));
         assert_eq!(game(&screen).coffee, coffee + 12);
-        assert_eq!(screen.clone().update(Input::Char('4')), screen);
+        assert_eq!(screen.clone().update(Input::Char('5')), screen);
     }
 
     #[test]
     fn ticks_only_move_the_street_and_the_clock() {
         assert_eq!(Screen::Title.tick(1.0), Screen::Title);
-        assert_eq!(new_game().tick(1.0), new_game());
+        let start = new_game();
+        assert_eq!(start.clone().tick(1.0), start);
 
-        let mut screen = new_game().update(Input::Char('4'));
+        let mut screen = new_game().update(Input::Char('5'));
         let before = street(&mut screen).lanes.clone();
         let mut screen = screen.tick(0.1);
         assert_ne!(street(&mut screen).lanes, before);
@@ -590,7 +748,7 @@ mod tests {
 
     #[test]
     fn street_cues_hops_escapes_and_crashes_but_not_traffic() {
-        let mut before = new_game().update(Input::Char('4'));
+        let mut before = new_game().update(Input::Char('5'));
         street(&mut before).row = 5;
         let mut hopped = before.clone();
         street(&mut hopped).row = 4;
@@ -626,7 +784,7 @@ mod tests {
 
     #[test]
     fn the_intern_goes_once_per_week() {
-        let screen = new_game().update(Input::Char('4'));
+        let screen = new_game().update(Input::Char('5'));
         let screen = match screen {
             Screen::Coffee(mut run) => {
                 run.street.survived = Some(false);
@@ -635,7 +793,7 @@ mod tests {
             other => panic!("expected Coffee, got {other:?}"),
         };
 
-        assert_eq!(screen.clone().update(Input::Char('4')), screen);
+        assert_eq!(screen.clone().update(Input::Char('5')), screen);
     }
 
     #[test]
@@ -659,7 +817,7 @@ mod tests {
         assert_eq!(cue(&before, &after), Some(Cue::Select));
 
         let before = new_game();
-        let after = before.clone().update(Input::Char('3'));
+        let after = before.clone().update(Input::Char('4'));
         assert_eq!(cue(&before, &after), Some(Cue::Select));
     }
 

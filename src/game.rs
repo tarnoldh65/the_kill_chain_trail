@@ -50,6 +50,16 @@ const BURNOUT_EXITS: [&str; 5] = [
     "rage-quit and changed their LinkedIn headline to \"Goat Farmer\".",
 ];
 
+/// A well-mixed pseudo-random number from a seed and a salt (the murmur3 finalizer).
+fn roll(seed: u32, salt: u32) -> u32 {
+    let mut x = seed ^ salt.wrapping_mul(0x9E37_79B9);
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x85EB_CA6B);
+    x ^= x >> 13;
+    x = x.wrapping_mul(0xC2B2_AE35);
+    x ^ x >> 16
+}
+
 /// Formats dollars the way the game shows money: $10, $18K, $1.5M, $600M, $1.20B.
 pub fn money(dollars: i64) -> String {
     let d = dollars as f64;
@@ -212,6 +222,106 @@ impl Item {
     }
 }
 
+/// Something the SOC spends days (and sometimes money) on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    /// Rolls out an owned tool from the Vendor Hall.
+    Deploy(Item),
+    PhishingSim,
+    PatchSprint,
+    Tabletop,
+    BackupTest,
+    /// Recruits an analyst of the Vendor Hall's `Junior` or `Senior` level.
+    Recruit(Item),
+    DayOff,
+    Offsite,
+    BriefLeadership,
+}
+
+impl Action {
+    pub fn label(self) -> String {
+        match self {
+            Self::Deploy(Item::MfaTokens) => "Enforce MFA everywhere".to_string(),
+            Self::Deploy(item) => format!("Deploy {}", item.label()),
+            Self::PhishingSim => "Run a phishing simulation".to_string(),
+            Self::PatchSprint => "Patch sprint".to_string(),
+            Self::Tabletop => "Tabletop exercise".to_string(),
+            Self::BackupTest => "Backup restore test".to_string(),
+            Self::Recruit(Item::Senior) => "Recruit a senior analyst".to_string(),
+            Self::Recruit(_) => "Recruit a junior analyst".to_string(),
+            Self::DayOff => "Give everyone the day off".to_string(),
+            Self::Offsite => "Team offsite".to_string(),
+            Self::BriefLeadership => "Brief leadership".to_string(),
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Deploy(Item::MfaTokens) => "Big identity boost. Employees will complain.",
+            Self::Deploy(_) => "Turns the tool on so it actually helps.",
+            Self::PhishingSim => "Teaches people to spot phishing. Executives hate it.",
+            Self::PatchSprint => "Hardens endpoints and the perimeter. Tiring.",
+            Self::Tabletop => "Practice for the worst day. Leadership likes it.",
+            Self::BackupTest => "Proves the backups actually restore.",
+            Self::Recruit(_) => "Find and hire a new analyst. Takes a week.",
+            Self::DayOff => "Everyone recovers. Nobody is watching for a day.",
+            Self::Offsite => "A week of trust falls. Large burnout recovery.",
+            Self::BriefLeadership => "Tell the board what the SOC is doing.",
+        }
+    }
+
+    pub fn cost(self) -> i64 {
+        match self {
+            Self::PhishingSim => 5_000,
+            Self::Offsite => 20_000,
+            Self::Recruit(level) => level.price(),
+            _ => 0,
+        }
+    }
+
+    /// Days at Steady tempo with no seniors.
+    fn base_days(self) -> u32 {
+        match self {
+            Self::Deploy(Item::Edr) => 7,
+            Self::Deploy(Item::Siem) => 10,
+            Self::Deploy(Item::EmailGateway) => 3,
+            Self::Deploy(Item::Waf) => 4,
+            Self::Deploy(_) => 5,
+            Self::PhishingSim | Self::BackupTest => 2,
+            Self::PatchSprint => 4,
+            Self::Tabletop | Self::DayOff | Self::BriefLeadership => 1,
+            Self::Recruit(_) => 7,
+            Self::Offsite => 5,
+        }
+    }
+
+    /// Whether tempo and seniors leave the duration alone.
+    fn fixed(self) -> bool {
+        matches!(
+            self,
+            Self::Recruit(_) | Self::DayOff | Self::Offsite | Self::BriefLeadership
+        )
+    }
+
+    /// Burnout everyone sheds each day instead of working, for rest actions.
+    fn rest(self) -> Option<i32> {
+        match self {
+            Self::DayOff => Some(25),
+            Self::Offsite => Some(10),
+            _ => None,
+        }
+    }
+}
+
+/// The action in progress and how long it has left.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Task {
+    pub action: Action,
+    pub days_left: u32,
+    /// The new analyst's name, for `Recruit`.
+    pub name: String,
+}
+
 /// How hard the SOC is working, the game's "pace" setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tempo {
@@ -235,6 +345,15 @@ impl Tempo {
             Self::Relaxed => 2,
             Self::Steady => 6,
             Self::Crunch => 12,
+        }
+    }
+
+    /// Percent of an action's base duration at this tempo.
+    fn duration_percent(self) -> u32 {
+        match self {
+            Self::Relaxed => 150,
+            Self::Steady => 100,
+            Self::Crunch => 67,
         }
     }
 
@@ -345,15 +464,19 @@ pub struct GameState {
     pub team: Vec<TeamMember>,
     /// Tools and services bought at the Vendor Hall. Tools need deploying before they help.
     pub owned: Vec<Item>,
+    pub deployed: Vec<Item>,
+    pub task: Option<Task>,
     pub log: Vec<String>,
     pub outcome: Option<Outcome>,
     /// Whether the intern has already been sent for coffee this week.
     pub coffee_run_made: bool,
+    /// Drives every random outcome, so a seed always plays out the same way.
+    pub seed: u32,
 }
 
 impl GameState {
     /// A new game with leadership in place and no analysts yet; hire them at the Vendor Hall.
-    pub fn new(company: &str, lead: &str, profile: Profile) -> Self {
+    pub fn new(company: &str, lead: &str, profile: Profile, seed: u32) -> Self {
         let leader = |name: &str, role| TeamMember {
             name: name.to_string(),
             role,
@@ -379,11 +502,14 @@ impl GameState {
                 leader("Dana", Role::Cio),
             ],
             owned: Vec::new(),
+            deployed: Vec::new(),
+            task: None,
             log: vec![format!(
                 "{company} goes public in 26 weeks. {lead} takes command of the SOC."
             )],
             outcome: None,
             coffee_run_made: false,
+            seed,
         }
     }
 
@@ -421,6 +547,155 @@ impl GameState {
             burnout: 0,
             salary: item.salary(),
         });
+    }
+
+    /// Actions the SOC can start now: prerequisites met, affordable, and nothing else under way.
+    pub fn actions(&self) -> Vec<Action> {
+        if self.task.is_some() || self.outcome.is_some() {
+            return Vec::new();
+        }
+        let deployable = self
+            .owned
+            .iter()
+            .filter(|item| !matches!(item, Item::IrRetainer | Item::Insurance))
+            .filter(|item| !self.deployed.contains(item))
+            .map(|&item| Action::Deploy(item));
+        let backup_test = self
+            .deployed
+            .contains(&Item::Backups)
+            .then_some(Action::BackupTest);
+        let recruits = (self.analysts() < MAX_ANALYSTS)
+            .then_some([Action::Recruit(Item::Junior), Action::Recruit(Item::Senior)])
+            .into_iter()
+            .flatten();
+        deployable
+            .chain([Action::PhishingSim, Action::PatchSprint, Action::Tabletop])
+            .chain(backup_test)
+            .chain(recruits)
+            .chain([Action::DayOff, Action::Offsite, Action::BriefLeadership])
+            .filter(|action| action.cost() <= self.budget)
+            .collect()
+    }
+
+    /// Days an action takes now: tempo stretches or shrinks it, and every two seniors save a day.
+    pub fn duration(&self, action: Action) -> u32 {
+        if action.fixed() {
+            return action.base_days();
+        }
+        let seniors = self.team.iter().filter(|m| m.role == Role::Senior).count() as u32;
+        let days = (action.base_days() * self.tempo.duration_percent()).div_ceil(100);
+        days.saturating_sub(seniors / 2).max(1)
+    }
+
+    /// Pays for an action and puts it under way; `name` names a recruit.
+    pub fn start(&mut self, action: Action, name: &str) {
+        self.budget -= action.cost();
+        let days = self.duration(action);
+        self.log
+            .push(format!("Started: {} ({days} days).", action.label()));
+        self.task = Some(Task {
+            action,
+            days_left: days,
+            name: name.to_string(),
+        });
+    }
+
+    fn boost(&mut self, area: Area, amount: i32) {
+        let value = &mut self.posture[area as usize];
+        *value = (*value + amount).clamp(0, 100);
+    }
+
+    /// Applies a finished action's effects.
+    fn finish(&mut self, task: Task) {
+        let message = match task.action {
+            Action::Deploy(item) => {
+                self.deployed.push(item);
+                match item {
+                    Item::Edr => {
+                        self.boost(Area::Endpoint, 25);
+                        self.boost(Area::Detection, 10);
+                    }
+                    Item::Siem => self.boost(Area::Detection, 30),
+                    Item::MfaTokens => {
+                        self.boost(Area::Identity, 30);
+                        self.trust -= 3;
+                    }
+                    Item::EmailGateway => self.boost(Area::People, 20),
+                    Item::Waf => self.boost(Area::Perimeter, 30),
+                    Item::Backups => self.boost(Area::Resilience, 25),
+                    _ => unreachable!("only tools are deployed"),
+                }
+                if item == Item::MfaTokens {
+                    "MFA is enforced everywhere. The help desk is drowning in \"I lost my phone\" tickets.".to_string()
+                } else {
+                    format!(
+                        "The {} rollout is finished. It is actually turned on.",
+                        item.label()
+                    )
+                }
+            }
+            Action::PhishingSim => {
+                self.boost(Area::People, 8);
+                if roll(self.seed, self.day).is_multiple_of(3) {
+                    self.trust -= 3;
+                    "The VP of Sales clicked the test phish and is furious about being \"tricked\"."
+                        .to_string()
+                } else {
+                    "Phishing simulation done. 23% clicked. One person replied with their password."
+                        .to_string()
+                }
+            }
+            Action::PatchSprint => {
+                self.boost(Area::Endpoint, 8);
+                self.boost(Area::Perimeter, 5);
+                for member in self.team.iter_mut().filter(|m| m.role.is_analyst()) {
+                    member.burnout += 8;
+                }
+                "Patch sprint complete. 1,200 patches applied, 3 servers rebooted unexpectedly."
+                    .to_string()
+            }
+            Action::Tabletop => {
+                self.boost(Area::Resilience, 6);
+                self.trust += 2;
+                "The tabletop exercise went well. The CEO learned what ransomware is.".to_string()
+            }
+            Action::BackupTest => {
+                self.boost(Area::Resilience, 6);
+                "Backup restore test passed. Someone finally knows where the backups are."
+                    .to_string()
+            }
+            Action::Recruit(level) => {
+                self.hire(level, &task.name);
+                // The recruiter's fee was paid when the search started.
+                self.budget += level.price();
+                let role = self.team.last().unwrap().role;
+                format!("{} the {role} joins the SOC.", task.name)
+            }
+            Action::DayOff => "The team is back from a day off, slightly less haunted.".to_string(),
+            Action::Offsite => {
+                "The team offsite is over. Trust falls were had. Nobody was dropped.".to_string()
+            }
+            Action::BriefLeadership => {
+                self.trust += 4;
+                "You briefed leadership. The board nodded at all the right moments.".to_string()
+            }
+        };
+        self.trust = self.trust.clamp(0, 100);
+        self.log.push(message);
+    }
+
+    /// Counts down the action in progress and finishes it on its last day.
+    fn progress(&mut self) -> bool {
+        let Some(task) = &mut self.task else {
+            return false;
+        };
+        task.days_left -= 1;
+        if task.days_left > 0 {
+            return false;
+        }
+        let task = self.task.take().unwrap();
+        self.finish(task);
+        true
     }
 
     pub fn analysts(&self) -> i32 {
@@ -486,6 +761,7 @@ impl GameState {
         if self.outcome.is_none() {
             stop |= self.drink_coffee();
             stop |= self.work();
+            stop |= self.progress();
             stop |= self.leadership_changes();
             self.check_outcome();
         }
@@ -549,10 +825,14 @@ impl GameState {
         had_coffee
     }
 
-    /// Analysts share the day's workload; anyone fully burned out leaves.
+    /// Analysts share the day's workload, or everyone rests; anyone fully burned out leaves.
     fn work(&mut self) -> bool {
         let analysts = self.analysts();
-        if analysts > 0 {
+        if let Some(rest) = self.task.as_ref().and_then(|t| t.action.rest()) {
+            for member in &mut self.team {
+                member.burnout = (member.burnout - rest).max(0);
+            }
+        } else if analysts > 0 {
             let share = self.tempo.workload() / analysts;
             for member in self.team.iter_mut() {
                 let rest = match member.role {
@@ -646,7 +926,7 @@ mod tests {
                 member("Ravi", Role::Ciso, 15, 0),
                 member("Dana", Role::Cio, 10, 0),
             ],
-            ..GameState::new("Acme", "Alex", Profile::Healthtech)
+            ..GameState::new("Acme", "Alex", Profile::Healthtech, 1)
         }
     }
 
@@ -673,7 +953,7 @@ mod tests {
 
     #[test]
     fn new_game_starts_on_day_one_with_leadership_and_no_analysts() {
-        let game = GameState::new("Acme", "Alex", Profile::Fintech);
+        let game = GameState::new("Acme", "Alex", Profile::Fintech, 1);
 
         assert_eq!(game.day, 1);
         assert_eq!(game.weekday(), 0);
@@ -695,7 +975,7 @@ mod tests {
             (Profile::Gaming, 500_000, 600_000_000, 3),
         ];
         for (profile, budget, valuation, multiplier) in expected {
-            let mut game = GameState::new("Acme", "Alex", profile);
+            let mut game = GameState::new("Acme", "Alex", profile, 1);
 
             assert_eq!(game.budget, budget);
             assert_eq!(
@@ -746,7 +1026,7 @@ mod tests {
 
     #[test]
     fn hired_analysts_keep_their_names_levels_and_salaries() {
-        let mut game = GameState::new("Acme", "Alex", Profile::Gaming);
+        let mut game = GameState::new("Acme", "Alex", Profile::Gaming, 1);
 
         game.hire(Item::Junior, "Priya");
         game.hire(Item::Senior, "Marcus");
@@ -776,7 +1056,7 @@ mod tests {
 
     #[test]
     fn the_soc_has_desks_for_a_limited_number_of_analysts() {
-        let mut game = GameState::new("Acme", "Alex", Profile::Fintech);
+        let mut game = GameState::new("Acme", "Alex", Profile::Fintech, 1);
         for _ in 0..MAX_ANALYSTS {
             game.hire(Item::Junior, "A");
         }
@@ -1096,6 +1376,257 @@ mod tests {
 
         assert_eq!(game.coffee, 24);
         assert!(game.log.last().unwrap().contains("delivery truck"));
+    }
+
+    /// Starts an action and advances until it finishes, keeping the coffee topped up.
+    fn run(game: &mut GameState, action: Action) {
+        game.start(action, "Priya");
+        while game.task.is_some() {
+            game.coffee = COFFEE_CAPACITY;
+            game.advance();
+        }
+    }
+
+    #[test]
+    fn only_owned_undeployed_tools_can_be_deployed() {
+        let mut game = game();
+        assert!(
+            !game
+                .actions()
+                .iter()
+                .any(|a| matches!(a, Action::Deploy(_)))
+        );
+
+        game.owned = vec![Item::Siem, Item::IrRetainer, Item::Waf, Item::Insurance];
+        let deploys: Vec<_> = game
+            .actions()
+            .into_iter()
+            .filter(|a| matches!(a, Action::Deploy(_)))
+            .collect();
+        assert_eq!(
+            deploys,
+            [Action::Deploy(Item::Siem), Action::Deploy(Item::Waf)]
+        );
+
+        run(&mut game, Action::Deploy(Item::Siem));
+        assert!(!game.actions().contains(&Action::Deploy(Item::Siem)));
+        assert_eq!(game.deployed, [Item::Siem]);
+    }
+
+    #[test]
+    fn deploying_each_tool_raises_its_posture_areas() {
+        let expected: [(Item, &[(Area, i32)]); 6] = [
+            (Item::Edr, &[(Area::Endpoint, 25), (Area::Detection, 10)]),
+            (Item::Siem, &[(Area::Detection, 30)]),
+            (Item::MfaTokens, &[(Area::Identity, 30)]),
+            (Item::EmailGateway, &[(Area::People, 20)]),
+            (Item::Waf, &[(Area::Perimeter, 30)]),
+            (Item::Backups, &[(Area::Resilience, 25)]),
+        ];
+        for (tool, boosts) in expected {
+            let mut game = game();
+            game.owned.push(tool);
+            let mut control = game.clone();
+
+            run(&mut game, Action::Deploy(tool));
+            advance_to(&mut control, game.day);
+
+            for area in Area::ALL {
+                let boost = boosts
+                    .iter()
+                    .find(|(a, _)| *a == area)
+                    .map_or(0, |(_, b)| *b);
+                assert_eq!(
+                    game.posture[area as usize],
+                    control.posture[area as usize] + boost,
+                    "{tool:?} {area:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn enforcing_mfa_annoys_employees() {
+        let mut game = game();
+        game.owned.push(Item::MfaTokens);
+
+        run(&mut game, Action::Deploy(Item::MfaTokens));
+
+        assert_eq!(game.trust, 60 - 3);
+        assert!(game.log.last().unwrap().contains("I lost my phone"));
+    }
+
+    #[test]
+    fn each_action_applies_its_cost_duration_and_effects() {
+        let mut game = game();
+        game.deployed.push(Item::Backups);
+        let posture = |g: &GameState, area: Area| g.posture[area as usize];
+
+        let start = game.clone();
+        run(&mut game, Action::PatchSprint);
+        assert_eq!(game.day, start.day + 4);
+        assert_eq!(posture(&game, Area::Endpoint), 38);
+        assert_eq!(posture(&game, Area::Perimeter), 35);
+        assert!(game.team[0].burnout > start.team[0].burnout + 4, "tiring");
+
+        let mut game = start.clone();
+        run(&mut game, Action::PhishingSim);
+        assert_eq!(game.day, start.day + 2);
+        assert_eq!(game.budget, start.budget - 5_000);
+        assert_eq!(posture(&game, Area::People), 38);
+
+        let mut game = start.clone();
+        run(&mut game, Action::Tabletop);
+        assert_eq!(game.day, start.day + 1);
+        assert_eq!(posture(&game, Area::Resilience), 36);
+        assert_eq!(game.trust, 62);
+
+        let mut game = start.clone();
+        run(&mut game, Action::BackupTest);
+        assert_eq!(game.day, start.day + 2);
+        assert_eq!(posture(&game, Area::Resilience), 36);
+
+        let mut game = start.clone();
+        run(&mut game, Action::BriefLeadership);
+        assert_eq!(game.day, start.day + 1);
+        assert_eq!(game.trust, 64);
+
+        let mut game = start.clone();
+        run(&mut game, Action::DayOff);
+        assert_eq!(game.day, start.day + 1);
+        assert_eq!(game.team[0].burnout, 0);
+        assert!(game.log.last().unwrap().contains("day off"));
+
+        let mut game = start.clone();
+        game.team[0].burnout = 90;
+        run(&mut game, Action::Offsite);
+        assert_eq!(game.day, start.day + 5);
+        assert_eq!(game.budget, start.budget - 20_000);
+        assert_eq!(game.team[0].burnout, 40);
+    }
+
+    #[test]
+    fn phishing_simulations_sometimes_upset_a_vp() {
+        let mut outcomes = Vec::new();
+        for seed in 0..30 {
+            let mut game = GameState { seed, ..game() };
+            run(&mut game, Action::PhishingSim);
+            outcomes.push(game.trust);
+        }
+
+        assert!(outcomes.contains(&60) && outcomes.contains(&57));
+    }
+
+    #[test]
+    fn a_recruited_analyst_is_named_and_joins_after_a_week() {
+        let mut game = game();
+
+        game.start(Action::Recruit(Item::Senior), "Priya");
+        assert_eq!(game.budget, 500_000 - Item::Senior.price());
+        assert_eq!(game.analysts(), 3);
+
+        while game.task.is_some() {
+            game.advance();
+        }
+        assert_eq!(game.day, 8);
+        assert_eq!(game.analysts(), 4);
+        assert_eq!(
+            game.team.last().unwrap(),
+            &member("Priya", Role::Senior, 0, Item::Senior.salary())
+        );
+        assert_eq!(game.payroll(), 18_000 + Item::Senior.salary());
+        assert_eq!(
+            game.budget,
+            500_000 - Item::Senior.price() - 18_000,
+            "fee paid once, new hire not yet on payroll"
+        );
+        assert!(game.log.last().unwrap() == "Priya the Senior Analyst joins the SOC.");
+    }
+
+    #[test]
+    fn unaffordable_actions_and_unmet_prerequisites_are_not_offered() {
+        let mut game = game();
+        assert!(!game.actions().contains(&Action::BackupTest));
+        game.owned.push(Item::Backups);
+        assert!(
+            !game.actions().contains(&Action::BackupTest),
+            "owned but not deployed"
+        );
+        game.deployed.push(Item::Backups);
+        assert!(game.actions().contains(&Action::BackupTest));
+
+        game.budget = 4_999;
+        let offered = game.actions();
+        assert!(!offered.contains(&Action::PhishingSim));
+        assert!(!offered.contains(&Action::Offsite));
+        assert!(!offered.contains(&Action::Recruit(Item::Junior)));
+        assert!(offered.contains(&Action::PatchSprint));
+
+        game.team
+            .extend((0..5).map(|_| member("A", Role::Junior, 0, 0)));
+        game.budget = 500_000;
+        assert!(
+            !game.actions().contains(&Action::Recruit(Item::Junior)),
+            "no desks"
+        );
+    }
+
+    #[test]
+    fn nothing_else_starts_while_an_action_is_under_way() {
+        let mut game = game();
+
+        game.start(Action::PatchSprint, "");
+
+        assert!(game.actions().is_empty());
+    }
+
+    #[test]
+    fn tempo_and_seniors_change_how_long_actions_take() {
+        let mut game = game();
+        let sprint = Action::PatchSprint;
+        assert_eq!(game.duration(sprint), 4);
+
+        game.tempo = Tempo::Relaxed;
+        assert_eq!(game.duration(sprint), 6);
+        game.tempo = Tempo::Crunch;
+        assert_eq!(game.duration(sprint), 3);
+
+        game.tempo = Tempo::Steady;
+        game.team.push(member("S1", Role::Senior, 0, 0));
+        assert_eq!(game.duration(sprint), 4, "one senior is not enough");
+        game.team.push(member("S2", Role::Senior, 0, 0));
+        assert_eq!(game.duration(sprint), 3);
+
+        game.tempo = Tempo::Crunch;
+        assert_eq!(game.duration(Action::Tabletop), 1, "never under a day");
+        assert_eq!(game.duration(Action::Recruit(Item::Junior)), 7, "fixed");
+    }
+
+    #[test]
+    fn an_interrupted_action_resumes_where_it_left_off() {
+        let mut game = game();
+        game.coffee = 2;
+        game.start(Action::PatchSprint, "");
+
+        assert!(game.advance(), "running out of coffee stops the clock");
+        assert_eq!(game.task.as_ref().unwrap().days_left, 3);
+
+        assert!(!game.advance());
+        assert!(!game.advance());
+        assert!(game.advance(), "finishing stops the clock");
+        assert_eq!(game.task, None);
+        assert_eq!(game.day, 5);
+    }
+
+    #[test]
+    fn days_off_replace_the_workload() {
+        let mut game = game();
+        game.start(Action::DayOff, "");
+
+        game.advance();
+
+        assert_eq!(game.team[3].burnout, 0, "leadership rests too");
+        assert_eq!(game.team[1].burnout, 0);
     }
 
     #[test]
