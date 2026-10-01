@@ -56,15 +56,18 @@ A shop screen where the player spends the starting budget. A leftover balance ca
 - Senior analyst: expensive, faster at actions, better at investigating alerts.
 - The player names each hire. Three to five analysts is a reasonable start.
 
-**Tools** (one-time license cost; each must be *deployed* by a day action before it helps):
-- EDR: endpoint protection and detection.
-- SIEM: detection across the board.
-- MFA tokens: identity protection.
-- Email security gateway: phishing protection.
-- DDoS protection / WAF: perimeter.
-- Immutable backups: resilience against ransomware and outages.
+**Tools** (one-time cost; each must be *deployed* by an action before it helps, and loses strength each week until maintained, see section 7). Three per defense area, from cheap to premium; tools in the same area stack:
 
-A tool bought but never deployed is shelfware, and the end report says so.
+| Area | Budget | Mid | Premium |
+| --- | --- | --- | --- |
+| Identity | Password manager $10K | MFA tokens $20K | Privileged access management $70K |
+| Endpoint | Antivirus suite $10K | Application allowlisting $35K | EDR $60K |
+| People | Awareness posters $5K | Email security gateway $25K | Training platform $45K |
+| Perimeter | Vulnerability scanner $15K | DDoS protection and WAF $40K | Attack surface management $60K |
+| Resilience | Incident runbooks $8K | Immutable backups $30K | Disaster recovery site $80K |
+| Detection | Log collection $15K | SIEM $80K | Managed detection service $100K |
+
+The Vendor Hall has a tab for staff, one for each area, and one for services. The IMPROVES row lights up the areas the selected tool helps.
 
 **Services and supplies**:
 - Incident response retainer: unlocks "Call the IR firm" during incidents.
@@ -78,7 +81,8 @@ The Vendor Hall stays open: visit it from the day menu any day to pivot as threa
 
 - The run is scheduled for 26 weeks (182 days), but IPO delays can extend it (section 5.2). Day 1 is a Monday.
 - A persistent timeline bar spans the top of every gameplay screen: a line from today to IPO day with landmark icons along it, a marker for the current day, and text such as `DAY 43  -  139 DAYS TO IPO`.
-- Every Monday is payday: salaries and coffee upkeep are deducted. The log notes it.
+- Every Monday is payday: salaries and the coffee subscription are deducted. The log notes it.
+- Every sixth Monday (days 43, 85, 127, 169, and on through delays) the board releases a grant scaled by trust: the full amount at trust 60 (Fintech $180K, Healthtech $160K, Gaming startup $120K), half at 30, one and a half at 90. Starting budgets are $600K, $450K, and $300K. The Vendor Hall's spare after costs is the lowest the budget reaches before the IPO, counting grants at today's trust.
 - Threat activity ramps up as the IPO approaches and the company becomes more visible.
 
 ### 5.1 Landmarks
@@ -91,7 +95,7 @@ The Vendor Hall stays open: visit it from the day menu any day to pivot as threa
 | 10 | SOC 2 Type II Audit | River | Choose how to cross: rely on your controls, hire consultants (budget), or crunch to fix findings (days and fatigue). Failing hurts valuation and trust and delays the IPO |
 | 13 | Confidential S-1 Filing | Fort | Decide whether to disclose past incidents in the risk factors: disclosure costs valuation now; hiding it risks a much bigger hit if it surfaces later |
 | 16 | Third-Party Pen Test | River | Testers grade your posture as letter grades, the only time it is ever shown; weak areas cost valuation |
-| 19 | Public S-1 Flip | Fort | The company is now public knowledge; threat level jumps. Budget top-up if trust is high |
+| 19 | Public S-1 Flip | Fort | The company is now public knowledge; threat level jumps |
 | 23 | Roadshow | River | Executives travel; whaling and travel-related attacks spike. Choose how much to protect them |
 | 26 | IPO Day | End | The bell rings. Final valuation is calculated |
 
@@ -166,6 +170,9 @@ When the clock stops, the player sees numbered options (layout unchanged from th
 3. **Check the team**: roster with each member's burnout (Good / Fair / Poor / Very poor).
 4. **Set the tempo**: Relaxed, Steady, or Crunch (the "pace" setting).
 5. **Send the intern for fancy coffee**: the existing street minigame, once a week. Surviving brings back 6 pots and takes 8 burnout off every analyst.
+6. **Visit the Vendor Hall**: buy, hire, and subscribe any day.
+
+From any play screen, L opens the full log and D opens the defenses screen: each area's pen test grade, who it slows, and what is helping it.
 
 Tempo is a standing setting rather than an action:
 
@@ -187,15 +194,14 @@ Actions cost money, days, or both. While an action is running, days pass and the
 | Patch sprint | 4 | None | Endpoint and perimeter boost; fatigue |
 | Threat hunt | 3 | None | Chance to find hidden attacker campaigns; better with seniors and SIEM |
 | Tabletop exercise | 1 | None | Resilience boost; small trust boost with leadership |
-| Backup restore test | 2 | None (needs backups) | Resilience boost |
-| Tune the SIEM | 3 | None (needs SIEM) | Fewer false positives |
+| Maintain an area's tools | 2 | None (needs a deployed tool below 80) | Restores that area's tools to full strength: an access review, endpoint policy update, email filter refresh, firewall and WAF rule update, disaster recovery rehearsal, or detection tuning |
 | Give everyone the day off | 1 | None | Large burnout recovery; nobody watching for a day |
 | Team offsite | 5 | Medium | Very large burnout recovery; reduced watch for the week |
 | Brief leadership | 1 | None | Trust boost; the CIO may assign a pet project |
 
 ## 8. Hidden security posture
 
-Posture is always hidden: no numbers, meters, or grades on screen. Six hidden values, each 0-100:
+Posture is hidden: no numbers or meters on screen, and the only grades are the pen test's, kept on the defenses screen once given. Six hidden values, each 0-100:
 
 - **Identity**: MFA, password hygiene, privileged access.
 - **Endpoint**: EDR, patching.
@@ -204,9 +210,9 @@ Posture is always hidden: no numbers, meters, or grades on screen. Six hidden va
 - **Resilience**: backups, tabletop exercises, IR retainer. Reduces the damage of a successful attack instead of preventing it.
 - **Detection**: SIEM, tuning, threat hunting, analyst skill. Controls how early you notice an attacker and how many false alarms you see.
 
-Every area also gets a bonus from analysts with conference expertise in it (section 5.3), which does not decay.
+Every area also gets a bonus from analysts with conference expertise in it (section 5.3), which does not decay, and from deployed tools in proportion to their condition. Each tool loses 8 condition every Monday; its area's maintenance action restores it. A neglected SIEM also raises more false alarms.
 
-Posture slowly decays (new SaaS apps, new hires, configuration drift), so it has to be maintained, not just bought. The player gets fuzzy hints: the board briefing reaction, result cards that say an area improved or weakened, and the pen test report card. The report card is a one-time snapshot and is not kept on screen afterward.
+Posture slowly decays (new SaaS apps, new hires, configuration drift), so it has to be maintained, not just bought. The player gets fuzzy hints: the board briefing reaction, result cards that say an area improved or weakened, and the pen test report card. The report card is a snapshot from the day of the pen test.
 
 ## 9. The attacker
 
@@ -292,7 +298,7 @@ The team is only the analysts you hire. Leadership (the CEO, CIO, CISO, and the 
 - **Valuation**: the score. Starts at the profile's base. Rises when landmarks go well; falls from incidents, failed rivers, and lingering conditions.
 - **Corporate trust** (0-100): leadership's confidence in the SOC.
 - **Brand loyalty** (0-100): customer and public confidence. Low brand drags valuation down each week.
-- **Budget**: cash on hand; weekly payroll and upkeep come out every Monday.
+- **Budget**: cash on hand; payroll and the coffee subscription come out every Monday, and the board's grants come in every sixth Monday.
 - **Coffee**: pots in the break room.
 
 ### 12.2 Endings

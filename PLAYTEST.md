@@ -18,6 +18,10 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [x] The log groups entries under day headers with space between them, and alerts and incidents stand out.
 - [x] Finished actions, investigations, IR calls, incident responses, event choices, and river crossings show a result card that is also in the log.
 - [x] The team screen lets you choose an analyst and fire them after a Y confirmation, for a week's salary; absent analysts and the last analyst cannot be fired.
+- [ ] The Vendor Hall's tabs list three tools per defense area; deployed tools show as DEPLOYED.
+- [ ] Deployed tools age week by week (fresh, aging, stale on the defenses screen), and each area's maintenance action appears when needed and restores them.
+- [ ] The board releases funding every sixth Monday, scaled by trust, with a result card; SOC Status shows the next funding day, and spare after costs never runs out before a grant arrives.
+- [ ] The last eight weeks still offer a meaningful choice every week.
 - [x] D opens the defenses screen from any play screen: each defense shows who it slows, what is helping it (amber for tools not yet deployed), and the pen test grade, which stays after the pen test.
 - [x] The Vendor Hall and action list light up the defenses the selected item or action improves.
 - [x] L opens the full log on its newest page from any play screen; LEFT/RIGHT turn pages back to the first entry, and ENTER returns where you were.

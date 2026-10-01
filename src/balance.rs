@@ -121,16 +121,29 @@ fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
 
 /// Buys what a sensible player wants while keeping enough for payroll.
 fn shop(game: &mut GameState, style: Style) {
+    // Cheap tools in every area first, then the mid tier, then premium as money allows.
     let wanted = [
         Item::CoffeeSubscription,
+        Item::PasswordManager,
+        Item::Antivirus,
+        Item::Posters,
+        Item::VulnScanner,
+        Item::Runbooks,
+        Item::LogCollection,
         Item::MfaTokens,
         Item::EmailGateway,
-        Item::Edr,
         Item::Backups,
-        Item::IrRetainer,
         Item::Waf,
+        Item::IrRetainer,
+        Item::Edr,
+        Item::Allowlisting,
+        Item::TrainingPlatform,
         Item::Siem,
         Item::Insurance,
+        Item::Asm,
+        Item::Pam,
+        Item::DrSite,
+        Item::Mdr,
     ];
     for item in wanted {
         if may_buy(style, item)
@@ -332,6 +345,12 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
 
     first(|a| matches!(a, Action::Clear(_)))
         .or_else(|| (tired >= 55).then(|| offered(Action::DayOff)).flatten())
+        // Trust pays for itself now that the board funds by it.
+        .or_else(|| {
+            (game.trust < 50)
+                .then(|| offered(Action::BriefLeadership).or_else(|| offered(Action::Tabletop)))
+                .flatten()
+        })
         .or_else(|| first(|a| matches!(a, Action::Deploy(_))))
         .or_else(|| first(|a| matches!(a, Action::Maintain(_))))
         .or_else(|| {

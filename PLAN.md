@@ -264,8 +264,8 @@ Tasks:
 - Update REDESIGN.md, README, and PLAYTEST.md; playtest natively and in the browser; deploy.
 
 Success criteria:
-- [ ] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile (unit tested).
-- [ ] Every ending is still reachable, and Sensible skipping any one purchase or action still wins some games (unit tested).
+- [x] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile (unit tested).
+- [x] Every ending is still reachable, and Sensible skipping any one purchase or action still wins some games (unit tested).
 - [ ] In a playtest, the last eight weeks still offer meaningful choices every week.
 - [ ] Every item in PLAYTEST.md passes, and the Pages URL serves the new version.
 
