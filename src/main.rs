@@ -1,6 +1,7 @@
 mod attack;
 mod audio;
 mod draw;
+mod events;
 mod game;
 mod street;
 mod ui;

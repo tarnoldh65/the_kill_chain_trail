@@ -462,9 +462,31 @@ fn play(font: &Font, game: &GameState, traveling: bool) {
             }
         }
         None if game.incident.is_some() => incident_popup(font, game),
+        None if game.event.is_some() => event_menu(font, game),
         None if game.pending_alert().is_some() => alert_menu(font, game),
         None => day_menu(font, game),
     }
+}
+
+fn event_menu(font: &Font, game: &GameState) {
+    font.text("What will you do?", MARGIN, 390.0, 1.0, AMBER);
+    let choices = game.event_choices();
+    for (i, choice) in choices.iter().enumerate() {
+        font.text(
+            &format!("{}) {}", i + 1, choice.label),
+            MARGIN + 16.0,
+            402.0 + i as f32 * 11.0,
+            1.0,
+            INK,
+        );
+    }
+    font.text(
+        &format!("Press 1-{}. What happened is in the log.", choices.len()),
+        MARGIN,
+        462.0,
+        1.0,
+        DIM,
+    );
 }
 
 fn alert_menu(font: &Font, game: &GameState) {

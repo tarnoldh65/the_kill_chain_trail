@@ -57,7 +57,9 @@ pub fn cue(before: &Screen, after: &Screen) -> Option<Cue> {
                 Cue::Lose
             });
         }
-        let trouble = |g: &GameState| g.pending_alert().is_some() || g.incident.is_some();
+        let trouble = |g: &GameState| {
+            g.pending_alert().is_some() || g.incident.is_some() || g.event.is_some()
+        };
         if new.team.len() < old.team.len() || trouble(new) && !trouble(old) {
             return Some(Cue::Alarm);
         }
@@ -274,6 +276,14 @@ impl Screen {
                 }
                 Self::Play(game)
             }
+            (Self::Play(mut game), input) if game.event.is_some() => {
+                if let Input::Char(c @ '1'..='9') = input
+                    && (c as usize - '1' as usize) < game.event_choices().len()
+                {
+                    game.choose(c as usize - '1' as usize);
+                }
+                Self::Play(game)
+            }
             (Self::Play(mut game), input) if game.pending_alert().is_some() => {
                 let reply = match input {
                     Input::Char('1') => Some(Reply::Investigate),
@@ -428,7 +438,7 @@ mod tests {
         arrows(screen, Hop::Down, Item::ALL.len()).update(Input::Enter)
     }
 
-    /// Day 1 with two junior analysts hired, on a seed with no attacker news for ten days.
+    /// Day 1 with two junior analysts hired, on a seed where nothing stops the clock for five days.
     fn new_game() -> Screen {
         let screen = open_for_business(hire_junior(hire_junior(vendor_hall(), "Maya"), "Dev"));
         with_game(screen, |game| {
@@ -436,10 +446,7 @@ mod tests {
                 .find(|&seed| {
                     let mut quiet = game.clone();
                     quiet.seed = seed;
-                    (0..10).all(|_| {
-                        quiet.advance();
-                        quiet.pending_alert().is_none() && quiet.incident.is_none()
-                    })
+                    (0..5).all(|_| !quiet.advance())
                 })
                 .unwrap();
         })
@@ -897,6 +904,24 @@ mod tests {
 
         assert_eq!(game(&screen).incident, None);
         assert!(!game(&screen).conditions.is_empty());
+    }
+
+    #[test]
+    fn an_event_waits_for_a_choice() {
+        let screen = with_game(new_game(), |game| {
+            game.event = Some(crate::game::PendingEvent {
+                index: crate::events::PET_PROJECT,
+                patient: 3,
+            })
+        });
+        let trust = game(&screen).trust;
+        assert_eq!(screen.clone().update(Input::Char('3')), screen);
+        assert_eq!(screen.clone().update(Input::Enter), screen);
+
+        let screen = screen.update(Input::Char('2'));
+
+        assert_eq!(game(&screen).event, None);
+        assert_eq!(game(&screen).trust, trust - 5);
     }
 
     #[test]

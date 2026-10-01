@@ -116,9 +116,9 @@ Tasks:
 - Events are seeded and can be good, bad, or neutral.
 
 Success criteria:
-- [ ] Every event occurs across seeds and applies its documented effects (unit tested).
-- [ ] Every decision option in an event is reachable and applies its effects (unit tested).
-- [ ] Events stop the clock and appear in the log.
+- [x] Every event occurs across seeds and applies its documented effects (unit tested).
+- [x] Every decision option in an event is reachable and applies its effects (unit tested).
+- [x] Events stop the clock and appear in the log.
 
 ## Phase 17: Landmarks and IPO delays
 
@@ -200,7 +200,7 @@ Success criteria:
 - [x] Phase 13: Setup and the Vendor Hall
 - [x] Phase 14: Defender actions
 - [x] Phase 15: The attacker
-- [ ] Phase 16: Random events
+- [x] Phase 16: Random events
 - [ ] Phase 17: Landmarks and IPO delays
 - [ ] Phase 18: The Security Conference
 - [ ] Phase 19: Presentation

@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::attack::{Actor, Alert, Campaign, Condition, End, Response, Stage};
+use crate::events::{Choice, EVENTS, Effect, PET_PROJECT};
 
 /// The day the IPO bell rings, 26 weeks after day 1.
 pub const IPO_DAY: u32 = 182;
@@ -370,6 +371,15 @@ pub struct Investigation {
     pub days_left: u32,
 }
 
+/// A random event waiting for a choice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingEvent {
+    /// Index into `EVENTS`.
+    pub index: usize,
+    /// Team index of the analyst the event names.
+    pub patient: usize,
+}
+
 /// Ways to answer an alert.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reply {
@@ -532,6 +542,11 @@ pub struct GameState {
     alert: Option<usize>,
     /// The incident waiting for a response.
     pub incident: Option<Actor>,
+    pub event: Option<PendingEvent>,
+    /// Extra daily odds of new attackers, in thousandths, from publicity.
+    threat: u32,
+    /// Days of thin holiday coverage left.
+    holiday: u32,
     pub log: Vec<String>,
     pub outcome: Option<Outcome>,
     /// Whether the intern has already been sent for coffee this week.
@@ -579,6 +594,9 @@ impl GameState {
             alerts: Vec::new(),
             alert: None,
             incident: None,
+            event: None,
+            threat: 0,
+            holiday: 0,
             log: vec![format!(
                 "{company} goes public in 26 weeks. {lead} takes command of the SOC."
             )],
@@ -713,6 +731,7 @@ impl GameState {
 
     /// Applies a finished action's effects.
     fn finish(&mut self, task: Task) {
+        let action = task.action;
         let message = match task.action {
             Action::Deploy(item) => {
                 self.deployed.push(item);
@@ -798,6 +817,84 @@ impl GameState {
         };
         self.trust = self.trust.clamp(0, 100);
         self.log.push(message);
+        // A third of briefings end with the CIO pitching a pet project.
+        if action == Action::BriefLeadership && self.chance() < 333 {
+            self.trigger(PET_PROJECT);
+        }
+    }
+
+    /// Sets off a random event: applied at once, or left waiting for a choice.
+    fn trigger(&mut self, index: usize) {
+        let analysts: Vec<usize> = (0..self.team.len())
+            .filter(|&i| self.team[i].role.is_analyst())
+            .collect();
+        if analysts.is_empty() {
+            return;
+        }
+        let patient = analysts[self.chance() as usize % analysts.len()];
+        let event = EVENTS[index];
+        self.log
+            .push(event.text.replace("{name}", &self.team[patient].name));
+        if event.choices.is_empty() {
+            self.apply(&event.effect, patient);
+        } else {
+            self.event = Some(PendingEvent { index, patient });
+        }
+    }
+
+    fn apply(&mut self, effect: &Effect, patient: usize) {
+        self.trust = (self.trust + effect.trust).clamp(0, 100);
+        self.brand = (self.brand + effect.brand).clamp(0, 100);
+        self.budget += effect.budget;
+        self.valuation += self.base_valuation * effect.valuation / 1000;
+        for member in self.team.iter_mut().filter(|m| m.role.is_analyst()) {
+            member.burnout = (member.burnout + effect.burnout).max(0);
+        }
+        let patient = &mut self.team[patient];
+        patient.burnout = (patient.burnout + effect.patient).max(0);
+        for &(area, change) in effect.posture {
+            self.boost(area, change);
+        }
+        self.coffee = (self.coffee + effect.coffee).clamp(0, COFFEE_CAPACITY);
+        self.threat += effect.threat;
+        self.holiday = self.holiday.max(effect.holiday);
+        if effect.intruder {
+            self.campaigns.push(Campaign {
+                actor: Actor::Apt,
+                start: self.day,
+                stage: Stage::InitialAccess,
+                seen: false,
+                end: None,
+            });
+        }
+    }
+
+    /// The choices for the event waiting on the player, if any.
+    pub fn event_choices(&self) -> &'static [Choice] {
+        self.event.as_ref().map_or(&[], |e| EVENTS[e.index].choices)
+    }
+
+    pub fn choose(&mut self, index: usize) {
+        let event = self.event.take().expect("an event to choose for");
+        let choice = EVENTS[event.index].choices[index];
+        self.apply(&choice.effect, event.patient);
+        self.log.push(choice.text.to_string());
+        self.check_outcome();
+    }
+
+    /// A random event on about one day in forty, when nothing else is waiting.
+    fn maybe_event(&mut self) -> bool {
+        let busy = self.alert.is_some() || self.incident.is_some() || self.event.is_some();
+        if busy || self.analysts() == 0 || self.chance() >= 25 {
+            return false;
+        }
+        let index = self.chance() as usize % EVENTS.len();
+        self.trigger(index);
+        true
+    }
+
+    fn spawn_odds(&self) -> u32 {
+        15 + 45 * self.day / IPO_DAY + self.threat
     }
 
     /// Counts down the action in progress and finishes it on its last day.
@@ -959,7 +1056,10 @@ impl GameState {
 
     /// Effective Detection: lower while the team is resting.
     fn watch(&self) -> i32 {
-        let detection = self.posture[Area::Detection as usize];
+        let mut detection = self.posture[Area::Detection as usize];
+        if self.holiday > 0 {
+            detection /= 2;
+        }
         match self.task.as_ref().map(|t| t.action) {
             Some(Action::DayOff) => detection / 4,
             Some(Action::Offsite) => detection / 2,
@@ -1010,8 +1110,7 @@ impl GameState {
     fn attack(&mut self) -> bool {
         let mut stop = false;
         let active = self.campaigns.iter().filter(|c| c.end.is_none()).count();
-        let odds = 15 + 45 * self.day / IPO_DAY;
-        if active < MAX_CAMPAIGNS && self.chance() < odds {
+        if active < MAX_CAMPAIGNS && self.chance() < self.spawn_odds() {
             let actor = self.pick_actor();
             let stage = if self.conditions.contains(&Condition::PersistentAccess) {
                 Stage::Foothold
@@ -1072,6 +1171,7 @@ impl GameState {
 
     /// Daily damage from lingering conditions.
     fn linger(&mut self) {
+        self.holiday = self.holiday.saturating_sub(1);
         if self.conditions.contains(&Condition::SystemsDown) {
             self.brand -= 1;
         }
@@ -1196,6 +1296,7 @@ impl GameState {
             stop |= self.investigate();
             self.linger();
             stop |= self.attack();
+            stop |= self.maybe_event();
             stop |= self.leadership_changes();
             self.check_outcome();
         }
@@ -2118,6 +2219,9 @@ mod tests {
             }
             game.advance();
             game.reply(Reply::Ignore);
+            if game.event.is_some() {
+                game.choose(0);
+            }
             if let Some(actor) = game.incident {
                 incidents.push(actor);
                 let i = actor
@@ -2573,6 +2677,165 @@ mod tests {
         game.outcome = Some(Outcome::Ipo);
 
         assert_eq!(game.after_action().len(), 1);
+    }
+
+    /// Checks that `after` is `before` with `effect` applied, naming `patient`.
+    fn assert_effect(before: &GameState, after: &GameState, effect: &Effect, patient: usize) {
+        assert_eq!(after.trust, (before.trust + effect.trust).clamp(0, 100));
+        assert_eq!(after.brand, (before.brand + effect.brand).clamp(0, 100));
+        assert_eq!(after.budget, before.budget + effect.budget);
+        assert_eq!(
+            after.valuation,
+            before.valuation + before.base_valuation * effect.valuation / 1000
+        );
+        for (i, (old, new)) in before.team.iter().zip(&after.team).enumerate() {
+            let mut burnout = old.burnout;
+            if old.role.is_analyst() {
+                burnout = (burnout + effect.burnout).max(0);
+            }
+            if i == patient {
+                burnout = (burnout + effect.patient).max(0);
+            }
+            assert_eq!(new.burnout, burnout, "{}", old.name);
+        }
+        let mut posture = before.posture;
+        for &(area, change) in effect.posture {
+            posture[area as usize] = (posture[area as usize] + change).clamp(0, 100);
+        }
+        assert_eq!(after.posture, posture);
+        assert_eq!(
+            after.coffee,
+            (before.coffee + effect.coffee).clamp(0, COFFEE_CAPACITY)
+        );
+        assert_eq!(after.threat, before.threat + effect.threat);
+        assert_eq!(after.holiday, before.holiday.max(effect.holiday));
+        assert_eq!(
+            after.campaigns.len(),
+            before.campaigns.len() + effect.intruder as usize
+        );
+    }
+
+    #[test]
+    fn every_event_happens_across_seeds_and_stops_the_clock() {
+        let mut seen = [false; EVENTS.len()];
+        for seed in 0..30 {
+            let mut game = GameState { seed, ..game() };
+            while game.outcome.is_none() {
+                game.coffee = COFFEE_CAPACITY;
+                game.budget = 500_000;
+                game.trust = 60;
+                game.brand = 60;
+                game.team.iter_mut().for_each(|m| m.burnout = 0);
+                let entries = game.log.len();
+                let stopped = game.advance();
+                for (i, event) in EVENTS.iter().enumerate() {
+                    let tail = event.text.split("{name}").last().unwrap();
+                    if game.log[entries..].iter().any(|e| e.ends_with(tail)) {
+                        seen[i] = true;
+                        assert!(stopped, "{}", event.text);
+                    }
+                }
+                game.reply(Reply::Ignore);
+                if game.event.is_some() {
+                    game.choose(0);
+                }
+                if let Some(actor) = game.incident {
+                    let i = (0..actor.responses().len())
+                        .find(|&i| game.can_respond(&actor.responses()[i]))
+                        .unwrap();
+                    game.respond(i);
+                }
+            }
+        }
+
+        for (i, event) in EVENTS.iter().enumerate() {
+            assert!(seen[i], "never happens: {}", event.text);
+        }
+    }
+
+    #[test]
+    fn events_without_choices_apply_their_effects_at_once() {
+        for (i, event) in EVENTS.iter().enumerate() {
+            if !event.choices.is_empty() {
+                continue;
+            }
+            let before = game();
+            let mut after = before.clone();
+
+            after.trigger(i);
+
+            assert_eq!(after.event, None);
+            assert_effect(&before, &after, &event.effect, usize::MAX);
+            assert!(after.log.last().unwrap() == event.text);
+        }
+    }
+
+    #[test]
+    fn every_event_choice_applies_its_effects() {
+        for (i, event) in EVENTS.iter().enumerate() {
+            for (j, choice) in event.choices.iter().enumerate() {
+                let mut before = game();
+                before.trigger(i);
+                let pending = before.event.clone().expect("waiting for a choice");
+                assert_eq!(before.event_choices(), event.choices);
+                assert!(!before.log.last().unwrap().contains("{name}"));
+                let mut after = before.clone();
+
+                after.choose(j);
+
+                assert_eq!(after.event, None);
+                assert_effect(&before, &after, &choice.effect, pending.patient);
+                assert_eq!(after.log.last().unwrap(), choice.text);
+            }
+        }
+    }
+
+    #[test]
+    fn the_flu_names_one_of_the_analysts() {
+        let mut game = game();
+
+        game.trigger(0);
+
+        let patient = &game.team[game.event.as_ref().unwrap().patient];
+        assert!(patient.role.is_analyst());
+        assert!(game.log.last().unwrap().starts_with(&patient.name));
+    }
+
+    #[test]
+    fn briefings_sometimes_end_with_a_pet_project() {
+        let projects = (0..30)
+            .filter(|&seed| {
+                let mut game = GameState { seed, ..game() };
+                game.start(Action::BriefLeadership, "");
+                game.progress();
+                game.event.as_ref().map(|e| e.index) == Some(PET_PROJECT)
+            })
+            .count();
+
+        assert!(projects > 0 && projects < 30, "{projects} of 30");
+    }
+
+    #[test]
+    fn publicity_holidays_and_breached_vendors_help_the_attackers() {
+        let mut game = game();
+        let (odds, watch) = (game.spawn_odds(), game.watch());
+
+        game.apply(
+            &Effect {
+                threat: 10,
+                holiday: 7,
+                intruder: true,
+                ..crate::events::NOTHING
+            },
+            0,
+        );
+
+        assert_eq!(game.spawn_odds(), odds + 10);
+        assert!(game.watch() < watch);
+        assert_eq!(game.campaigns[0].actor, Actor::Apt);
+        assert_eq!(game.campaigns[0].stage, Stage::InitialAccess);
+        advance_to(&mut game, 8);
+        assert_eq!(game.holiday, 0, "the holiday ends");
     }
 
     #[test]
