@@ -2,9 +2,19 @@
 
 A cyber security operations game inspired by Oregon Trail, written in Rust.
 
-Lead a SOC team through the seven landmarks of the cyber kill chain (Reconnaissance, Weaponization, Delivery, Exploitation, Installation, Command and Control, Actions on Objectives), spending budget, coffee, and your team's sleep to contain the attacker before trust, brand loyalty, or your analysts run out.
+Run the SOC at a company racing toward its IPO, 26 weeks away. Attackers you cannot see are working through the kill chain the whole time. Reach the IPO with the highest valuation you can; trust, brand loyalty, budget, coffee, and your team's burnout can all end the game early. See [REDESIGN.md](REDESIGN.md) for the full design.
 
-Pick a music track (1-3) or turn music off (4) on the title screen. Enter your company and name, then press 1-3 to pick one of three choices drawn at random from six for each landmark (a random event also strikes each turn); an illustrated incident report shows what happened before the next stage. Once per stage, unless the 36-pot break room is full, press 4 to send the intern for coffee ($10): use the arrow keys to cross four lanes of traffic to the coffee shop door and back to the office door. The window renders at 640x480 and scales when resized. Sound effects and techno music are synthesized in code; see [PLAN.md](PLAN.md).
+## How to play
+
+- Title screen: 1-3 picks a music track, 4 turns music off, ENTER starts.
+- Name your company and yourself, then pick a profile (1-3). Harder profiles multiply your score.
+- Vendor Hall: UP/DOWN and ENTER to hire and name analysts and buy tools, services, and coffee. Leftover budget pays the payroll every Monday.
+- Day menu: 1 lets the days pass (any key stops the clock), 2 starts an action (deploy a tool, patch, recruit, rest, and more), 3 shows the team, 4 changes the tempo, 5 sends the intern for coffee once a week (arrow keys across four lanes of traffic and back).
+- Alerts: 1 investigates, 2 calls the IR firm, 3 ignores. Some are false alarms. Incidents, random events, and landmarks ask you to pick a numbered option.
+- Landmarks on the timeline: forts open the Vendor Hall and let the team rest; at the security conference you pick who goes and their tracks. Rivers are risky choices, and failures can delay the IPO. More than six weeks of delays and the board pulls it.
+- The after-action report shows what the attackers were really doing. The ten best IPO scores appear on the title screen, saved to `top_ten.txt` natively or the browser's local storage.
+
+The window renders at 640x480 and scales when resized. Graphics, sound effects, and techno music are made in code.
 
 ## Run
 

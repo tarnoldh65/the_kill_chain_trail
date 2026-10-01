@@ -1,201 +1,13 @@
-//! 24x16 pixel-art sprites for turn reports. Each character is one pixel;
-//! `.` is transparent and the rest are palette colors mapped in `draw`.
+//! Pixel-art sprites. Each character is one pixel; `.` is transparent and the
+//! rest are palette colors mapped in `draw`.
 
-pub type Sprite = [&'static str; 16];
+use crate::attack::Actor;
+use crate::conference::Track;
 
-pub const WIDTH: usize = 24;
+pub type Sprite = &'static [&'static str];
 
-pub const HUNT: Sprite = [
-    "........................",
-    ".......wwwwww...........",
-    ".....ww......ww.........",
-    "....w..........w........",
-    "...w...r....r...w.......",
-    "...w....r..r....w.......",
-    "..w....rrrrrr....w......",
-    "..w...r.rrrr.r...w......",
-    "..w....rrrrrr....w......",
-    "...w..r.rrrr.r..w.......",
-    "...w............w.......",
-    "....w..........wbb......",
-    ".....ww......wwbbbb.....",
-    ".......wwwwww...bbbbb...",
-    "..................bbbbb.",
-    "....................bb..",
-];
-
-pub const SPEND: Sprite = [
-    "........................",
-    ".........bbbbbb.........",
-    "..........bbbb..........",
-    "...........bb...........",
-    ".........aaaaaa.........",
-    ".......aaaaaaaaaa.......",
-    "......aaaaaakaaaaa......",
-    ".....aaaaakkkkkaaaa.....",
-    ".....aaaakaakaaaaaa.....",
-    "....aaaaaakkkkaaaaaa....",
-    "....aaaaaaaakaakaaaa....",
-    "....aaaaakkkkkaaaaaa....",
-    ".....aaaaaakaaaaaaa.....",
-    "......aaaaaaaaaaaa......",
-    ".......aaaaaaaaaa.......",
-    "........................",
-];
-
-pub const SLEEP: Sprite = [
-    ".................wwww...",
-    "...................w....",
-    "...........www....w.....",
-    ".............w...wwww...",
-    "............w...........",
-    "...........w............",
-    "...........www..........",
-    "bb......................",
-    "bbwww...................",
-    "bbwwwll.................",
-    "bbwwlllccccccccccccccccc",
-    "bbwwwllccccccccccccccccc",
-    "bbbbbbbbbbbbbbbbbbbbbbbb",
-    "bbbbbbbbbbbbbbbbbbbbbbbb",
-    "bb....................bb",
-    "bb....................bb",
-];
-
-pub const PATCH: Sprite = [
-    "........................",
-    ".dddddddddddd......ll.ll",
-    ".dnnnnnnnnnnd......ll.ll",
-    ".dnllllllgnnd......lllll",
-    ".dnnnnnnnnnnd.......lll.",
-    ".dnllllllgnnd......ll...",
-    ".dnnnnnnnnnnd.....ll....",
-    ".dnllllllrnnd....ll.....",
-    ".dnnnnnnnnnnd...ll......",
-    ".dnllllllgnnd..ll.......",
-    ".dnnnnnnnnnnd.ll........",
-    ".dnllllllgnndll.........",
-    ".dnnnnnnnnnnd...........",
-    ".dddddddddddd...........",
-    "..d........d............",
-    "........................",
-];
-
-pub const PHISH: Sprite = [
-    "............l...........",
-    "............l...........",
-    "............l...........",
-    "........l...l...........",
-    "........ll..l...........",
-    ".........llll...........",
-    "..wwwwwwwwwwwwwwwwwwww..",
-    "..wdwwwwwwwwwwwwwwwwdw..",
-    "..wwdwwwwwwwwwwwwwwdww..",
-    "..wwwdwwwwwwwwwwwwdwww..",
-    "..wwwwddwwwwwwwwddwwww..",
-    "..wwwwwwddwwwwddwwwwww..",
-    "..wwwwwwwwddddwwwwwwww..",
-    "..wwwwwwwwwwwwwwwwwwww..",
-    "..wwwwwwwwwwwwwwwwwwww..",
-    "........................",
-];
-
-pub const COFFEE: Sprite = [
-    "........................",
-    "........w...w...w.......",
-    ".......w...w...w........",
-    "........w...w...w.......",
-    ".......w...w...w........",
-    "........................",
-    "....wwwwwwwwwwwwwwww....",
-    "....wbbbbbbbbbbbbbbw....",
-    "....wwwwwwwwwwwwwwwwww..",
-    "....wwwwrrwwwwrrwwww..w.",
-    "....wwwwrrwwwwrrwwww..w.",
-    "....wwwwwwwwwwwwwwww..w.",
-    "....wwwwwwrrrrwwwwwwww..",
-    ".....wwwwwwwwwwwwwww....",
-    "......wwwwwwwwwwwww.....",
-    "...dddddddddddddddddd...",
-];
-
-pub const BLOCK: Sprite = [
-    "........................",
-    "............llllllll....",
-    "..rr........bbblbbbl....",
-    "..rr..rr....bbblbbbl....",
-    "......rr....llllllll....",
-    "............blbbblbb...g",
-    "rr..........blbbblbb..g.",
-    "rr...rr.....llllllllg.g.",
-    ".....rr.....bbblbbbl.g..",
-    "............bbblbbbl....",
-    "...rr.......llllllll....",
-    "...rr..rr...blbbblbb....",
-    ".......rr...blbbblbb....",
-    "............llllllll....",
-    "............bbblbbbl....",
-    "............bbblbbbl....",
-];
-
-pub const ISOLATE: Sprite = [
-    "........................",
-    "..dddddddddddddddddddd..",
-    "..dkkkkkkkkkkkkkkkkkkd..",
-    "..dkkkkkkkaaaakkkkkkkd..",
-    "..dkkkkkkakkkkakkkkkkd..",
-    "..dkkkkkkakkkkakkkkkkd..",
-    "..dkkkkkaaaaaaaakkkkkd..",
-    "..dkkkkkaaakkaaakkkkkd..",
-    "..dkkkkkaaakkaaakkkkkd..",
-    "..dkkkkkaaaaaaaakkkkkd..",
-    "..dkkkkkkkkkkkkkkkkkkd..",
-    "..dddddddddddddddddddd..",
-    ".dllllllllllllllllllllld",
-    "dllllllllllllllllllllld.",
-    "dddddddddddddddddddddddd",
-    "........................",
-];
-
-pub const UNPLUG: Sprite = [
-    "........................",
-    "...............y........",
-    ".............y...y......",
-    "..............y.........",
-    "........................",
-    "....llllll.......dddddd.",
-    "....llllllll..y..dkkkkd.",
-    "ddddllllll...y.y.dddddd.",
-    "ddddllllll..y....dddddd.",
-    "....llllllll..y..dkkkkd.",
-    "....llllll.......dddddd.",
-    "........................",
-    ".............y..........",
-    "...........y...y........",
-    ".............y..........",
-    "........................",
-];
-
-pub const PRESS: Sprite = [
-    "..y..................y..",
-    ".yyy.....lll........yyy.",
-    "..y.....lllll........y..",
-    "........lllll...........",
-    ".........lll............",
-    "..........d.............",
-    "..........d.............",
-    "....bbbbbbbbbbbbbbbb....",
-    "....bbbbbbbbbbbbbbbb....",
-    ".....bbbbbbbbbbbbbb.....",
-    ".....bbbbbaaaabbbbb.....",
-    ".....bbbbbaaaabbbbb.....",
-    ".....bbbbbbbbbbbbbb.....",
-    ".....bbbbbbbbbbbbbb.....",
-    ".....bbbbbbbbbbbbbb.....",
-    "....dddddddddddddddd....",
-];
-
-pub const SKULL: Sprite = [
+/// Ransomware: the skull and crossbones of every ransom note.
+const RANSOM: Sprite = &[
     "........................",
     ".......gggggggggg.......",
     "......gggggggggggg......",
@@ -214,43 +26,232 @@ pub const SKULL: Sprite = [
     "........................",
 ];
 
-pub const BOX: Sprite = [
+/// A data breach: a database spilling records.
+const LEAK: Sprite = &[
     "........................",
-    "..........g..g..........",
-    "..........gggg..........",
-    "...........gg...........",
-    "..........rrrr..........",
-    "..llll....rrrr....ww....",
-    ".bbbbbbbbbbbbbbbbbbbbbb.",
-    ".baaaaaaaaaaaaaaaaaaaab.",
-    ".bbbbbbbbbbbbbbbbbbbbbb.",
-    ".bbbbbbbbbbbbbbbbbbbbbb.",
-    ".bbbbbbbbbbbbbbbbbbbbbb.",
-    ".bbbbbbbbbbbbbbbbbbbbbb.",
-    ".bbbbbbbbbbbbbbbbbbbbbb.",
-    ".bbbbbbbbbbbbbbbbbbbbbb.",
-    ".bbbbbbbbbbbbbbbbbbbbbb.",
+    ".....cccccccccccc.......",
+    "....cnnnnnnnnnnnnc......",
+    "....ccccccccccccccc.....",
+    "....cnnnnnnnnnnnnnc.....",
+    "....ccccccccccccccc.....",
+    "....cnnnnnnnnnnnnnc.....",
+    "....ccccccccccccccc.....",
+    "....cnnnnnnnnnnnnnc.....",
+    "....ccccccccccccccc.....",
+    "............r...........",
+    "...........rwr..........",
+    "............r....w.w....",
+    "......w.w..w.w.......w..",
+    "....w......w...w..w.....",
+    "..w....w........w....w..",
+];
+
+/// Espionage: a spy peeking over the product roadmap.
+const SPY: Sprite = &[
+    "........................",
+    "........dddddddd........",
+    "........dddddddd........",
+    ".....dddddddddddddd.....",
+    "........wwwwwwww........",
+    ".......wkkwwwwkkw.......",
+    ".......wkkwwwwkkw.......",
+    "........wwwwwwww........",
+    "...bbbbbbbbbbbbbbbbbb...",
+    "...bwwwwwwwwwwwwwwwwb...",
+    "...bwkkkkkkkwwwwwwwwb...",
+    "...bwwwwwwwwwwwwwwwwb...",
+    "...bwkkkkwwwwwgggwwwb...",
+    "...bwwwwwwwwwwgggwwwb...",
+    "...bwkkkkkkkkwwwwwwwb...",
+    "...bbbbbbbbbbbbbbbbbb...",
+];
+
+/// Hacktivists: a website flooded off the air.
+const FLOOD: Sprite = &[
+    "a.......a.......a.......",
+    ".a.......a.......a......",
+    "..a.......a.......a.....",
+    "...dddddddddddddddddd...",
+    "...dkkkkkkkkkkkkkkkkd...",
+    "...dkrkkkkkkkkkkkkrkd...",
+    "...dkkrkkkkkkkkkkrkkd...",
+    "...dkkkrkkkkkkkkrkkkd...",
+    "...dkkkkrkkkkkkrkkkkd...",
+    "...dkkkkkrkkkkrkkkkkd...",
+    "...dkkkkkkrrrrkkkkkkd...",
+    "...dkkkkkkrrrrkkkkkkd...",
+    "...dddddddddddddddddd...",
+    ".........dddddd.........",
+    "......dddddddddddd......",
     "........................",
 ];
 
-pub const TOMBSTONE: Sprite = [
+/// Nation-state APT: eyes in the dark of your own network.
+const LURKER: Sprite = &[
+    "nnnnnnnnnnnnnnnnnnnnnnnn",
+    "nnnnnnnnnnnnnnnnnnnnnnnn",
+    "nndddnnnnnnnnnnnnnndddnn",
+    "nndgdnnnnnnnnnnnnnndgdnn",
+    "nndddnnnnnnnnnnnnnndddnn",
+    "nnnnnnnnnnnnnnnnnnnnnnnn",
+    "nnnnnnyyyynnnnyyyynnnnnn",
+    "nnnnnyykkyynnyykkyynnnnn",
+    "nnnnnnyyyynnnnyyyynnnnnn",
+    "nnnnnnnnnnnnnnnnnnnnnnnn",
+    "nndddnnnnnnnnnnnnnndddnn",
+    "nndgdnnnnnnnnnnnnnndrdnn",
+    "nndddnnnnnnnnnnnnnndddnn",
+    "nnnnnnnnnnnnnnnnnnnnnnnn",
+    "nnnnnnnnnnnnnnnnnnnnnnnn",
+    "nnnnnnnnnnnnnnnnnnnnnnnn",
+];
+
+/// Insider leak: the draft S-1 slipping out in an envelope.
+const ENVELOPE: Sprite = &[
     "........................",
-    "........llllllll........",
-    ".......llllllllll.......",
-    "......llllllllllll......",
-    "......llllllllllll......",
-    "......llkkllklkkll......",
-    "......llklklklklkl......",
-    "......llkkllklkkll......",
-    "......llklklklklll......",
-    "......llklklklklll......",
-    "......llllllllllll......",
-    "......llllllllllll......",
-    "......llllllllllll......",
-    "..G.G.llllllllllll.G.G..",
-    "GGGGGGGGGGGGGGGGGGGGGGGG",
+    "........wwwwwwwwww......",
+    "........wkkkkkkkkw......",
+    "........wwwwwwwwww......",
+    "........wkkkkkkkww......",
+    "...lllllllllllllllllll..",
+    "...llwwlllllllllllwwll..",
+    "...llllwwlllllllwwllll..",
+    "...llllllwwlllwwllllll..",
+    "...llllllllwwwllllllll..",
+    "...lllllllllllllllllll..",
+    "...lllllllllllllrrrrll..",
+    "...lllllllllllllrllrll..",
+    "...lllllllllllllrrrrll..",
+    "...lllllllllllllllllll..",
     "........................",
 ];
+
+/// Talks: a speaker at the podium.
+const PODIUM: Sprite = &[
+    "........................",
+    "..........www...........",
+    ".........wwwww..........",
+    "..........www...........",
+    ".........ccccc..d.......",
+    "........ccccccc.d.......",
+    "........cc.c.cc.d.......",
+    "......bbbbbbbbbbbbb.....",
+    "......bbbbbbbbbbbbb.....",
+    ".......bbbbyyybbbb......",
+    ".......bbbbyyybbbb......",
+    ".......bbbbbbbbbbb......",
+    ".......bbbbbbbbbbb......",
+    ".......bbbbbbbbbbb......",
+    ".....bbbbbbbbbbbbbbb....",
+    "........................",
+];
+
+/// Villages: a padlock and its pick.
+const LOCK: Sprite = &[
+    "........................",
+    ".........llllll.........",
+    "........ll....ll........",
+    ".......ll......ll.......",
+    ".......ll......ll.......",
+    ".......ll......ll.......",
+    ".....yyyyyyyyyyyyyy.....",
+    ".....yyyyyyyyyyyyyy.....",
+    ".....yyyyyykkyyyyyy.....",
+    ".....yyyyykkkkyyyyy.....",
+    ".....yyyyyykkllllllllll.",
+    ".....yyyyyykkyyyyyyy..l.",
+    ".....yyyyyyyyyyyyyy.....",
+    ".....yyyyyyyyyyyyyy.....",
+    "........................",
+    "........................",
+];
+
+/// Expo floor: a vendor booth giving away t-shirts.
+const BOOTH: Sprite = &[
+    "........................",
+    "..rrrrrrrrrrrrrrrrrrrr..",
+    "..rwwrwwrwwrwwrwwrwwrr..",
+    "..rrrrrrrrrrrrrrrrrrrr..",
+    "..d..................d..",
+    "..d...cc.cc..gg.gg...d..",
+    "..d...ccccc..ggggg...d..",
+    "..d....ccc....ggg....d..",
+    "..d....ccc....ggg....d..",
+    "..d..................d..",
+    "..llllllllllllllllllll..",
+    "..lwwwwwwwwwwwwwwwwwwl..",
+    "..lwwaawwaawwaawwaawwl..",
+    "..lwwwwwwwwwwwwwwwwwwl..",
+    "..llllllllllllllllllll..",
+    "........................",
+];
+
+/// Hallway track and parties: drinks and a karaoke mic.
+const PARTY: Sprite = &[
+    "...a........y........a..",
+    "........a.......y.......",
+    "..y.......lll.......a...",
+    "..........lll...........",
+    "...........d............",
+    "...........d....wwwww...",
+    "..wwwww....d....waaaw...",
+    "..wcccw....d.....waw....",
+    "..wcccw....d.....waw....",
+    "...wcw.....d......w.....",
+    "...wcw.....d......w.....",
+    "....w......d......w.....",
+    "....w......d....wwwww...",
+    "..wwwww....d............",
+    "...........d............",
+    "........ddddddd.........",
+];
+
+/// Timeline icon for a fort: a flag over a wall with a gate.
+pub const FORT: Sprite = &[
+    "...ra...", "...rrr..", "...a....", "l.l.l.l.", "llllllll", "lllkklll", "lllkklll", "llllllll",
+];
+
+/// Timeline icon for a river crossing.
+pub const RIVER: Sprite = &[
+    "........", ".cc..cc.", "c..cc..c", "........", ".cc..cc.", "c..cc..c", "........", "........",
+];
+
+/// The IPO bell at the end of the timeline.
+pub const BELL: Sprite = &[
+    "...yy...", "..yyyy..", ".yyyyyy.", ".yyyyyy.", ".yyyyyy.", "yyyyyyyy", "...bb...", "........",
+];
+
+/// The timeline marker: an analyst pushing a server rack toward the IPO.
+pub const MARKER: Sprite = &[
+    "..w.........",
+    ".www..lllll.",
+    "..w...lglrl.",
+    ".ccccclllll.",
+    ".cc...lglll.",
+    ".cc...lllll.",
+    ".d.d..lllll.",
+    ".d..d.d...d.",
+];
+
+pub fn incident(actor: Actor) -> Sprite {
+    match actor {
+        Actor::Ransomware => RANSOM,
+        Actor::DataThief => LEAK,
+        Actor::Espionage => SPY,
+        Actor::Hacktivists => FLOOD,
+        Actor::Apt => LURKER,
+        Actor::Insider => ENVELOPE,
+    }
+}
+
+pub fn track(track: Track) -> Sprite {
+    match track {
+        Track::Talks => PODIUM,
+        Track::Villages => LOCK,
+        Track::Expo => BOOTH,
+        Track::Hallway => PARTY,
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -259,16 +260,41 @@ mod tests {
     /// Pixel characters the renderer in `draw` knows how to color.
     const PALETTE: &str = ".kndlwgGcarby";
 
+    fn assert_sprite(sprite: Sprite, width: usize, height: usize) {
+        assert_eq!(sprite.len(), height, "{sprite:?}");
+        for row in sprite {
+            assert_eq!(row.len(), width, "row {row:?}");
+            assert!(row.chars().all(|c| PALETTE.contains(c)), "row {row:?}");
+        }
+    }
+
     #[test]
-    fn sprites_are_full_width_and_use_the_palette() {
-        for sprite in [
-            HUNT, SPEND, SLEEP, PATCH, PHISH, COFFEE, BLOCK, ISOLATE, UNPLUG, PRESS, SKULL, BOX,
-            TOMBSTONE,
-        ] {
-            for row in sprite {
-                assert_eq!(row.len(), WIDTH, "row {row:?}");
-                assert!(row.chars().all(|c| PALETTE.contains(c)), "row {row:?}");
-            }
+    fn illustrations_are_24_by_16_in_the_palette() {
+        for actor in Actor::ALL {
+            assert_sprite(incident(actor), 24, 16);
+        }
+        for t in Track::ALL {
+            assert_sprite(track(t), 24, 16);
+        }
+    }
+
+    #[test]
+    fn timeline_sprites_fit_the_bar_in_the_palette() {
+        for sprite in [FORT, RIVER, BELL] {
+            assert_sprite(sprite, 8, 8);
+        }
+        assert_sprite(MARKER, 12, 8);
+    }
+
+    #[test]
+    fn every_incident_and_track_has_its_own_picture() {
+        let pictures: Vec<Sprite> = Actor::ALL
+            .map(incident)
+            .into_iter()
+            .chain(Track::ALL.map(track))
+            .collect();
+        for (i, picture) in pictures.iter().enumerate() {
+            assert!(!pictures[i + 1..].contains(picture));
         }
     }
 }
