@@ -131,6 +131,27 @@ Success criteria:
 - [x] Every choice is offered and every event happens across seeds (unit tested).
 - [x] Across 40 seeds of exhaustive play, every outcome is reachable, every choice is part of a win, and the win rate is 25-40% (unit tested).
 
+## Phase 10: Web build
+
+Tasks:
+- Build for `wasm32-unknown-unknown` using macroquad's built-in web support; no new crates.
+- `.cargo/config.toml` passes `-C link-arg=--allow-undefined` for wasm so macroquad's JavaScript audio imports link on current Rust.
+- `web/index.html` with a full-window canvas, plus macroquad's `mq_js_bundle.js` vendored to match the macroquad version in `Cargo.lock`.
+- The build copies `the_kill_chain_trail.wasm` into `web/`; the copied wasm is ignored by git.
+- Browsers block audio until the player interacts; the bundle resumes audio on the first key press or click.
+- Dev container: add the wasm target, forward port 8000, and remove the X11 mount so it works on any host.
+- Dev container includes Claude Code, headless Chromium with chromedriver, and a Playwright MCP server so agents can playtest the web build.
+- README: commands to build and serve locally.
+
+Success criteria:
+- [x] `cargo build --release --target wasm32-unknown-unknown` succeeds, and `cargo test` and `cargo clippy` stay clean for native.
+- [ ] Served with `python3 -m http.server -d web 8000`, the game plays start to finish in Chrome and Firefox, including the intern coffee run.
+- [x] The 640x480 frame scales and letterboxes when the browser window is resized.
+- [ ] Music and sound effects play in the browser after the first key press.
+- [x] Name entry accepts typing and Backspace in the browser.
+- [ ] The dev container opens on a host without X11 and serves the game on forwarded port 8000.
+- [x] In the dev container, Claude Code's Playwright MCP server loads the web build and returns a screenshot of the game.
+
 ## Current status
 
 - [x] Phase 1: Project scaffolding
@@ -142,3 +163,4 @@ Success criteria:
 - [x] Phase 7: Incident reports and music selection
 - [x] Phase 8: Intern coffee run
 - [x] Phase 9: Variety
+- [ ] Phase 10: Web build

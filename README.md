@@ -12,10 +12,24 @@ Pick a music track (1-3) or turn music off (4) on the title screen. Enter your c
 cargo run --release
 ```
 
+## Run in a browser
+
+```bash
+cargo build --release --target wasm32-unknown-unknown
+cp target/wasm32-unknown-unknown/release/the_kill_chain_trail.wasm web/
+python3 -m http.server -d web 8000
+```
+
+Open http://localhost:8000. Sound starts after the first key press. Requires `rustup target add wasm32-unknown-unknown`.
+
 ## Test
 
 ```bash
 cargo test
 ```
+
+## Dev Container
+
+Open the folder in VS Code and choose "Reopen in Container", then use the browser commands above; port 8000 is forwarded to the host. The container includes Claude Code, headless Chromium with chromedriver, and a Playwright MCP server so agents can playtest the web build. Claude Code settings persist in a Docker volume.
 
 See [PLAYTEST.md](PLAYTEST.md) for the manual playtest checklist.

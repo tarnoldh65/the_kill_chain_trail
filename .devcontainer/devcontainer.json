@@ -1,0 +1,18 @@
+{
+  "name": "The Kill Chain Trail",
+  "image": "mcr.microsoft.com/devcontainers/rust:1",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "forwardPorts": [8000],
+  "mounts": [
+    "source=kill-chain-trail-claude,target=/home/vscode/.claude,type=volume"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": ["rust-lang.rust-analyzer", "anthropic.claude-code"]
+    }
+  }
+}
