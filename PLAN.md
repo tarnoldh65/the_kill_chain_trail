@@ -191,7 +191,7 @@ Success criteria:
 - [x] Sound effects play for major events and music loops during play.
 - [x] Every item in PLAYTEST.md passes.
 - [x] README is accurate and minimal, with no unused code or clippy warnings.
-- [ ] The Pages URL serves the redesigned game after the merge.
+- [x] The Pages URL serves the redesigned game after the merge.
 
 ## Current status
 
@@ -204,4 +204,4 @@ Success criteria:
 - [x] Phase 17: Landmarks and IPO delays
 - [x] Phase 18: The Security Conference
 - [x] Phase 19: Presentation
-- [ ] Phase 20: Balance, playtest, and release
+- [x] Phase 20: Balance, playtest, and release
