@@ -7,12 +7,21 @@ pub const IPO_DAY: u32 = 182;
 pub const COFFEE_CAPACITY: i32 = 36;
 /// Cost in dollars of sending the intern across the street for coffee.
 pub const COFFEE_RUN_COST: i64 = 10;
-/// Pots of coffee the intern brings back.
+/// Pots of coffee the intern brings back, and in a case from the Vendor Hall.
 const COFFEE_RUN_POTS: i32 = 12;
 /// Extra burnout everyone gains each day the coffee is out.
 const NO_COFFEE_BURNOUT: i32 = 2;
-/// Burnout each analyst sheds each day before their share of the workload.
-const DAILY_REST: i32 = 1;
+/// Burnout a junior analyst sheds each day before their share of the workload.
+const JUNIOR_REST: i32 = 1;
+/// Seniors handle the same workload with less wear.
+const SENIOR_REST: i32 = 2;
+/// Weekly pay for each analyst level.
+const JUNIOR_SALARY: i64 = 4_000;
+const SENIOR_SALARY: i64 = 8_000;
+/// Most analysts the SOC has desks for.
+pub const MAX_ANALYSTS: i32 = 8;
+/// Weeks of payroll between day 1 and IPO day.
+pub const PAYDAYS: i64 = 25;
 /// Trust below this gets the CISO fired.
 const FIRING_TRUST: i32 = 30;
 /// Budget in dollars below which the SOC Manager is made redundant.
@@ -41,14 +50,165 @@ const BURNOUT_EXITS: [&str; 5] = [
     "rage-quit and changed their LinkedIn headline to \"Goat Farmer\".",
 ];
 
-/// Formats dollars the way the game shows money: $10, $18K, $1.5M, $1.20B.
+/// Formats dollars the way the game shows money: $10, $18K, $1.5M, $600M, $1.20B.
 pub fn money(dollars: i64) -> String {
     let d = dollars as f64;
     match dollars.abs() {
         1_000_000_000.. => format!("${:.2}B", d / 1e9),
+        10_000_000.. => format!("${}M", dollars / 1_000_000),
         1_000_000.. => format!("${:.1}M", d / 1e6),
         1_000.. => format!("${}K", dollars / 1_000),
         _ => format!("${dollars}"),
+    }
+}
+
+/// The kind of company being protected, the game's "banker, carpenter, farmer" choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Profile {
+    Fintech,
+    Healthtech,
+    Gaming,
+}
+
+impl Profile {
+    pub const ALL: [Profile; 3] = [Self::Fintech, Self::Healthtech, Self::Gaming];
+
+    pub fn budget(self) -> i64 {
+        match self {
+            Self::Fintech => 900_000,
+            Self::Healthtech => 700_000,
+            Self::Gaming => 500_000,
+        }
+    }
+
+    pub fn valuation(self) -> i64 {
+        match self {
+            Self::Fintech => 1_500_000_000,
+            Self::Healthtech => 1_000_000_000,
+            Self::Gaming => 600_000_000,
+        }
+    }
+
+    /// Multiplies the final score, rewarding the harder profiles.
+    pub fn multiplier(self) -> i64 {
+        match self {
+            Self::Fintech => 1,
+            Self::Healthtech => 2,
+            Self::Gaming => 3,
+        }
+    }
+
+    pub fn blurb(self) -> &'static str {
+        match self {
+            Self::Fintech => "Deep pockets. Money attracts money-motivated attackers.",
+            Self::Healthtech => "Patient records everywhere. PII breaches hurt the most.",
+            Self::Gaming => "Shoestring budget, angry teenagers, and DDoS.",
+        }
+    }
+}
+
+impl fmt::Display for Profile {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Fintech => "Fintech",
+            Self::Healthtech => "Healthtech",
+            Self::Gaming => "Gaming startup",
+        })
+    }
+}
+
+/// Everything for sale at the Vendor Hall, in shop order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Item {
+    Junior,
+    Senior,
+    Edr,
+    Siem,
+    MfaTokens,
+    EmailGateway,
+    Waf,
+    Backups,
+    IrRetainer,
+    Insurance,
+    Coffee,
+}
+
+impl Item {
+    pub const ALL: [Item; 11] = [
+        Self::Junior,
+        Self::Senior,
+        Self::Edr,
+        Self::Siem,
+        Self::MfaTokens,
+        Self::EmailGateway,
+        Self::Waf,
+        Self::Backups,
+        Self::IrRetainer,
+        Self::Insurance,
+        Self::Coffee,
+    ];
+
+    /// One-time cost; for analysts this is the recruiter's fee.
+    pub fn price(self) -> i64 {
+        match self {
+            Self::Junior => 5_000,
+            Self::Senior => 10_000,
+            Self::Edr => 60_000,
+            Self::Siem => 80_000,
+            Self::MfaTokens => 20_000,
+            Self::EmailGateway => 25_000,
+            Self::Waf => 40_000,
+            Self::Backups => 30_000,
+            Self::IrRetainer => 50_000,
+            Self::Insurance => 40_000,
+            Self::Coffee => 100,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Junior => "Hire a junior analyst",
+            Self::Senior => "Hire a senior analyst",
+            Self::Edr => "EDR",
+            Self::Siem => "SIEM",
+            Self::MfaTokens => "MFA tokens",
+            Self::EmailGateway => "Email security gateway",
+            Self::Waf => "DDoS protection and WAF",
+            Self::Backups => "Immutable backups",
+            Self::IrRetainer => "Incident response retainer",
+            Self::Insurance => "Cyber insurance",
+            Self::Coffee => "A case of coffee (12 pots)",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Junior => "Cheap and eager. Slower, and burns out faster.",
+            Self::Senior => "Expensive. Faster at everything and harder to burn out.",
+            Self::Edr => "Endpoint protection and detection. Must be deployed to help.",
+            Self::Siem => "Detection across the board. Must be deployed to help.",
+            Self::MfaTokens => "Protects identities. Must be deployed to help.",
+            Self::EmailGateway => "Stops phishing at the door. Must be deployed to help.",
+            Self::Waf => "Shields the perimeter. Must be deployed to help.",
+            Self::Backups => "Ransomware's worst enemy. Must be deployed to help.",
+            Self::IrRetainer => "Lets you call in an incident response firm.",
+            Self::Insurance => "Pays for part of the damage when things go wrong.",
+            Self::Coffee => "Fuel. The break room holds 36 pots.",
+        }
+    }
+
+    /// Weekly pay for an analyst hired from this listing; zero for everything else.
+    pub fn salary(self) -> i64 {
+        match self {
+            Self::Junior => JUNIOR_SALARY,
+            Self::Senior => SENIOR_SALARY,
+            _ => 0,
+        }
+    }
+
+    /// Analysts and coffee can be bought again; tools and services cannot.
+    fn once(self) -> bool {
+        !matches!(self, Self::Junior | Self::Senior | Self::Coffee)
     }
 }
 
@@ -122,16 +282,24 @@ impl Area {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
-    Analyst,
+    Junior,
+    Senior,
     Manager,
     Ciso,
     Cio,
 }
 
+impl Role {
+    pub fn is_analyst(self) -> bool {
+        matches!(self, Self::Junior | Self::Senior)
+    }
+}
+
 impl fmt::Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match self {
-            Self::Analyst => "Analyst",
+            Self::Junior => "Junior Analyst",
+            Self::Senior => "Senior Analyst",
             Self::Manager => "Manager",
             Self::Ciso => "CISO",
             Self::Cio => "CIO",
@@ -162,6 +330,7 @@ pub enum Outcome {
 pub struct GameState {
     pub company: String,
     pub lead: String,
+    pub profile: Profile,
     /// Day 1 is a Monday; the game ends as an IPO on `IPO_DAY`.
     pub day: u32,
     pub base_valuation: i64,
@@ -174,6 +343,8 @@ pub struct GameState {
     /// Indexed by `Area`; kept private so it can never be drawn.
     posture: [i32; Area::ALL.len()],
     pub team: Vec<TeamMember>,
+    /// Tools and services bought at the Vendor Hall. Tools need deploying before they help.
+    pub owned: Vec<Item>,
     pub log: Vec<String>,
     pub outcome: Option<Outcome>,
     /// Whether the intern has already been sent for coffee this week.
@@ -181,33 +352,33 @@ pub struct GameState {
 }
 
 impl GameState {
-    pub fn new(company: &str, lead: &str) -> Self {
-        let member = |name: &str, role, burnout, salary| TeamMember {
+    /// A new game with leadership in place and no analysts yet; hire them at the Vendor Hall.
+    pub fn new(company: &str, lead: &str, profile: Profile) -> Self {
+        let leader = |name: &str, role| TeamMember {
             name: name.to_string(),
             role,
-            burnout,
-            salary,
+            burnout: 10,
+            salary: 0,
         };
         Self {
             company: company.to_string(),
             lead: lead.to_string(),
+            profile,
             day: 1,
-            base_valuation: 1_000_000_000,
-            valuation: 1_000_000_000,
+            base_valuation: profile.valuation(),
+            valuation: profile.valuation(),
             trust: 60,
             brand: 60,
-            budget: 500_000,
-            coffee: 24,
+            budget: profile.budget(),
+            coffee: 12,
             tempo: Tempo::Steady,
             posture: [30; Area::ALL.len()],
             team: vec![
-                member("Maya", Role::Analyst, 20, 6_000),
-                member("Dev", Role::Analyst, 15, 6_000),
-                member("Sam", Role::Analyst, 10, 6_000),
-                member("Jules", Role::Manager, 20, 0),
-                member("Ravi", Role::Ciso, 15, 0),
-                member("Dana", Role::Cio, 10, 0),
+                leader("Jules", Role::Manager),
+                leader("Ravi", Role::Ciso),
+                leader("Dana", Role::Cio),
             ],
+            owned: Vec::new(),
             log: vec![format!(
                 "{company} goes public in 26 weeks. {lead} takes command of the SOC."
             )],
@@ -216,8 +387,44 @@ impl GameState {
         }
     }
 
+    pub fn can_buy(&self, item: Item) -> bool {
+        item.price() <= self.budget
+            && !(item.once() && self.owned.contains(&item))
+            && match item {
+                Item::Junior | Item::Senior => self.analysts() < MAX_ANALYSTS,
+                Item::Coffee => !self.coffee_full(),
+                _ => true,
+            }
+    }
+
+    /// Buys a tool, service, or coffee. Analysts are hired by name with `hire`.
+    pub fn buy(&mut self, item: Item) {
+        self.budget -= item.price();
+        match item {
+            Item::Coffee => self.coffee = (self.coffee + COFFEE_RUN_POTS).min(COFFEE_CAPACITY),
+            Item::Junior | Item::Senior => unreachable!("analysts are hired by name"),
+            _ => self.owned.push(item),
+        }
+    }
+
+    /// Hires an analyst from the Vendor Hall's `Junior` or `Senior` listing.
+    pub fn hire(&mut self, item: Item, name: &str) {
+        let role = match item {
+            Item::Junior => Role::Junior,
+            Item::Senior => Role::Senior,
+            _ => unreachable!("only analysts are hired"),
+        };
+        self.budget -= item.price();
+        self.team.push(TeamMember {
+            name: name.to_string(),
+            role,
+            burnout: 0,
+            salary: item.salary(),
+        });
+    }
+
     pub fn analysts(&self) -> i32 {
-        self.team.iter().filter(|m| m.role == Role::Analyst).count() as i32
+        self.team.iter().filter(|m| m.role.is_analyst()).count() as i32
     }
 
     /// Days since the last Monday: 0 is Monday.
@@ -229,13 +436,14 @@ impl GameState {
         IPO_DAY - self.day
     }
 
-    fn payroll(&self) -> i64 {
+    pub fn payroll(&self) -> i64 {
         self.team.iter().map(|m| m.salary).sum()
     }
 
-    /// The final score, only for reaching the IPO.
+    /// The final score, only for reaching the IPO: valuation in millions times the profile multiplier.
     pub fn score(&self) -> Option<i64> {
-        (self.outcome == Some(Outcome::Ipo)).then_some(self.valuation)
+        (self.outcome == Some(Outcome::Ipo))
+            .then_some(self.valuation / 1_000_000 * self.profile.multiplier())
     }
 
     pub fn coffee_full(&self) -> bool {
@@ -305,13 +513,13 @@ impl GameState {
                 .team
                 .iter()
                 .enumerate()
-                .filter(|(_, m)| m.role == Role::Analyst)
+                .filter(|(_, m)| m.role.is_analyst())
                 .max_by_key(|(_, m)| m.salary)
                 .unwrap();
             let analyst = self.team.remove(i);
             self.log.push(format!(
-                "Payroll came up short. {} the Analyst was laid off and walked out holding a cardboard box.",
-                analyst.name
+                "Payroll came up short. {} the {} was laid off and walked out holding a cardboard box.",
+                analyst.name, analyst.role
             ));
             stop = true;
         }
@@ -345,9 +553,14 @@ impl GameState {
     fn work(&mut self) -> bool {
         let analysts = self.analysts();
         if analysts > 0 {
-            let share = self.tempo.workload() / analysts - DAILY_REST;
-            for member in self.team.iter_mut().filter(|m| m.role == Role::Analyst) {
-                member.burnout = (member.burnout + share).max(0);
+            let share = self.tempo.workload() / analysts;
+            for member in self.team.iter_mut() {
+                let rest = match member.role {
+                    Role::Junior => JUNIOR_REST,
+                    Role::Senior => SENIOR_REST,
+                    _ => continue,
+                };
+                member.burnout = (member.burnout + share - rest).max(0);
             }
         }
 
@@ -411,8 +624,30 @@ impl GameState {
 mod tests {
     use super::*;
 
+    fn member(name: &str, role: Role, burnout: i32, salary: i64) -> TeamMember {
+        TeamMember {
+            name: name.to_string(),
+            role,
+            burnout,
+            salary,
+        }
+    }
+
+    /// A Healthtech game with three junior analysts already hired.
     fn game() -> GameState {
-        GameState::new("Acme", "Alex")
+        GameState {
+            budget: 500_000,
+            coffee: 24,
+            team: vec![
+                member("Maya", Role::Junior, 20, 6_000),
+                member("Dev", Role::Junior, 15, 6_000),
+                member("Sam", Role::Junior, 10, 6_000),
+                member("Jules", Role::Manager, 20, 0),
+                member("Ravi", Role::Ciso, 15, 0),
+                member("Dana", Role::Cio, 10, 0),
+            ],
+            ..GameState::new("Acme", "Alex", Profile::Healthtech)
+        }
     }
 
     /// Advances until the given day, keeping the coffee topped up.
@@ -423,39 +658,157 @@ mod tests {
         }
     }
 
-    fn analyst(name: &str, burnout: i32, salary: i64) -> TeamMember {
-        TeamMember {
-            name: name.to_string(),
-            role: Role::Analyst,
-            burnout,
-            salary,
-        }
-    }
-
     /// Each analyst's burnout change and the coffee drunk over one quiet day.
     fn one_day(tempo: Tempo, analysts: usize) -> (i32, i32) {
         let mut game = game();
         game.day = 2;
         game.tempo = tempo;
         game.coffee = COFFEE_CAPACITY;
-        game.team = (0..analysts).map(|_| analyst("A", 50, 0)).collect();
+        game.team = (0..analysts)
+            .map(|_| member("A", Role::Junior, 50, 0))
+            .collect();
         game.advance();
         (game.team[0].burnout - 50, COFFEE_CAPACITY - game.coffee)
     }
 
     #[test]
-    fn new_game_starts_on_day_one_with_full_roster() {
-        let game = game();
+    fn new_game_starts_on_day_one_with_leadership_and_no_analysts() {
+        let game = GameState::new("Acme", "Alex", Profile::Fintech);
 
         assert_eq!(game.day, 1);
         assert_eq!(game.weekday(), 0);
         assert_eq!(game.days_to_ipo(), IPO_DAY - 1);
-        assert_eq!(game.analysts(), 3);
+        assert_eq!(game.analysts(), 0);
         assert!(game.team.iter().any(|m| m.role == Role::Manager));
         assert!(game.team.iter().any(|m| m.role == Role::Ciso));
         assert!(game.team.iter().any(|m| m.role == Role::Cio));
+        assert!(game.owned.is_empty());
         assert!(game.log[0].contains("Acme") && game.log[0].contains("Alex"));
         assert_eq!(game.outcome, None);
+    }
+
+    #[test]
+    fn each_profile_sets_its_budget_valuation_and_multiplier() {
+        let expected = [
+            (Profile::Fintech, 900_000, 1_500_000_000, 1),
+            (Profile::Healthtech, 700_000, 1_000_000_000, 2),
+            (Profile::Gaming, 500_000, 600_000_000, 3),
+        ];
+        for (profile, budget, valuation, multiplier) in expected {
+            let mut game = GameState::new("Acme", "Alex", profile);
+
+            assert_eq!(game.budget, budget);
+            assert_eq!(
+                (game.base_valuation, game.valuation),
+                (valuation, valuation)
+            );
+
+            game.outcome = Some(Outcome::Ipo);
+            assert_eq!(game.score(), Some(valuation / 1_000_000 * multiplier));
+        }
+    }
+
+    #[test]
+    fn purchases_cannot_exceed_the_budget() {
+        let mut game = game();
+        for item in Item::ALL {
+            game.budget = item.price() - 1;
+            assert!(!game.can_buy(item), "{item:?}");
+            game.budget = item.price();
+            assert!(game.can_buy(item), "{item:?}");
+        }
+    }
+
+    #[test]
+    fn tools_and_services_are_bought_once_and_kept() {
+        let mut game = game();
+        for item in &Item::ALL[2..10] {
+            game.buy(*item);
+            assert!(!game.can_buy(*item), "{item:?}");
+        }
+
+        assert_eq!(game.owned, &Item::ALL[2..10]);
+        let total: i64 = Item::ALL[2..10].iter().map(|i| i.price()).sum();
+        assert_eq!(game.budget, 500_000 - total);
+    }
+
+    #[test]
+    fn bought_coffee_stops_at_capacity() {
+        let mut game = game();
+        game.coffee = COFFEE_CAPACITY - 5;
+
+        assert!(game.can_buy(Item::Coffee));
+        game.buy(Item::Coffee);
+
+        assert_eq!(game.coffee, COFFEE_CAPACITY);
+        assert!(!game.can_buy(Item::Coffee));
+    }
+
+    #[test]
+    fn hired_analysts_keep_their_names_levels_and_salaries() {
+        let mut game = GameState::new("Acme", "Alex", Profile::Gaming);
+
+        game.hire(Item::Junior, "Priya");
+        game.hire(Item::Senior, "Marcus");
+
+        assert_eq!(game.analysts(), 2);
+        assert_eq!(
+            game.team[3],
+            member("Priya", Role::Junior, 0, JUNIOR_SALARY)
+        );
+        assert_eq!(
+            game.team[4],
+            member("Marcus", Role::Senior, 0, SENIOR_SALARY)
+        );
+        assert_eq!(game.payroll(), JUNIOR_SALARY + SENIOR_SALARY);
+        assert_eq!(
+            game.budget,
+            500_000 - Item::Junior.price() - Item::Senior.price()
+        );
+
+        game.day = 7;
+        game.advance();
+        assert_eq!(
+            game.budget,
+            500_000 - Item::Junior.price() - Item::Senior.price() - game.payroll()
+        );
+    }
+
+    #[test]
+    fn the_soc_has_desks_for_a_limited_number_of_analysts() {
+        let mut game = GameState::new("Acme", "Alex", Profile::Fintech);
+        for _ in 0..MAX_ANALYSTS {
+            game.hire(Item::Junior, "A");
+        }
+
+        assert!(!game.can_buy(Item::Junior));
+        assert!(!game.can_buy(Item::Senior));
+    }
+
+    #[test]
+    fn owned_tools_do_not_change_posture() {
+        let mut game = game();
+        let posture = game.posture;
+
+        for item in &Item::ALL[2..10] {
+            game.buy(*item);
+        }
+
+        assert_eq!(game.posture, posture);
+    }
+
+    #[test]
+    fn seniors_burn_out_slower_than_juniors() {
+        let mut game = game();
+        game.day = 2;
+        game.team = vec![
+            member("Jo", Role::Junior, 50, 0),
+            member("Sr", Role::Senior, 50, 0),
+        ];
+
+        game.advance();
+
+        assert!(game.team[1].burnout < game.team[0].burnout);
     }
 
     #[test]
@@ -480,7 +833,7 @@ mod tests {
         assert!(game.advance());
         assert_eq!(game.day, IPO_DAY);
         assert_eq!(game.outcome, Some(Outcome::Ipo));
-        assert_eq!(game.score(), Some(game.valuation));
+        assert_eq!(game.score(), Some(1_000 * 2));
     }
 
     #[test]
@@ -516,7 +869,7 @@ mod tests {
         assert!(
             game.log
                 .iter()
-                .any(|e| e.contains("Dev the Analyst was laid off"))
+                .any(|e| e.contains("Dev the Junior Analyst was laid off"))
         );
         assert_eq!(game.outcome, None);
     }
@@ -603,7 +956,7 @@ mod tests {
         advance_to(&mut game, 8);
 
         assert_eq!(game.valuation, 1_000_000_000 - 20_000_000);
-        assert!(game.log.iter().any(|e| e.contains("knocked $20.0M off")));
+        assert!(game.log.iter().any(|e| e.contains("knocked $20M off")));
     }
 
     #[test]
@@ -618,7 +971,8 @@ mod tests {
         assert!(
             game.log
                 .iter()
-                .any(|e| e == "Maya the Analyst burned out and quit to open a llama sanctuary.")
+                .any(|e| e
+                    == "Maya the Junior Analyst burned out and quit to open a llama sanctuary.")
         );
     }
 
@@ -633,12 +987,12 @@ mod tests {
         assert!(
             game.log
                 .iter()
-                .any(|e| e.starts_with("Maya the Analyst had a stroke"))
+                .any(|e| e.starts_with("Maya the Junior Analyst had a stroke"))
         );
         assert!(
             game.log
                 .iter()
-                .any(|e| e.starts_with("Dev the Analyst has died of dysentery"))
+                .any(|e| e.starts_with("Dev the Junior Analyst has died of dysentery"))
         );
     }
 
@@ -749,6 +1103,7 @@ mod tests {
         assert_eq!(money(10), "$10");
         assert_eq!(money(18_000), "$18K");
         assert_eq!(money(1_500_000), "$1.5M");
+        assert_eq!(money(600_000_000), "$600M");
         assert_eq!(money(1_200_000_000), "$1.20B");
     }
 }

@@ -54,17 +54,17 @@ Success criteria:
 ## Phase 13: Setup and the Vendor Hall
 
 Tasks:
-- After naming the company and lead, pick a company profile: Fintech, Healthtech, or Gaming startup, each with its starting budget, base valuation, score multiplier, and threat mix.
+- After naming the company and lead, pick a company profile: Fintech, Healthtech, or Gaming startup, each with its starting budget, base valuation, and score multiplier. Its threat mix comes in Phase 15 with the threat actors.
 - Vendor Hall shop screen: hire and name junior and senior analysts; buy tools (EDR, SIEM, MFA tokens, email security gateway, DDoS protection/WAF, immutable backups); buy services (IR retainer, cyber insurance) and coffee.
 - Purchased tools are owned but not deployed, so they do not affect posture yet.
 - Leftover budget carries into the game.
 
 Success criteria:
-- [ ] Each profile sets its documented budget, valuation, multiplier, and threat mix (unit tested).
-- [ ] Purchases cannot exceed the budget, each tool can be bought once, and coffee cannot exceed capacity (unit tested).
-- [ ] Hired analysts keep their entered names, levels, and salaries; payroll reflects them (unit tested).
-- [ ] Owned tools do not change posture until deployed (unit tested).
-- [ ] The setup flow (names, profile, Vendor Hall) is playable with the keyboard and leads into day 1.
+- [x] Each profile sets its documented budget, valuation, and multiplier (unit tested).
+- [x] Purchases cannot exceed the budget, each tool can be bought once, and coffee cannot exceed capacity (unit tested).
+- [x] Hired analysts keep their entered names, levels, and salaries; payroll reflects them (unit tested).
+- [x] Owned tools do not change posture until deployed (unit tested).
+- [x] The setup flow (names, profile, Vendor Hall) is playable with the keyboard and leads into day 1.
 
 ## Phase 14: Defender actions
 
@@ -85,7 +85,7 @@ Success criteria:
 ## Phase 15: The attacker
 
 Tasks:
-- Campaigns start at random, more often as IPO day approaches, weighted by the company profile's threat mix. Each has an actor, an objective, and hidden progress: Reconnaissance, Initial access, Foothold, Objective.
+- Campaigns start at random, more often as IPO day approaches, weighted by each company profile's threat mix (Fintech: money-motivated attackers; Healthtech: data thieves; Gaming startup: hacktivists and DDoS). Each has an actor, an objective, and hidden progress: Reconnaissance, Initial access, Foothold, Objective.
 - Each day every campaign rolls to advance against the posture areas that defend it; a failed advance can end it.
 - Detection rolls turn campaign steps into alerts; false positives are mixed in, fewer with a tuned SIEM.
 - Alert choices: Investigate (1-3 days, better with seniors), Call the IR firm (needs retainer, costs budget), Ignore.
@@ -94,6 +94,7 @@ Tasks:
 - Every ending shows the after-action report: each campaign, how far it got, whether it was seen, and which alerts were real.
 
 Success criteria:
+- [ ] Each profile's threat mix favors its documented actors across seeds (unit tested).
 - [ ] Higher posture in a campaign's defending areas makes it advance less often across seeds (unit tested).
 - [ ] Higher Detection produces more real alerts; a tuned SIEM produces fewer false positives (unit tested across seeds).
 - [ ] Investigating a real alert can evict its campaign; investigating a false positive only costs days; the IR firm needs a retainer (unit tested).
@@ -191,7 +192,7 @@ Success criteria:
 
 - [x] MVP (Phases 1-11)
 - [x] Phase 12: Calendar, meters, and endings
-- [ ] Phase 13: Setup and the Vendor Hall
+- [x] Phase 13: Setup and the Vendor Hall
 - [ ] Phase 14: Defender actions
 - [ ] Phase 15: The attacker
 - [ ] Phase 16: Random events

@@ -3,10 +3,11 @@ use macroquad::prelude::*;
 
 use crate::audio::TRACKS;
 use crate::game::{
-    COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IPO_DAY, Outcome, TeamMember, money,
+    COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IPO_DAY, Item, Outcome, PAYDAYS, Profile, Role,
+    TeamMember, money,
 };
 use crate::street::{self, Leg, Street};
-use crate::ui::{CoffeeRun, Music, Screen, wrap};
+use crate::ui::{CoffeeRun, Music, Screen, Shop, wrap};
 
 pub const WIDTH: f32 = 640.0;
 pub const HEIGHT: f32 = 480.0;
@@ -88,6 +89,12 @@ pub fn screen(screen: &Screen, font: &Font, music: Music) {
             &format!("{} needs an incident lead. Your name:", company.trim()),
             lead,
         ),
+        Screen::Profile { company, .. } => profile_choice(font, company.trim()),
+        Screen::Shop(shop) => vendor_hall(font, shop),
+        Screen::Hire { shop, name } => {
+            vendor_hall(font, shop);
+            hire_popup(font, shop, name);
+        }
         Screen::Play(game) => play(font, game, false),
         Screen::Travel(travel) => play(font, &travel.game, true),
         Screen::Team(game) => team_screen(font, game),
@@ -185,6 +192,164 @@ fn name_entry(font: &Font, prompt: &str, value: &str) {
     font.text(&format!("{value}{cursor}"), box_x + 8.0, 224.0, 2.0, INK);
 
     font.centered("Press ENTER to continue", WIDTH / 2.0, 272.0, 1.0, DIM);
+}
+
+fn profile_choice(font: &Font, company: &str) {
+    font.centered("THE KILL CHAIN TRAIL", WIDTH / 2.0, 48.0, 2.0, GREEN);
+    font.centered(
+        &format!("What kind of company is {company}?"),
+        WIDTH / 2.0,
+        104.0,
+        1.0,
+        INK,
+    );
+    for (i, profile) in Profile::ALL.iter().enumerate() {
+        let y = 144.0 + i as f32 * 72.0;
+        font.text(
+            &format!("{}) {profile}", i + 1),
+            MARGIN + 48.0,
+            y,
+            2.0,
+            AMBER,
+        );
+        font.text(
+            &format!(
+                "Budget {}   Valuation {}   Score x{}",
+                money(profile.budget()),
+                money(profile.valuation()),
+                profile.multiplier()
+            ),
+            MARGIN + 80.0,
+            y + 24.0,
+            1.0,
+            INK,
+        );
+        font.text(profile.blurb(), MARGIN + 80.0, y + 38.0, 1.0, DIM);
+    }
+    font.centered("Press 1-3", WIDTH / 2.0, 400.0, 1.0, DIM);
+}
+
+/// Price column text: the recruiter's fee plus weekly salary for analysts.
+fn price_text(item: Item) -> String {
+    match item.salary() {
+        0 => money(item.price()),
+        salary => format!("{} + {}/wk", money(item.price()), money(salary)),
+    }
+}
+
+fn vendor_hall(font: &Font, shop: &Shop) {
+    let game = &shop.game;
+    font.text("THE VENDOR HALL", MARGIN, 8.0, 2.0, AMBER);
+    right(font, &game.company, 12.0, CYAN);
+    font.text(
+        &format!(
+            "Budget {}   Payroll {}/wk, {} to IPO",
+            money(game.budget),
+            money(game.payroll()),
+            money(game.payroll() * PAYDAYS)
+        ),
+        MARGIN,
+        36.0,
+        1.0,
+        INK,
+    );
+    divider(52.0);
+
+    for (i, item) in Item::ALL.iter().enumerate() {
+        let y = 64.0 + i as f32 * 16.0;
+        let owned = game.owned.contains(item);
+        let color = if owned {
+            GREEN
+        } else if game.can_buy(*item) {
+            INK
+        } else {
+            DIM
+        };
+        let status = match item {
+            _ if owned => "OWNED".to_string(),
+            Item::Coffee => format!("{}/{COFFEE_CAPACITY} pots", game.coffee),
+            _ => String::new(),
+        };
+        font.text(
+            &format!("{:<28}{:<18}{status}", item.label(), price_text(*item)),
+            MARGIN + 24.0,
+            y,
+            1.0,
+            color,
+        );
+    }
+    let exit_y = 64.0 + Item::ALL.len() as f32 * 16.0;
+    let can_open = game.analysts() > 0;
+    font.text(
+        "Open for business",
+        MARGIN + 24.0,
+        exit_y,
+        1.0,
+        if can_open { AMBER } else { DIM },
+    );
+    font.text(
+        ">",
+        MARGIN + 8.0,
+        64.0 + shop.cursor as f32 * 16.0,
+        1.0,
+        AMBER,
+    );
+    divider(exit_y + 20.0);
+
+    let note = match shop.item() {
+        Some(item) => item.description(),
+        None if can_open => "Start day 1. Leftover budget pays the weekly payroll.",
+        None => "Hire at least one analyst first.",
+    };
+    font.text(note, MARGIN, exit_y + 32.0, 1.0, CYAN);
+
+    let analysts: Vec<String> = game
+        .team
+        .iter()
+        .filter(|m| m.role.is_analyst())
+        .map(|m| format!("{} ({})", m.name, short_role(m.role)))
+        .collect();
+    let roster = format!("Analysts: {}", analysts.join(", "));
+    for (i, line) in wrap(&roster, 76).iter().take(4).enumerate() {
+        font.text(line, MARGIN, exit_y + 56.0 + i as f32 * 12.0, 1.0, INK);
+    }
+    font.text("UP/DOWN to choose, ENTER to buy.", MARGIN, 460.0, 1.0, DIM);
+}
+
+fn hire_popup(font: &Font, shop: &Shop, name: &str) {
+    let (x, y, w, h) = (96.0, 160.0, WIDTH - 192.0, 112.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, CYAN);
+    let level = if shop.item() == Some(Item::Senior) {
+        "senior"
+    } else {
+        "junior"
+    };
+    font.centered(
+        &format!("Name your new {level} analyst:"),
+        WIDTH / 2.0,
+        y + 16.0,
+        1.0,
+        INK,
+    );
+    let cursor = if blink() { "_" } else { "" };
+    font.text(&format!("{name}{cursor}"), x + 24.0, y + 44.0, 2.0, AMBER);
+    font.centered(
+        "ENTER to hire, or ENTER with no name to cancel",
+        WIDTH / 2.0,
+        y + 84.0,
+        1.0,
+        DIM,
+    );
+}
+
+/// Role names that fit the narrow status panel.
+fn short_role(role: Role) -> String {
+    match role {
+        Role::Junior => "Junior".to_string(),
+        Role::Senior => "Senior".to_string(),
+        role => role.to_string(),
+    }
 }
 
 fn bar(x: f32, y: f32, width: f32, value: i32, color: Color) {
@@ -329,7 +494,13 @@ fn status_panel(font: &Font, game: &GameState) {
     for (i, member) in game.team.iter().enumerate() {
         let y = 200.0 + i as f32 * 14.0;
         let name: String = member.name.chars().take(10).collect();
-        font.text(&format!("{name:<10} {}", member.role), x, y, 1.0, INK);
+        font.text(
+            &format!("{name:<10} {}", short_role(member.role)),
+            x,
+            y,
+            1.0,
+            INK,
+        );
         font.text(
             condition(member.burnout),
             x + 160.0,
@@ -392,9 +563,10 @@ fn ending(font: &Font, game: &GameState, outcome: Outcome) {
     let (message, color) = match outcome {
         Outcome::Ipo => (
             format!(
-                "{} rang the opening bell! Final valuation: {}.",
+                "{} rang the opening bell at {}! Score: {}.",
                 game.company,
-                money(game.score().unwrap_or_default())
+                money(game.valuation),
+                game.score().unwrap_or_default()
             ),
             GREEN,
         ),
@@ -446,7 +618,7 @@ fn team_screen(font: &Font, game: &GameState) {
     timeline(font, game);
     font.text("THE TEAM", MARGIN, 72.0, 2.0, AMBER);
     font.text(
-        &format!("{:<21}{:<9}{:<17}BURNOUT", "NAME", "ROLE", "SALARY"),
+        &format!("{:<21}{:<16}{:<10}BURNOUT", "NAME", "ROLE", "SALARY"),
         MARGIN,
         100.0,
         1.0,
@@ -479,7 +651,7 @@ fn team_row(font: &Font, member: &TeamMember, y: f32) {
     };
     font.text(
         &format!(
-            "{:<20} {:<8} {salary:<7}",
+            "{:<20} {:<15} {salary:<7}",
             member.name,
             member.role.to_string()
         ),
