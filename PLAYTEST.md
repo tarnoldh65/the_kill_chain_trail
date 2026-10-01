@@ -9,7 +9,8 @@
 - [x] The incident advances through the landmark sequence.
 - [ ] An illustrated incident report appears after each decision.
 - [ ] Each music track and the off option can be picked on the title screen.
-- [x] The game resolves to a clear outcome: contained, breached, team collapsed, or fired.
+- [ ] The intern coffee run is playable, fair, and the Rush Hour music plays during it.
+- [x] The game resolves to a clear outcome: contained, breached, team collapsed, fired, or bankrupt.
 
 ## Quality checks
 - [x] The game remains readable and stable at a 640x480 layout.

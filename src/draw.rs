@@ -3,8 +3,9 @@ use macroquad::prelude::*;
 
 use crate::art::{self, Sprite};
 use crate::audio::TRACKS;
-use crate::game::{GameState, Outcome, Scene, Setback, Stage};
-use crate::ui::{Music, Report, Screen, wrap};
+use crate::game::{COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, Outcome, Scene, Setback, Stage};
+use crate::street::{self, Leg, Street};
+use crate::ui::{CoffeeRun, Music, Report, Screen, wrap};
 
 pub const WIDTH: f32 = 640.0;
 pub const HEIGHT: f32 = 480.0;
@@ -21,6 +22,7 @@ const RED: Color = Color::from_hex(0xff004d);
 const LIGHT: Color = Color::from_hex(0xc2c3c7);
 const BROWN: Color = Color::from_hex(0xab5236);
 const YELLOW: Color = Color::from_hex(0xffec27);
+const PEACH: Color = Color::from_hex(0xffccaa);
 
 const GLYPH: f32 = 8.0;
 const MARGIN: f32 = 16.0;
@@ -87,6 +89,7 @@ pub fn screen(screen: &Screen, font: &Font, music: Music) {
             play(font, &report.game);
             report_popup(font, report);
         }
+        Screen::Coffee(run) => coffee_run(font, run),
     }
 }
 
@@ -287,7 +290,7 @@ fn company_panel(font: &Font, game: &GameState) {
         INK
     };
     font.text(
-        &format!("{} pots", game.coffee),
+        &format!("{}/{COFFEE_CAPACITY} pots", game.coffee),
         bar_x,
         row(1),
         1.0,
@@ -360,13 +363,25 @@ fn event_log(font: &Font, game: &GameState) {
 
 fn choices(font: &Font, game: &GameState) {
     font.text("What will you do?", MARGIN, 382.0, 1.0, AMBER);
-    for (i, choice) in game.stage.choices().iter().enumerate() {
-        let color = if game.can_afford(choice) { INK } else { DIM };
-        let line = format!("{}) {:<40} ${}", i + 1, choice.label, choice.cost);
-        font.text(&line, MARGIN + 16.0, 400.0 + i as f32 * 16.0, 1.0, color);
+    // The coffee run is not offered while the break room is full.
+    let intern = (!game.coffee_full()).then_some((
+        "Send the intern for coffee (no turn)",
+        COFFEE_RUN_COST,
+        game.can_send_intern(),
+    ));
+    let options: Vec<_> = game
+        .options()
+        .map(|c| (c.label, c.cost, game.can_afford(&c)))
+        .into_iter()
+        .chain(intern)
+        .collect();
+    for (i, (label, cost, available)) in options.iter().enumerate() {
+        let color = if *available { INK } else { DIM };
+        let line = format!("{}) {label:<40} ${cost}", i + 1);
+        font.text(&line, MARGIN + 16.0, 396.0 + i as f32 * 14.0, 1.0, color);
     }
     font.text(
-        "Press 1-3. Grey choices are over budget.",
+        &format!("Press 1-{}. Grey choices are unavailable.", options.len()),
         MARGIN,
         456.0,
         1.0,
@@ -393,6 +408,13 @@ fn ending(font: &Font, game: &GameState, outcome: Outcome) {
         Outcome::TeamCollapsed => (
             format!(
                 "No analysts left: quit, sick, or worse. {} is defenseless.",
+                game.company
+            ),
+            RED,
+        ),
+        Outcome::Bankrupt => (
+            format!(
+                "{} is out of money. The SOC is replaced by a free antivirus trial.",
                 game.company
             ),
             RED,
@@ -504,7 +526,7 @@ fn report_popup(font: &Font, report: &Report) {
             report.game.log[report.news..]
                 .iter()
                 .flat_map(|entry| wrap(entry, width))
-                .map(|line| (line, RED)),
+                .map(|line| (line, AMBER)),
         );
     for (i, (line, color)) in lines.take(15).enumerate() {
         font.text(&line, x + 16.0, 216.0 + i as f32 * 12.0, 1.0, color);
@@ -517,5 +539,148 @@ fn report_popup(font: &Font, report: &Report) {
             1.0,
             AMBER,
         );
+    }
+}
+
+/// Top of a street row on screen; row 0 is the office sidewalk at the bottom.
+fn row_y(row: usize) -> f32 {
+    344.0 - 48.0 * row as f32
+}
+
+fn coffee_run(font: &Font, run: &CoffeeRun) {
+    let street = &run.street;
+    let goal = match street.leg {
+        Leg::ToShop => "Reach the door of JAVA THE HUT",
+        Leg::ToOffice => "Coffee acquired! Get back to the office door",
+    };
+    font.text(&format!("COFFEE RUN: {goal}"), MARGIN, 8.0, 1.0, AMBER);
+
+    // Coffee shop across the street.
+    draw_rectangle(0.0, 24.0, WIDTH, 80.0, BROWN);
+    font.text("JAVA THE HUT", 400.0, 36.0, 2.0, YELLOW);
+    for x in [48.0, 176.0, 304.0, 560.0] {
+        draw_rectangle(x, 56.0, 48.0, 32.0, CYAN);
+    }
+    door(street::SHOP_DOOR, 72.0, street.leg == Leg::ToShop);
+
+    // Office building on this side.
+    draw_rectangle(0.0, 392.0, WIDTH, 88.0, NAVY);
+    font.text(
+        &format!("{} SOC", run.game.company.to_uppercase()),
+        240.0,
+        440.0,
+        2.0,
+        INK,
+    );
+    door(street::OFFICE_DOOR, 392.0, street.leg == Leg::ToOffice);
+
+    for row in [0, street::SHOP_ROW] {
+        draw_rectangle(0.0, row_y(row), WIDTH, 48.0, DIM);
+        for x in (0..WIDTH as usize).step_by(32) {
+            draw_line(
+                x as f32,
+                row_y(row),
+                x as f32,
+                row_y(row) + 48.0,
+                1.0,
+                LIGHT,
+            );
+        }
+    }
+    draw_rectangle(
+        0.0,
+        row_y(street::LANES),
+        WIDTH,
+        48.0 * street::LANES as f32,
+        BG,
+    );
+    for x in (0..WIDTH as usize).step_by(32) {
+        for row in [2, 4] {
+            draw_rectangle(x as f32, row_y(row) + 47.0, 16.0, 2.0, INK);
+        }
+    }
+    draw_rectangle(0.0, row_y(3) + 45.0, WIDTH, 2.0, YELLOW);
+    draw_rectangle(0.0, row_y(3) + 49.0, WIDTH, 2.0, YELLOW);
+
+    let colors = [RED, CYAN, AMBER, GREEN];
+    for (i, lane) in street.lanes.iter().enumerate() {
+        for car in &lane.cars {
+            vehicle(
+                car.x,
+                row_y(i + 1) + 8.0,
+                car.length,
+                lane.speed > 0.0,
+                colors[i],
+            );
+        }
+    }
+
+    intern(street);
+
+    if let Some(survived) = street.survived {
+        let message = if survived {
+            "The intern made it back with the coffee!"
+        } else {
+            "SPLAT! The intern did not make it."
+        };
+        draw_rectangle(80.0, 196.0, WIDTH - 160.0, 72.0, NAVY);
+        draw_rectangle_lines(80.0, 196.0, WIDTH - 160.0, 72.0, 2.0, CYAN);
+        font.centered(
+            message,
+            WIDTH / 2.0,
+            212.0,
+            1.0,
+            if survived { GREEN } else { RED },
+        );
+        if blink() {
+            font.centered("Press ENTER to continue", WIDTH / 2.0, 244.0, 1.0, AMBER);
+        }
+    }
+}
+
+/// A door whose frame blinks while it is the intern's goal.
+fn door(x: f32, y: f32, goal: bool) {
+    let frame = if goal && blink() { AMBER } else { LIGHT };
+    draw_rectangle(x, y, street::DOOR_WIDTH, 32.0, frame);
+    draw_rectangle(x + 4.0, y + 4.0, street::DOOR_WIDTH - 8.0, 28.0, BG);
+}
+
+/// A car or truck seen from above, facing the way it drives.
+fn vehicle(x: f32, y: f32, length: f32, rightward: bool, color: Color) {
+    let front = if rightward { x + length - 12.0 } else { x };
+    for wheel_x in [x + 6.0, x + length - 14.0] {
+        draw_rectangle(wheel_x, y - 2.0, 8.0, 36.0, DIM);
+    }
+    draw_rectangle(x, y, length, 32.0, color);
+    if length > 50.0 {
+        let cargo_x = if rightward { x } else { x + 16.0 };
+        draw_rectangle(cargo_x, y + 2.0, length - 16.0, 28.0, LIGHT);
+    }
+    draw_rectangle(front + 2.0, y + 4.0, 8.0, 24.0, NAVY);
+    let light_x = if rightward { x + length - 2.0 } else { x };
+    for light_y in [y + 2.0, y + 26.0] {
+        draw_rectangle(light_x, light_y, 2.0, 4.0, YELLOW);
+    }
+}
+
+fn intern(street: &Street) {
+    let (x, y) = (street.x, row_y(street.row) + 12.0);
+    if street.survived == Some(false) {
+        for (dx, dy, w, h) in [
+            (-6.0, 8.0, 28.0, 8.0),
+            (2.0, 0.0, 12.0, 24.0),
+            (-2.0, 4.0, 20.0, 16.0),
+        ] {
+            draw_rectangle(x + dx, y + dy, w, h, RED);
+        }
+        return;
+    }
+    draw_rectangle(x + 4.0, y, 8.0, 8.0, PEACH);
+    draw_rectangle(x + 2.0, y + 8.0, 12.0, 10.0, GREEN);
+    draw_rectangle(x + 3.0, y + 18.0, 4.0, 6.0, NAVY);
+    draw_rectangle(x + 9.0, y + 18.0, 4.0, 6.0, NAVY);
+    if street.leg == Leg::ToOffice {
+        draw_rectangle(x + 13.0, y + 9.0, 5.0, 7.0, INK);
+        draw_rectangle(x + 13.0, y + 9.0, 5.0, 2.0, BROWN);
     }
 }

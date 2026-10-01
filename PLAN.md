@@ -27,7 +27,7 @@ Tasks:
 - Each landmark offers its own choices trading budget, coffee, fatigue, containment, trust, and brand.
 - Budget limits which choices are available; coffee is consumed each stage and running out hurts the team.
 - Falling behind the attacker each stage costs corporate trust and brand loyalty.
-- Outcomes: Contained, Breached, Team Collapsed, Fired.
+- Outcomes: Contained, Breached, Team Collapsed, Fired, Bankrupt (no affordable choice left at a stage).
 - Game logic is independent of input and output so it can be driven by the terminal now and the graphical front end later.
 
 Success criteria:
@@ -100,6 +100,37 @@ Success criteria:
 - [x] Three tracks, each four whole bars that never clip (unit tested).
 - [x] Music choice keys work only on the title screen (unit tested).
 
+## Phase 8: Intern coffee run
+
+Tasks:
+- Option 4 at every stage sends the intern for coffee for $10, once per stage, without using the stage's turn.
+- Frogger-style street: four lanes (two each way) with different random speeds and randomly spaced cars and trucks; faster lanes send cars less often.
+- The intern must reach the coffee shop door, then the office door, using the arrow keys.
+- The break room holds 36 pots; option 4 is hidden while coffee is full.
+- Surviving restocks 12 pots of coffee (up to capacity); getting hit loses the $10 with a humorous log message.
+- Original chaotic "Rush Hour" techno plays during the run unless music is off.
+
+Success criteria:
+- [x] Lanes run both ways at distinct speeds with non-overlapping, randomly spaced traffic, sparser in faster lanes (unit tested).
+- [x] Running out of money with no affordable choice ends the game as Bankrupt (unit tested).
+- [x] Hopping into a car or a car driving into the intern ends the run (unit tested).
+- [x] Only a round trip through both doors succeeds (unit tested).
+- [x] Cost, once-per-stage limit, coffee capacity, and coffee restock are unit tested.
+- [x] Rush Hour music is four whole bars and never clips (unit tested).
+
+## Phase 9: Variety
+
+Tasks:
+- Six choices per landmark; each game offers a seeded random three of them.
+- Four random events per landmark (good, bad, or neutral), one applied after each decision and shown in the log and incident report.
+- Bankruptcy considers only the offered choices.
+- Rebalance so random play still wins about a third of the time.
+
+Success criteria:
+- [x] Offered choices are three different choices from the landmark and stable within a game (unit tested).
+- [x] Every choice is offered and every event happens across seeds (unit tested).
+- [x] Across 40 seeds of exhaustive play, every outcome is reachable, every choice is part of a win, and the win rate is 25-40% (unit tested).
+
 ## Current status
 
 - [x] Phase 1: Project scaffolding
@@ -109,3 +140,5 @@ Success criteria:
 - [ ] Phase 5: Audio
 - [ ] Phase 6: Polish and playtest
 - [x] Phase 7: Incident reports and music selection
+- [x] Phase 8: Intern coffee run
+- [x] Phase 9: Variety
