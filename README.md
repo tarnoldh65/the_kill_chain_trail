@@ -2,9 +2,19 @@
 
 A cyber security operations game inspired by Oregon Trail, written in Rust.
 
-Run the SOC at a company racing toward its IPO, 26 weeks away. Keep corporate trust, brand loyalty, the valuation, the budget, and your team's sanity intact until the bell rings. The game is mid-redesign; see [REDESIGN.md](REDESIGN.md) and [PLAN.md](PLAN.md).
+Run the SOC at a company racing toward its IPO, 26 weeks away. Attackers you cannot see are working through the kill chain the whole time. Reach the IPO with the highest valuation you can; trust, brand loyalty, budget, coffee, and your team's burnout can all end the game early. See [REDESIGN.md](REDESIGN.md) for the full design.
 
-Pick a music track (1-3) or turn music off (4) on the title screen, then name your company and yourself and pick a profile (Fintech, Healthtech, or Gaming startup). At the Vendor Hall, use the up and down arrows and ENTER to hire and name analysts and buy tools, services, and coffee; leftover budget pays the weekly payroll. From the day menu, press 1 to let the days pass (any key stops the clock), 2 to take an action such as deploying a tool, a patch sprint, recruiting, or a day off (days pass while the SOC works on it), 3 to check the team, 4 to change the tempo (Relaxed, Steady, Crunch), or 5 once a week to send the intern for coffee ($10): use the arrow keys to cross four lanes of traffic to the coffee shop door and back to the office door. Payroll comes out every Monday. Attackers work in the background where you cannot see them; press 1-3 to investigate, call the IR firm, or ignore an alert (some are false alarms), and pick a response when an incident hits. Random events (the flu, zero-days, a broken coffee machine) interrupt the days too, and some ask you to choose. Landmarks on the timeline stop you along the way: forts (the security conference, the public S-1) open the Vendor Hall and let the team rest; at the conference, pick who goes with you and a track for each, and see what they bring back. Rivers (the board, the SOC 2 audit, the S-1 filing, the pen test, the roadshow) are risky choices. Failures can delay the IPO; more than six weeks of delays and the board pulls it. The after-action report at the end shows what the attackers were really doing. The ten best IPO scores appear on the title screen (saved to `top_ten.txt` natively, or the browser's local storage). The window renders at 640x480 and scales when resized. Sound effects and techno music are synthesized in code.
+## How to play
+
+- Title screen: 1-3 picks a music track, 4 turns music off, ENTER starts.
+- Name your company and yourself, then pick a profile (1-3). Harder profiles multiply your score.
+- Vendor Hall: UP/DOWN and ENTER to hire and name analysts and buy tools, services, and coffee. Leftover budget pays the payroll every Monday.
+- Day menu: 1 lets the days pass (any key stops the clock), 2 starts an action (deploy a tool, patch, recruit, rest, and more), 3 shows the team, 4 changes the tempo, 5 sends the intern for coffee once a week (arrow keys across four lanes of traffic and back).
+- Alerts: 1 investigates, 2 calls the IR firm, 3 ignores. Some are false alarms. Incidents, random events, and landmarks ask you to pick a numbered option.
+- Landmarks on the timeline: forts open the Vendor Hall and let the team rest; at the security conference you pick who goes and their tracks. Rivers are risky choices, and failures can delay the IPO. More than six weeks of delays and the board pulls it.
+- The after-action report shows what the attackers were really doing. The ten best IPO scores appear on the title screen, saved to `top_ten.txt` natively or the browser's local storage.
+
+The window renders at 640x480 and scales when resized. Graphics, sound effects, and techno music are made in code.
 
 ## Run
 

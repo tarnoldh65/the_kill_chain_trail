@@ -32,7 +32,7 @@ pub const COFFEE_RUN_COST: i64 = 10;
 /// Pots of coffee the intern brings back, and in a case from the Vendor Hall.
 const COFFEE_RUN_POTS: i32 = 12;
 /// Extra burnout everyone gains each day the coffee is out.
-const NO_COFFEE_BURNOUT: i32 = 2;
+const NO_COFFEE_BURNOUT: i32 = 1;
 /// Burnout a junior analyst sheds each day before their share of the workload.
 const JUNIOR_REST: i32 = 1;
 /// Seniors handle the same workload with less wear.
@@ -58,7 +58,7 @@ const MAX_CAMPAIGNS: usize = 3;
 /// Base days an alert investigation takes.
 const INVESTIGATION_DAYS: u32 = 3;
 /// What the incident response firm bills per call.
-pub const IR_FEE: i64 = 40_000;
+pub const IR_FEE: i64 = 25_000;
 /// Weekly legal fees while regulators are asking questions.
 const LEGAL_FEES: i64 = 10_000;
 
@@ -592,6 +592,8 @@ pub struct GameState {
     delay: u32,
     /// Incidents left out of the S-1, waiting to surface.
     hidden: u32,
+    /// Whether a leak has already forced an amended S-1 (it only happens once).
+    amended: bool,
     /// Days left at the conference.
     pub conference_days: u32,
     /// Conference cards waiting to be revealed.
@@ -661,6 +663,7 @@ impl GameState {
             stop: None,
             delay: 0,
             hidden: 0,
+            amended: false,
             conference_days: 0,
             cards: Vec::new(),
             discount: false,
@@ -711,6 +714,11 @@ impl GameState {
         self.team.iter().filter(|m| m.role == Role::Senior).count() as u32
     }
 
+    /// Whether the budget covers a cost; free things are always possible, even in debt.
+    fn affords(&self, cost: i64) -> bool {
+        cost == 0 || cost <= self.budget
+    }
+
     /// What an item costs right now, after any conference perks.
     pub fn price(&self, item: Item) -> i64 {
         if item == Item::Senior && self.free_senior {
@@ -723,7 +731,7 @@ impl GameState {
     }
 
     pub fn can_buy(&self, item: Item) -> bool {
-        self.price(item) <= self.budget
+        self.affords(self.price(item))
             && !(item.once() && self.owned.contains(&item))
             && match item {
                 Item::Junior | Item::Senior => self.analysts() < MAX_ANALYSTS,
@@ -786,7 +794,7 @@ impl GameState {
         if self.conditions.contains(&Condition::SystemsDown) {
             return cures
                 .chain([Action::DayOff, Action::BriefLeadership])
-                .filter(|action| action.cost() <= self.budget)
+                .filter(|action| self.affords(action.cost()))
                 .collect();
         }
         let deployable = self
@@ -818,7 +826,7 @@ impl GameState {
             .chain(backup_test)
             .chain(recruits)
             .chain([Action::DayOff, Action::Offsite, Action::BriefLeadership])
-            .filter(|action| action.cost() <= self.budget)
+            .filter(|action| self.affords(action.cost()))
             .collect()
     }
 
@@ -1106,7 +1114,7 @@ impl GameState {
         self.stop
             .as_ref()
             .and_then(|s| s.landmark.crossings().get(index))
-            .is_some_and(|c| c.cost <= self.budget)
+            .is_some_and(|c| self.affords(c.cost))
     }
 
     /// Crosses the river at the current landmark one of its ways.
@@ -1435,7 +1443,7 @@ impl GameState {
     /// Whether a response is possible: backups deployed if needed, and the money for it.
     pub fn can_respond(&self, response: &Response) -> bool {
         (!response.needs_backups || self.deployed.contains(&Item::Backups))
-            && self.incident_cost(response) <= self.budget
+            && self.affords(self.incident_cost(response))
     }
 
     /// What a response costs after insurance pays its half.
@@ -1462,7 +1470,8 @@ impl GameState {
         }
         self.log.push(response.text.to_string());
         let flipped = self.next_landmark > Landmark::Flip as usize;
-        if flipped && matches!(actor, Actor::DataThief | Actor::Insider) {
+        if flipped && !self.amended && matches!(actor, Actor::DataThief | Actor::Insider) {
+            self.amended = true;
             self.log.push("The leak forces an amended S-1.".to_string());
             self.slip();
         }
@@ -1831,7 +1840,9 @@ impl GameState {
             } else {
                 0
             };
-            let share = self.tempo.workload() / home.max(1) + paranoia + stay_home;
+            // Weekends are quieter: half the workload on Saturday and Sunday.
+            let weekend = if self.weekday() >= 5 { 2 } else { 1 };
+            let share = self.tempo.workload() / weekend / home.max(1) + paranoia + stay_home;
             for member in self.team.iter_mut().filter(|m| m.track.is_none()) {
                 let rest = match member.role {
                     Role::Junior => JUNIOR_REST,
@@ -3790,6 +3801,22 @@ mod tests {
         assert_eq!(game.cards.len(), 1);
         game.reveal_next();
         assert!(game.cards.is_empty());
+    }
+
+    #[test]
+    fn free_choices_stay_open_when_the_budget_is_negative() {
+        let mut game = game();
+        game.budget = -5_000;
+
+        assert!(game.actions().contains(&Action::PatchSprint));
+        assert!(!game.actions().contains(&Action::PhishingSim));
+        game.incident = Some(Actor::Ransomware);
+        assert!(game.can_respond(&Actor::Ransomware.responses()[2]));
+        assert!(!game.can_respond(&Actor::Ransomware.responses()[1]));
+        game.incident = None;
+        let mut river = at(Landmark::Audit, 1, 30);
+        river.budget = -5_000;
+        assert!(river.can_cross(0) && !river.can_cross(1));
     }
 
     #[test]

@@ -1,6 +1,8 @@
 mod art;
 mod attack;
 mod audio;
+#[cfg(test)]
+mod balance;
 mod conference;
 mod draw;
 mod events;

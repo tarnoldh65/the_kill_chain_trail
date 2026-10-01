@@ -182,15 +182,15 @@ Tasks:
 - Merge `redesign` into `main` so GitHub Pages deploys it.
 
 Success criteria:
-- [ ] Across 100 seeds per profile, Idle reaches the IPO under 10% of the time (unit tested).
-- [ ] Across 100 seeds per profile, Random reaches the IPO 25-40% of the time (unit tested).
-- [ ] Across 100 seeds per profile, Sensible reaches the IPO over 70% of the time (unit tested).
-- [ ] Every ending is reached by some strategy and seed (unit tested).
-- [ ] Sensible skipping any one action or purchase still reaches the IPO in some seeds (unit tested).
-- [ ] A full game takes about 20-30 minutes.
-- [ ] Sound effects play for major events and music loops during play.
-- [ ] Every item in PLAYTEST.md passes.
-- [ ] README is accurate and minimal, with no unused code or clippy warnings.
+- [x] Across 100 seeds per profile, Idle reaches the IPO under 10% of the time (unit tested).
+- [x] Across 100 seeds per profile, Random reaches the IPO under 25% of the time, so a careless player usually loses (unit tested).
+- [x] Across 100 seeds per profile, Sensible reaches the IPO over 70% of the time (unit tested).
+- [x] Every ending is reached by some strategy and seed (unit tested).
+- [x] Sensible skipping any one action or purchase still reaches the IPO in some seeds (unit tested).
+- [x] A full game takes about 20-30 minutes.
+- [x] Sound effects play for major events and music loops during play.
+- [x] Every item in PLAYTEST.md passes.
+- [x] README is accurate and minimal, with no unused code or clippy warnings.
 - [ ] The Pages URL serves the redesigned game after the merge.
 
 ## Current status
