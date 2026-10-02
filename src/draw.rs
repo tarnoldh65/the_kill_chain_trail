@@ -582,7 +582,7 @@ fn defenses(font: &Font, game: &GameState) {
         } else {
             helping.join(", ")
         };
-        for (j, line) in wrap(&format!("Helping: {helping}"), 70)
+        for (j, line) in wrap(&format!("Tools: {helping}"), 70)
             .iter()
             .take(2)
             .enumerate()

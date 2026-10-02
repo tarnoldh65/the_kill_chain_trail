@@ -351,6 +351,103 @@ impl Item {
         }
     }
 
+    /// The messages a finished rollout of this tool picks from.
+    pub fn rollout(self) -> [&'static str; 3] {
+        match self {
+            Self::PasswordManager => [
+                "Password manager deployed. Marketing still keeps the master password on a sticky note.",
+                "Password manager is live. Forty-one accounts used \"Summer2024!\". Now they don't.",
+                "The password manager rollout is done. The vault is full; the monitor bezels are empty.",
+            ],
+            Self::MfaTokens => [
+                "MFA is enforced everywhere. The help desk is drowning in \"I lost my phone\" tickets.",
+                "MFA is live. The CFO approved 37 push prompts at 2 AM \"to make them stop.\"",
+                "MFA is enforced. Sales says it adds four seconds to every login and wants a meeting about it.",
+            ],
+            Self::Pam => [
+                "PAM is deployed. Admins must now check out their own keys like library books.",
+                "PAM is live. The shared \"admin/admin\" account has been put down gently.",
+                "Privileged access is locked down. The DBA calls it \"a hostage situation.\"",
+            ],
+            Self::Antivirus => [
+                "Antivirus is on. It quarantined the CEO's solitaire and nothing else.",
+                "Antivirus deployed. Every laptop fan is now spinning at full speed, all the time.",
+                "Antivirus is running. It caught one virus from 2009 and is very proud of it.",
+            ],
+            Self::Allowlisting => [
+                "Allowlisting is on. Engineering filed 212 exception requests before lunch.",
+                "Only approved software runs now. Somebody's crypto miner has gone quiet.",
+                "Allowlisting is deployed. The intern's \"productivity toolbar\" did not make the list.",
+            ],
+            Self::Edr => [
+                "EDR is deployed. Every laptop now reports everything, mostly Chrome tabs.",
+                "EDR is live. It immediately flagged IT's own admin scripts as malicious.",
+                "EDR rollout complete. You can see every process on every machine. You wish you couldn't.",
+            ],
+            Self::Posters => [
+                "Posters are up. Someone drew a mustache on the phishing hook.",
+                "\"Think Before You Click\" now hangs in every break room. Nobody looked up from their phone.",
+                "The posters are up. The one in the kitchen is already used as a coaster.",
+            ],
+            Self::EmailGateway => [
+                "Email gateway is live. It blocked 4,000 phishes and the CEO's daughter's wedding invite.",
+                "Email gateway deployed. The Nigerian prince will have to find another way in.",
+                "Email gateway is on. Accounting wants to know where their \"invoices\" went.",
+            ],
+            Self::TrainingPlatform => [
+                "Training platform launched. Employees now play the training videos on mute at 2x speed.",
+                "Security training is live. The completion rate is 100%; the attention rate is unknown.",
+                "Training is mandatory now. Someone already found the \"skip to quiz\" trick.",
+            ],
+            Self::VulnScanner => [
+                "The vuln scanner is running. It found 9,000 issues and a printer from 1998.",
+                "Vuln scanner deployed. The first report is 600 pages long. Nobody has read page 2.",
+                "Scanning is live. It turns out the lobby TV has an open SSH port.",
+            ],
+            Self::Waf => [
+                "The WAF is up. It blocked the attackers and, briefly, the checkout page.",
+                "WAF deployed. The bots knock politely now and get turned away.",
+                "The WAF is live. Marketing's landing page was flagged as SQL injection. It was close.",
+            ],
+            Self::Asm => [
+                "ASM is deployed. It found three websites nobody remembers building.",
+                "Attack surface mapped. There is a staging server named \"DO-NOT-USE-final2.\"",
+                "ASM is live. It found a marketing microsite from 2017 still collecting emails.",
+            ],
+            Self::Runbooks => [
+                "Runbooks are published. Step one in every runbook is \"Don't panic.\"",
+                "Runbooks are done. They are 80 pages long and will be printed during the outage.",
+                "Incident runbooks are live. The binder is labeled \"OPEN IN CASE OF FIRE.\"",
+            ],
+            Self::Backups => [
+                "Backups are running. For the first time, someone actually tested a restore.",
+                "Backups are live. The tapes are in a fireproof safe. The safe's combination is on a sticky note.",
+                "Backups deployed. Ransomware gangs now have to work for their money.",
+            ],
+            Self::DrSite => [
+                "The DR site is online. Nobody is sure which data center is \"primary\" anymore.",
+                "Disaster recovery site is ready. Now you can lose two data centers instead of one.",
+                "The DR site is up. It costs a fortune and hopefully does nothing at all.",
+            ],
+            Self::LogCollection => [
+                "Logs are flowing into one place. It is mostly printer errors.",
+                "Log collection is live. The storage bill arrived before the first useful alert.",
+                "All the logs are centralized. You now know exactly how often the CEO forgets their password.",
+            ],
+            Self::Siem => [
+                "The SIEM is live. It generated 10,000 alerts in its first hour.",
+                "SIEM deployed. The dashboard is beautiful. Nobody knows what it means.",
+                "The SIEM is up. The first correlation rule caught your own team's lunch orders.",
+            ],
+            Self::Mdr => [
+                "MDR is watching. Someone in another time zone now judges your alerts.",
+                "MDR is live. They already called at 3 AM about the vending machine.",
+                "MDR is deployed. The experts are watching, and they have opinions.",
+            ],
+            _ => unreachable!("only tools are deployed"),
+        }
+    }
+
     /// What this costs every Monday: an analyst's salary or the coffee subscription.
     pub fn weekly(self) -> i64 {
         match self {
@@ -762,6 +859,42 @@ impl fmt::Display for Area {
 }
 
 impl Area {
+    /// The messages finished maintenance on this area picks from.
+    pub fn upkeep(self) -> [&'static str; 3] {
+        match self {
+            Self::Identity => [
+                "Access review done. Fourteen former employees still had accounts. Not anymore.",
+                "Access review done. The intern from two summers ago was still a domain admin.",
+                "Access review complete. Three service accounts belonged to nobody. They belong to the void now.",
+            ],
+            Self::Endpoint => [
+                "Endpoint policies updated. Only one laptop bricked itself.",
+                "Endpoint policies refreshed. Someone's \"work laptop\" was mostly running Minecraft.",
+                "Endpoint policies pushed. 98% of laptops complied. The other 2% are in a drawer.",
+            ],
+            Self::People => [
+                "Email filters refreshed. The CEO's newsletter is no longer flagged as spam.",
+                "Email filters updated. The \"URGENT WIRE TRANSFER\" crowd is back in the junk folder.",
+                "Filters refreshed. HR's benefits email finally reaches people's inboxes.",
+            ],
+            Self::Perimeter => [
+                "Firewall and WAF rules updated. Someone finally closed port 23.",
+                "Firewall rules cleaned up. Rule 1 was \"allow any any.\" It had a comment: \"temp.\"",
+                "WAF rules updated. The bots are trying a new trick. So are you.",
+            ],
+            Self::Resilience => [
+                "Disaster recovery rehearsed. Everything came back, eventually.",
+                "DR drill complete. The restore worked. The person who knew how is on vacation.",
+                "Disaster recovery rehearsed. Only the coffee machine failed to come back.",
+            ],
+            Self::Detection => [
+                "Detections tuned. The SIEM cries wolf less often.",
+                "Detections tuned. 400 alerts a day down to 40. 39 are still the printer.",
+                "Detection rules tuned. The alert for \"user logged in\" has been retired with honors.",
+            ],
+        }
+    }
+
     /// The attackers this area slows down.
     pub fn stops(self) -> Vec<Actor> {
         Actor::ALL
@@ -1331,13 +1464,8 @@ impl GameState {
                 self.deployed.push(Tool::new(item));
                 if item == Item::MfaTokens {
                     self.trust -= 3;
-                    "MFA is enforced everywhere. The help desk is drowning in \"I lost my phone\" tickets.".to_string()
-                } else {
-                    format!(
-                        "The {} rollout is finished. It is actually turned on.",
-                        item.label()
-                    )
                 }
+                item.rollout()[self.chance() as usize % 3].to_string()
             }
             Action::PhishingSim => {
                 if self.chance() < 333 {
@@ -1375,21 +1503,7 @@ impl GameState {
                         tool.condition = 100;
                     }
                 }
-                match area {
-                    Area::Identity => {
-                        "Access review done. Fourteen former employees still had accounts. Not anymore."
-                    }
-                    Area::Endpoint => "Endpoint policies updated. Only one laptop bricked itself.",
-                    Area::People => {
-                        "Email filters refreshed. The CEO's newsletter is no longer flagged as spam."
-                    }
-                    Area::Perimeter => {
-                        "Firewall and WAF rules updated. Someone finally closed port 23."
-                    }
-                    Area::Resilience => "Disaster recovery rehearsed. Everything came back, eventually.",
-                    Area::Detection => "Detections tuned. The SIEM cries wolf less often.",
-                }
-                .to_string()
+                area.upkeep()[self.chance() as usize % 3].to_string()
             }
             Action::Clear(condition) => {
                 self.conditions.retain(|&c| c != condition);
@@ -2952,7 +3066,19 @@ mod tests {
         run(&mut game, Action::Deploy(Item::MfaTokens));
 
         assert_eq!(game.trust, 60 - 3);
-        assert!(game.log.last().unwrap().contains("I lost my phone"));
+    }
+
+    #[test]
+    fn each_tool_rollout_picks_one_of_its_own_messages() {
+        for item in Item::ALL.into_iter().filter(|i| i.category().is_some()) {
+            let mut game = game();
+            game.owned.push(item);
+            run(&mut game, Action::Deploy(item));
+            assert!(
+                item.rollout()
+                    .contains(&game.log.last().unwrap().text.as_str())
+            );
+        }
     }
 
     #[test]
@@ -3649,6 +3775,11 @@ mod tests {
         assert_eq!(game.deployed[0].condition, 100);
         assert_eq!(game.deployed[1].condition, 100);
         assert_eq!(game.deployed[2].condition, 40, "other areas untouched");
+        assert!(
+            Area::Resilience
+                .upkeep()
+                .contains(&game.log.last().unwrap().text.as_str())
+        );
         assert!(
             game.cards
                 .last()
