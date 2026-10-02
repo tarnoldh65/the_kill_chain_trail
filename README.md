@@ -25,7 +25,7 @@ cargo run --release
 
 ## Run in a browser
 
-Play online at https://lehmanrd.github.io/the_kill_chain_trail/ (deployed from `main` by GitHub Actions), or build and serve locally:
+Play online at https://tarnoldh65.github.io/the_kill_chain_trail/ (deployed from `main` by GitHub Actions), or build and serve locally:
 
 ```bash
 cargo build --release --target wasm32-unknown-unknown
