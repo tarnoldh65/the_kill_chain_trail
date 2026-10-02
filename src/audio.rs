@@ -259,20 +259,42 @@ fn rush_hour() -> Vec<f32> {
     buffer
 }
 
-fn select() -> Vec<f32> {
-    note(Wave::Square, 81, STEP / 2, 0.25)
-}
-
-fn alarm() -> Vec<f32> {
-    melody(Wave::Square, &[(76, 2), (69, 2), (76, 2), (69, 2)], 0.3)
-}
-
-fn win() -> Vec<f32> {
-    melody(Wave::Square, &[(72, 2), (76, 2), (79, 2), (84, 6)], 0.3)
-}
-
-fn lose() -> Vec<f32> {
-    melody(Wave::Triangle, &[(67, 4), (64, 4), (60, 4), (55, 10)], 0.5)
+/// The synthesized sound for each cue.
+fn effect(cue: Cue) -> Vec<f32> {
+    match cue {
+        Cue::Select => note(Wave::Square, 81, STEP / 2, 0.25),
+        Cue::Alarm => melody(Wave::Square, &[(76, 2), (69, 2), (76, 2), (69, 2)], 0.3),
+        Cue::Win => melody(Wave::Square, &[(72, 2), (76, 2), (79, 2), (84, 6)], 0.3),
+        Cue::Lose => melody(Wave::Triangle, &[(67, 4), (64, 4), (60, 4), (55, 10)], 0.5),
+        // A soft blip for each day that passes.
+        Cue::Tick => note(Wave::Square, 96, STEP / 8, 0.12),
+        // Two bright coin notes.
+        Cue::Payday => melody(Wave::Square, &[(84, 1), (91, 3)], 0.2),
+        // A siren that rises and falls three times.
+        Cue::Klaxon => melody(
+            Wave::Square,
+            &[(70, 2), (75, 2), (70, 2), (75, 2), (70, 2), (75, 2)],
+            0.3,
+        ),
+        // A low, dramatic diminished fall with a noise hit.
+        Cue::Sting => {
+            let mut sting = melody(Wave::Triangle, &[(62, 2), (59, 2), (56, 8)], 0.6);
+            mix(&mut sting, &note(Wave::Noise, 0, STEP * 2, 0.3), 0);
+            sting
+        }
+        Cue::Fanfare => melody(
+            Wave::Square,
+            &[(67, 1), (72, 1), (76, 1), (79, 3), (76, 1), (79, 4)],
+            0.3,
+        ),
+        // Two triangle tones with a long ring, like a struck bell.
+        Cue::Bell => {
+            let mut bell = note(Wave::Triangle, 84, STEP * 12, 0.5);
+            mix(&mut bell, &note(Wave::Triangle, 91, STEP * 8, 0.3), 0);
+            mix(&mut bell, &note(Wave::Square, 96, STEP * 2, 0.1), 0);
+            bell
+        }
+    }
 }
 
 /// Encodes samples as a 16-bit mono PCM WAV file.
@@ -299,10 +321,8 @@ fn wav(samples: &[f32]) -> Vec<u8> {
 }
 
 pub struct Audio {
-    select: Sound,
-    alarm: Sound,
-    win: Sound,
-    lose: Sound,
+    /// One sound per cue, in `Cue::ALL` order.
+    effects: Vec<Sound>,
     music: Vec<Sound>,
     rush_hour: Sound,
 }
@@ -314,10 +334,13 @@ async fn load(samples: Vec<f32>) -> Sound {
 impl Audio {
     pub async fn load() -> Self {
         Self {
-            select: load(select()).await,
-            alarm: load(alarm()).await,
-            win: load(win()).await,
-            lose: load(lose()).await,
+            effects: {
+                let mut effects = Vec::new();
+                for cue in Cue::ALL {
+                    effects.push(load(effect(cue)).await);
+                }
+                effects
+            },
             music: {
                 let mut music = Vec::new();
                 for track in tracks() {
@@ -361,12 +384,7 @@ impl Audio {
     }
 
     pub fn play(&self, cue: Cue) {
-        play_sound_once(match cue {
-            Cue::Select => &self.select,
-            Cue::Alarm => &self.alarm,
-            Cue::Win => &self.win,
-            Cue::Lose => &self.lose,
-        });
+        play_sound_once(&self.effects[cue as usize]);
     }
 }
 
@@ -414,9 +432,10 @@ mod tests {
 
     #[test]
     fn sound_effects_are_audible_and_never_clip() {
-        for effect in [select(), alarm(), win(), lose()] {
-            assert!(!effect.is_empty());
-            assert!(peak(&effect) > 0.1 && peak(&effect) <= 1.0);
+        for cue in Cue::ALL {
+            let sound = effect(cue);
+            assert!(!sound.is_empty(), "{cue:?}");
+            assert!(peak(&sound) > 0.1 && peak(&sound) <= 1.0, "{cue:?}");
         }
     }
 

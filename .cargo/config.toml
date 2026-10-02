@@ -1,0 +1,3 @@
+# macroquad's audio is implemented in JavaScript; let those imports stay unresolved at link time.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined"]
