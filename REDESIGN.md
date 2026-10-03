@@ -186,18 +186,35 @@ Tempo is a standing setting rather than an action:
 
 Actions cost money, days, or both. While an action is running, days pass and the world keeps moving; an alert or incident can interrupt it, and the player can resume it afterward. Each game offers the core actions plus a few that depend on what you own and what has happened.
 
+The action screen has one tab per kind (Recovery, Implementation, Maintenance, Operations, Management). LEFT/RIGHT skip tabs with nothing to do, and the screen opens on the first tab that has something, so recovery comes first after an incident. The IMPROVES strip shows how much an action or purchase helps each area as +, ++, or +++ (under 15, 15-29, 30 and up), never a number.
+
 | Action | Days | Cost | Effect |
 | --- | --- | --- | --- |
-| Deploy a purchased tool | 3-10 | None | Turns a tool on; raises its posture area |
-| Enforce MFA everywhere | 5 | None (needs MFA tokens) | Big identity boost; brief morale dip from annoyed employees |
-| Phishing simulation | 2 | Small | People boost; occasionally upsets a VP (trust dip) |
-| Patch sprint | 4 | None | Endpoint and perimeter boost; fatigue |
-| Threat hunt | 3 | None | Chance to find hidden attacker campaigns; better with seniors and SIEM |
-| Tabletop exercise | 1 | None | Resilience boost; small trust boost with leadership |
+| Deploy a purchased tool | 1-10 | None | Turns a tool on; raises its posture areas. MFA also dips trust from annoyed employees |
 | Maintain an area's tools | 2 | None (needs a deployed tool below 80) | Restores that area's tools to full strength: an access review, endpoint policy update, email filter refresh, firewall and WAF rule update, disaster recovery rehearsal, or detection tuning |
 | Give everyone the day off | 1 | None | Large burnout recovery; nobody watching for a day |
 | Team offsite | 5 | Medium | Very large burnout recovery; reduced watch for the week |
 | Brief leadership | 1 | None | Trust boost; the CIO may assign a pet project |
+
+### 7.1 Operations
+
+Some deployed tools unlock an operation: a longer job with a payoff at the end. Boosts last four weeks, and running the operation again refreshes them rather than stacking. Boosts and eviction odds scale with the tool's condition, so a stale tool gives weaker results. An eviction roll can end running campaigns by the named attackers; seniors improve the odds. A brace halves the damage of the next incident from a matching attacker, then is used up.
+
+| Tool | Operation | Days | Payoff |
+| --- | --- | --- | --- |
+| Password manager | Sticky note sweep | 3 | Identity boost; 1 in 4 chance of scolding the CFO (trust dip) |
+| PAM | Rotate the keys | 5 | Evicts data thieves and insiders; Identity boost |
+| EDR | Compromise assessment | 6 | Evicts ransomware gangs and nation-states; Endpoint boost |
+| Training platform | Phishing simulation | 4 ($5K) | People boost; 1 in 3 chance a VP is upset (trust dip) |
+| Vulnerability scanner | Patch sprint | 5 | Perimeter and Endpoint boost; fatigue |
+| ASM | Forgotten server cleanup | 5 | Evicts hacktivists; Perimeter boost |
+| Runbooks | Tabletop exercise | 2 | Resilience boost; small trust boost |
+| Immutable backups | Backup recovery drill | 4 | Braces for ransomware; Resilience boost |
+| DR site | Failover test | 5 | Braces for every attacker; 1 in 4 chance the website blips (brand dip) |
+| Log collection | Log review | 3 | Weak eviction roll for insiders; Detection boost |
+| SIEM | Threat hunt | 6 | Eviction roll for every attacker |
+
+Posters, MFA, antivirus, allowlisting, the email gateway, the WAF, and MDR work on their own and have no operation.
 
 ## 8. Hidden security posture
 
@@ -210,9 +227,27 @@ Posture is hidden: no numbers or meters on screen, and the only grades are the p
 - **Resilience**: backups, tabletop exercises, IR retainer. Reduces the damage of a successful attack instead of preventing it.
 - **Detection**: SIEM, tuning, threat hunting, analyst skill. Controls how early you notice an attacker and how many false alarms you see.
 
-Every area also gets a bonus from analysts with conference expertise in it (section 5.3), which does not decay, and from deployed tools in proportion to their condition. Each tool loses 8 condition every Monday; its area's maintenance action restores it. A neglected SIEM also raises more false alarms.
+Posture is not stored. Each area's level is calculated from what the player controls, capped at 100:
 
-Posture slowly decays (new SaaS apps, new hires, configuration drift), so it has to be maintained, not just bought. The player gets fuzzy hints: the board briefing reaction, result cards that say an area improved or weakened, and the pen test report card. The report card is a snapshot from the day of the pen test.
+- Deployed tools, each adding its boost times its condition / 100.
+- Analysts specialized in the area: 15 for a junior, 25 for a senior. Hiring specialists is a future feature.
+- Analysts with conference expertise in the area (section 5.3): 10 each.
+- Operation boosts still in effect (section 7.1).
+
+Every area is 0 on day 1, so the opening purchases set the starting posture. There is no other decay: each tool loses 8 condition every Monday, and its area's maintenance action restores it. Events can wear tools down further (section 10). A neglected SIEM also raises more false alarms.
+
+| Area | Cheap | Mid | Premium |
+| --- | --- | --- | --- |
+| Identity | Password manager 12 | MFA 30 | PAM 30, Detection 15 |
+| Endpoint | Antivirus 12 | Allowlisting 25 | EDR 30, Detection 15 |
+| People | Posters 10 | Email gateway 25 | Training platform 30 |
+| Perimeter | Vulnerability scanner 12, Endpoint 5 | WAF 30 | ASM 30, Detection 10 |
+| Resilience | Runbooks 10 | Backups 25 | DR site 35 |
+| Detection | Log collection 12 | SIEM 30 | MDR 35 |
+
+The pen test grades A/B/C/D/F at 80/60/40/20. With tools at about 88% condition, MFA plus a junior specialist grades a C, two tools plus a senior a B, and all three tools plus a senior an A in any area.
+
+The player gets fuzzy hints: the board briefing reaction, result cards that say an area improved or weakened, the defenses screen's list of what is helping each area, and the pen test report card. The report card is a snapshot from the day of the pen test.
 
 ## 9. The attacker
 
@@ -267,10 +302,10 @@ Non-attacker events that interrupt travel and force small decisions, good and ba
 
 - A senior analyst catches the flu (out 3 days).
 - A major cloud provider goes down for a day.
-- A zero-day drops for software you run (patch now or accept the risk).
+- A zero-day drops for software you run (patch now and freshen up Perimeter and Endpoint tools, or accept the risk and Perimeter tools take a beating).
 - A key vendor is breached (supply chain risk rises).
 - The CEO announces the IPO date on social media (threat level up).
-- The CIO wants to migrate the data center before the IPO (accept: posture dip; refuse: trust dip).
+- The CIO wants to migrate the data center before the IPO (accept: every tool wears down; refuse: trust dip).
 - Coffee machine breaks (no coffee until fixed).
 - Holiday week: fewer people around, attackers do not take holidays.
 - Board approves a budget top-up.
@@ -357,7 +392,9 @@ The game logic stays separate from input and rendering, deterministic for a give
 Balance targets, verified by simulated strategies across many seeds:
 - **Idle** (always Continue, ignore every alert): almost always loses before IPO day.
 - **Random**: reaches the IPO roughly a third of the time.
-- **Sensible scripted** (deploy tools, investigate alerts, rest when burned out): reaches the IPO most of the time.
+- **Sensible scripted** (deploy tools, investigate alerts, rest when burned out, run operations): reaches the IPO most of the time.
+- Sensible pen test grades stay above regression floors: Fintech near a C, Healthtech a D+, Gaming near a D, since it can only afford cheap tools. Real C floors wait for analyst specialists.
+- With tools at 88% condition, an area's grade follows the table in section 8, and a pricier tool never gives less.
 - Conference outcomes never reduce posture, every conference card occurs across seeds, and expertise leaves with the analyst who holds it.
 - Every ending is reachable, every incident type occurs, every landmark outcome occurs, and every IPO delay trigger occurs.
 - No single action or purchase dominates: a scripted strategy that skips any one of them can still win.
@@ -366,11 +403,12 @@ Balance targets, verified by simulated strategies across many seeds:
 
 **In**: everything above.
 
-**Out** (for now): saving mid-game, multiple difficulty levels beyond the company profile, analyst specializations beyond junior, senior, and conference expertise, mouse input, online scoreboards.
+**Out** (for now): saving mid-game, multiple difficulty levels beyond the company profile, choosing an analyst's specialty when hiring (specialties already count toward posture), mouse input, online scoreboards.
 
 ## 17. Decisions
 
-- Posture stays hidden. The pen test report card is the only time it is shown.
+- Posture stays hidden. The pen test report card is the only time it is shown, and on-screen hints use +, ++, and +++ instead of numbers.
+- Posture comes only from tools, analysts, and operations; there is no constant decay (issue #19).
 - The IPO can be delayed (section 5.2).
 - All three company profiles are kept.
 - The Security Conference is a minigame: choose attendees and tracks, get humorous outcome cards that only improve posture or reduce burnout (section 5.3).

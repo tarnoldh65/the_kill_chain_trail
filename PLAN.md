@@ -332,15 +332,16 @@ Tasks:
 - The Actions screen gets LEFT/RIGHT tabs, one per kind: Recovery, Implementation, Maintenance, Operations, Management. Empty tabs are dimmed and skipped. The menu opens on the first tab with actions, so Recovery comes first after an incident. When a tool is not fresh, the action's description says the results will be weaker.
 - The IMPROVES strip in Procurement and on the Actions screen shows relative benefit without numbers: + for small (under 15), ++ for medium (15-29), +++ for large (30 and up), under each area it improves.
 - The defenses screen lists active operation boosts with days left, and braces under Resilience.
-- The Sensible strategy runs operations in rotation. Retune attacker advance and give-up odds, landmark posture odds, and operation sizes until the Phase 20 targets hold.
+- The Sensible strategy runs operations in rotation and pushes harder in the four weeks before the pen test. Operation boosts rise by 5 (Identity, Endpoint, Perimeter, Resilience, and Detection boosts become 15; the phishing simulation 25; the patch sprint 20 Perimeter and 15 Endpoint). The Phase 20 targets still hold, so attacker and landmark odds are unchanged.
+- Sensible pen test grades are locked in as regression floors rather than a C everywhere: Gaming can afford only cheap tools, and real C floors wait for a hiring feature that adds specialists.
 - Update REDESIGN.md (sections 7, 8, 10, 15, 17), the manual, README, and PLAYTEST.md.
 
 Success criteria:
-- [ ] LEFT/RIGHT change tabs and skip empty ones, the menu opens on Recovery when a condition is active, and ENTER starts the action under the cursor (unit tested).
-- [ ] Benefit strength maps to +, ++, and +++ at the documented thresholds (unit tested).
-- [ ] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile (unit tested).
-- [ ] Every ending is still reachable, and Sensible skipping any one purchase or action, including all operations, still wins some games (unit tested).
-- [ ] Sensible averages at least a C on the pen test (unit tested).
+- [x] LEFT/RIGHT change tabs and skip empty ones, the menu opens on Recovery when a condition is active, and ENTER starts the action under the cursor (unit tested).
+- [x] Benefit strength maps to +, ++, and +++ at the documented thresholds (unit tested).
+- [x] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile (unit tested).
+- [x] Every ending is still reachable, and Sensible skipping any one purchase or action, including all operations, still wins some games (unit tested).
+- [x] Sensible pen test grade points average at least 1.9 for Fintech, 1.3 for Healthtech, and 0.7 for Gaming, where A is 4 and F is 0 (unit tested).
 - [ ] In a playtest, a maintained build earns Bs or As on the pen test, and no Actions tab overflows.
 
 ## Current status

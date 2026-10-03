@@ -52,7 +52,7 @@ pub const OPERATIONS: [Operation; 11] = [
         label: "Sticky note sweep",
         description: "Scold everyone with a password on their monitor. Helps Identity a while.",
         days: 3,
-        boosts: &[(Area::Identity, 10)],
+        boosts: &[(Area::Identity, 15)],
         mishap: Some((
             250,
             Effect {
@@ -74,7 +74,7 @@ pub const OPERATIONS: [Operation; 11] = [
         label: "Rotate the keys",
         description: "Reset every admin credential. May evict data thieves and insiders.",
         days: 5,
-        boosts: &[(Area::Identity, 10)],
+        boosts: &[(Area::Identity, 15)],
         evicts: &[Actor::DataThief, Actor::Insider],
         odds: 50,
         results: [
@@ -90,7 +90,7 @@ pub const OPERATIONS: [Operation; 11] = [
         label: "Compromise assessment",
         description: "Sweep every laptop for implants. May evict ransomware gangs and APTs.",
         days: 6,
-        boosts: &[(Area::Endpoint, 10)],
+        boosts: &[(Area::Endpoint, 15)],
         evicts: &[Actor::Ransomware, Actor::Apt],
         odds: 50,
         results: [
@@ -107,7 +107,7 @@ pub const OPERATIONS: [Operation; 11] = [
         description: "Test everyone with a fake phish. Helps People a while. Executives hate it.",
         days: 4,
         cost: 5_000,
-        boosts: &[(Area::People, 20)],
+        boosts: &[(Area::People, 25)],
         mishap: Some((
             333,
             Effect {
@@ -129,7 +129,7 @@ pub const OPERATIONS: [Operation; 11] = [
         label: "Patch sprint",
         description: "Patch what the scanner found. Helps Endpoint and Perimeter a while. Tiring.",
         days: 5,
-        boosts: &[(Area::Perimeter, 15), (Area::Endpoint, 10)],
+        boosts: &[(Area::Perimeter, 20), (Area::Endpoint, 15)],
         effect: Effect {
             burnout: 8,
             ..NOTHING
@@ -147,7 +147,7 @@ pub const OPERATIONS: [Operation; 11] = [
         label: "Forgotten server cleanup",
         description: "Take down what nobody remembers building. May evict hacktivists.",
         days: 5,
-        boosts: &[(Area::Perimeter, 10)],
+        boosts: &[(Area::Perimeter, 15)],
         evicts: &[Actor::Hacktivists],
         odds: 50,
         results: [
@@ -163,7 +163,7 @@ pub const OPERATIONS: [Operation; 11] = [
         label: "Tabletop exercise",
         description: "Walk leadership through the worst day. Helps Resilience a while.",
         days: 2,
-        boosts: &[(Area::Resilience, 10)],
+        boosts: &[(Area::Resilience, 15)],
         effect: Effect {
             trust: 2,
             ..NOTHING
@@ -181,7 +181,7 @@ pub const OPERATIONS: [Operation; 11] = [
         label: "Backup recovery drill",
         description: "Actually restore something. Softens the next ransomware attack.",
         days: 4,
-        boosts: &[(Area::Resilience, 10)],
+        boosts: &[(Area::Resilience, 15)],
         braces: &[Actor::Ransomware],
         results: [
             "The recovery drill worked. Everything came back, eventually.",
@@ -217,7 +217,7 @@ pub const OPERATIONS: [Operation; 11] = [
         label: "Log review",
         description: "Someone finally reads the logs. Helps Detection a while. May spot an insider.",
         days: 3,
-        boosts: &[(Area::Detection, 10)],
+        boosts: &[(Area::Detection, 15)],
         evicts: &[Actor::Insider],
         odds: 25,
         results: [

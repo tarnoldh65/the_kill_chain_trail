@@ -526,6 +526,16 @@ pub enum Kind {
     Management,
 }
 
+impl Kind {
+    pub const ALL: [Kind; 5] = [
+        Self::Recovery,
+        Self::Implementation,
+        Self::Maintenance,
+        Self::Operations,
+        Self::Management,
+    ];
+}
+
 impl fmt::Display for Kind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match self {
@@ -537,16 +547,6 @@ impl fmt::Display for Kind {
         })
     }
 }
-
-/// Each area on its own, for naming the area a maintenance action restores.
-const AREA_TAGS: [(Area, i32); 6] = [
-    (Area::Identity, 0),
-    (Area::Endpoint, 0),
-    (Area::People, 0),
-    (Area::Perimeter, 0),
-    (Area::Resilience, 0),
-    (Area::Detection, 0),
-];
 
 /// A deployed tool and how well maintained it is, from 0 to 100.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -641,17 +641,6 @@ impl Action {
             Self::Maintain(_) => Kind::Maintenance,
             Self::Operate(_) => Kind::Operations,
             Self::DayOff | Self::Offsite | Self::BriefLeadership => Kind::Management,
-        }
-    }
-
-    /// The areas an action helps, for the IMPROVES strip: a tool's boosts, the area a
-    /// maintenance action restores, or an operation's boosts.
-    pub fn improves(self) -> &'static [(Area, i32)] {
-        match self {
-            Self::Deploy(item) => item.boosts(),
-            Self::Maintain(area) => std::slice::from_ref(&AREA_TAGS[area as usize]),
-            Self::Operate(item) => item.operation().unwrap().boosts,
-            _ => &[],
         }
     }
 
@@ -827,6 +816,16 @@ impl fmt::Display for Tempo {
             Self::Steady => "Steady",
             Self::Crunch => "Crunch",
         })
+    }
+}
+
+/// How big a benefit reads on screen, since posture numbers are never shown.
+pub fn strength(amount: i32) -> &'static str {
+    match amount {
+        30.. => "+++",
+        15.. => "++",
+        1.. => "+",
+        _ => "",
     }
 }
 
@@ -2259,8 +2258,33 @@ impl GameState {
         self.raise(None);
     }
 
-    /// What is helping an area: deployed tools, tools still waiting to be deployed, and
-    /// analysts with expertise in it.
+    /// What an action adds to each area, for the IMPROVES strip: a tool's boosts, what a
+    /// maintenance action restores at full strength, or an operation's boosts.
+    pub fn improves(&self, action: Action) -> Vec<(Area, i32)> {
+        match action {
+            Action::Deploy(item) => item.boosts().to_vec(),
+            Action::Maintain(area) => self
+                .deployed
+                .iter()
+                .filter(|t| t.item.category() == Some(area))
+                .flat_map(|t| t.item.boosts().iter().copied())
+                .collect(),
+            Action::Operate(item) => item.operation().unwrap().boosts.to_vec(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// A deployed tool that is no longer fresh, so its operation runs weaker.
+    pub fn worn(&self, item: Item) -> Option<Tool> {
+        self.deployed
+            .iter()
+            .find(|t| t.item == item && t.state() != "fresh")
+            .copied()
+    }
+
+    /// What is helping an area: deployed tools, tools still waiting to be deployed,
+    /// analysts specialized or with expertise in it, operation boosts, and, for
+    /// Resilience, braces.
     pub fn defenders(&self, area: Area) -> Vec<String> {
         let tools = self
             .owned
@@ -2282,7 +2306,27 @@ impl GameState {
             .iter()
             .filter(|m| m.expertise == Some(area))
             .map(|m| format!("{}'s expertise", m.name));
-        tools.chain(specialists).chain(experts).collect()
+        let boosts = self.boosts.iter().filter(|b| b.area == area).map(|b| {
+            format!(
+                "{} ({} days)",
+                b.item.operation().unwrap().label,
+                b.until - self.day
+            )
+        });
+        let braced: Vec<String> = self.braced.iter().map(|a| a.to_string()).collect();
+        let braces = (area == Area::Resilience && !braced.is_empty()).then(|| {
+            if braced.len() == Actor::ALL.len() {
+                "Braced for every attacker".to_string()
+            } else {
+                format!("Braced for {}", braced.join(", "))
+            }
+        });
+        tools
+            .chain(specialists)
+            .chain(experts)
+            .chain(boosts)
+            .chain(braces)
+            .collect()
     }
 
     /// What really happened, shown only once the game is over.
@@ -3193,20 +3237,20 @@ mod tests {
         let start = game.clone();
         run(&mut game, PATCH);
         assert_eq!(game.day, start.day + 5);
-        assert_eq!(game.level(Area::Perimeter), 12 + 15);
-        assert_eq!(game.level(Area::Endpoint), 5 + 10);
+        assert_eq!(game.level(Area::Perimeter), 12 + 20);
+        assert_eq!(game.level(Area::Endpoint), 5 + 15);
         assert!(game.team[0].burnout > start.team[0].burnout + 4, "tiring");
 
         let mut game = start.clone();
         run(&mut game, PHISH);
         assert_eq!(game.day, start.day + 4);
         assert_eq!(game.budget, start.budget - 5_000);
-        assert_eq!(game.level(Area::People), 30 + 20);
+        assert_eq!(game.level(Area::People), 30 + 25);
 
         let mut game = start.clone();
         run(&mut game, TABLETOP);
         assert_eq!(game.day, start.day + 2);
-        assert_eq!(game.level(Area::Resilience), 10 + 10);
+        assert_eq!(game.level(Area::Resilience), 10 + 15);
         assert_eq!(game.trust, 62);
 
         let mut game = start.clone();
@@ -5079,6 +5123,51 @@ mod tests {
         assert_eq!(game.defenders(Area::Detection), ["EDR (aging)"]);
         game.deployed[0].condition = 30;
         assert_eq!(game.defenders(Area::Detection), ["EDR (stale)"]);
+    }
+
+    #[test]
+    fn defenders_list_operation_boosts_and_braces() {
+        let mut game = equipped();
+        game.operate(Item::VulnScanner);
+        game.day += 3;
+        assert_eq!(game.defenders(Area::Perimeter), ["Patch sprint (25 days)"]);
+
+        game.operate(Item::Backups);
+        assert!(
+            game.defenders(Area::Resilience)
+                .ends_with(&["Braced for Ransomware gang".to_string()])
+        );
+        game.operate(Item::DrSite);
+        assert!(
+            game.defenders(Area::Resilience)
+                .ends_with(&["Braced for every attacker".to_string()])
+        );
+    }
+
+    #[test]
+    fn benefits_read_as_plus_signs() {
+        let signs = [0, 1, 14, 15, 29, 30, 45].map(strength);
+        assert_eq!(signs, ["", "+", "+", "++", "++", "+++", "+++"]);
+        let own = |item: Item| strength(item.boosts()[0].1);
+        assert_eq!(own(Item::Posters), "+");
+        assert_eq!(own(Item::EmailGateway), "++");
+        assert_eq!(own(Item::MfaTokens), "+++");
+    }
+
+    #[test]
+    fn maintenance_shows_what_its_tools_are_worth() {
+        let mut game = game();
+        game.deployed = vec![Tool::new(Item::VulnScanner), Tool::new(Item::Waf)];
+
+        assert_eq!(
+            game.improves(Action::Maintain(Area::Perimeter)),
+            [
+                (Area::Perimeter, 12),
+                (Area::Endpoint, 5),
+                (Area::Perimeter, 30)
+            ]
+        );
+        assert_eq!(game.improves(Action::DayOff), []);
     }
 
     #[test]

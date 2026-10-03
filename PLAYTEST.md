@@ -23,7 +23,10 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [ ] The board releases funding every sixth Monday, scaled by trust, with a result card; SOC Status shows the next funding day.
 - [ ] The last eight weeks still offer a meaningful choice every week.
 - [x] D opens the defenses screen from any play screen: each defense shows who it slows, what is helping it (amber for tools not yet deployed), and the pen test grade, which stays after the pen test.
-- [x] Procurement and the action list light up the defenses the selected item or action improves.
+- [ ] Procurement and the action list light up the defenses the selected item or action improves, with +, ++, or +++ under each.
+- [ ] The action list has a tab per kind; LEFT/RIGHT skip empty tabs, it opens on Recovery after an incident, and no tab runs past the divider.
+- [ ] Deploying a tool with an operation adds it to the Operations tab; finishing it shows its boost on the defenses screen with days left, and the log says when it wears off.
+- [ ] A maintained mid-range build earns Bs or better on the pen test.
 - [x] L opens the full log on its newest page from any play screen; LEFT/RIGHT turn pages back to the first entry, and ENTER returns where you were.
 - [x] Every landmark stops the clock on its day: forts offer Procurement, rest, and moving on; rivers offer their choices; the pen test shows letter grades.
 - [x] The conference picker, track picker, three days away, and card reveal all work, and perks apply through Procurement.

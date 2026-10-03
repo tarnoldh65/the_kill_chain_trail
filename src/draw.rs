@@ -5,8 +5,8 @@ use crate::art::{self, Sprite};
 use crate::audio::TRACKS;
 use crate::conference::Track;
 use crate::game::{
-    Area, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Outcome, Profile, Reply, Role,
-    SECOND_THOUGHTS, TeamMember, money,
+    Action, Area, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Kind, Outcome,
+    Profile, Reply, Role, SECOND_THOUGHTS, TeamMember, money, strength,
 };
 use crate::landmarks::Landmark;
 use crate::scores::Score;
@@ -465,28 +465,31 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
         1.0,
         DIM,
     );
-    // Actions under a header for each kind; the cursor only lands on actions and Back.
-    let actions = game.actions();
-    let mut y = 102.0;
+    // One tab per kind: the open one amber, the others lit if they have actions.
+    let all = game.actions();
+    let mut x = MARGIN;
+    for kind in Kind::ALL {
+        let name = kind.to_string().to_uppercase();
+        let color = if kind == menu.tab {
+            AMBER
+        } else if all.iter().any(|a| a.kind() == kind) {
+            INK
+        } else {
+            DIM
+        };
+        font.text(&name, x, 118.0, 1.0, color);
+        x += (name.len() + 2) as f32 * GLYPH;
+    }
     let mut rows = Vec::new();
-    for (i, action) in actions.iter().enumerate() {
-        if i == 0 || actions[i - 1].kind() != action.kind() {
-            y += 16.0;
-            font.text(
-                &action.kind().to_string().to_uppercase(),
-                MARGIN,
-                y,
-                1.0,
-                CYAN,
-            );
-        }
+    let mut y = 126.0;
+    for action in menu.listed() {
         y += 12.0;
         let cost = match action.cost() {
             0 => "-".to_string(),
             cost => money(cost),
         };
         font.text(
-            &format!("{:<38}{:<8}{cost}", action.label(), game.duration(*action)),
+            &format!("{:<38}{:<8}{cost}", action.label(), game.duration(action)),
             MARGIN + 24.0,
             y,
             1.0,
@@ -499,13 +502,27 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
     rows.push(y);
     font.text(">", MARGIN + 8.0, rows[menu.cursor], 1.0, AMBER);
     divider(384.0);
-    let note = menu
-        .action()
-        .map_or("Return to the day menu.", |a| a.description());
+    let action = menu.action();
+    let note = action.map_or("Return to the day menu.", |a| a.description());
     font.text(note, MARGIN, 396.0, 1.0, CYAN);
-    improves_strip(font, menu.action().map_or(&[], |a| a.improves()), 424.0);
+    if let Some(Action::Operate(item)) = action
+        && let Some(tool) = game.worn(item)
+    {
+        font.text(
+            &format!("The {} is {}: weaker results.", item.label(), tool.state()),
+            MARGIN,
+            408.0,
+            1.0,
+            AMBER,
+        );
+    }
+    improves_strip(
+        font,
+        &action.map_or(Vec::new(), |a| game.improves(a)),
+        424.0,
+    );
     font.text(
-        "UP/DOWN to choose, T for tempo, ENTER to start. Days pass while you work.",
+        "LEFT/RIGHT for tabs, UP/DOWN to choose, T for tempo, ENTER to start.",
         MARGIN,
         460.0,
         1.0,
@@ -513,14 +530,21 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
     );
 }
 
-/// The six defense areas in a row, with the ones `improved` lit up.
+/// The six defense areas in a row, with the ones `improved` lit up and plus signs under
+/// each for how much it helps.
 fn improves_strip(font: &Font, improved: &[(Area, i32)], y: f32) {
     font.text("IMPROVES", MARGIN, y, 1.0, CYAN);
     let mut x = MARGIN + 80.0;
     for area in Area::ALL {
-        let lit = improved.iter().any(|&(a, _)| a == area);
+        let amount: i32 = improved
+            .iter()
+            .filter(|&&(a, _)| a == area)
+            .map(|&(_, b)| b)
+            .sum();
         let name = area.to_string();
-        font.text(&name, x, y, 1.0, if lit { GREEN } else { DIM });
+        let color = if amount > 0 { GREEN } else { DIM };
+        font.text(&name, x, y, 1.0, color);
+        font.text(strength(amount), x, y + 10.0, 1.0, GREEN);
         x += (name.len() + 2) as f32 * GLYPH;
     }
 }
@@ -582,7 +606,7 @@ fn defenses(font: &Font, game: &GameState) {
         } else {
             helping.join(", ")
         };
-        for (j, line) in wrap(&format!("Tools: {helping}"), 70)
+        for (j, line) in wrap(&format!("Helping: {helping}"), 70)
             .iter()
             .take(2)
             .enumerate()

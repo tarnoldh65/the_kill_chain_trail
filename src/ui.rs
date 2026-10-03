@@ -1,6 +1,6 @@
 use crate::audio::TRACKS;
 use crate::conference::Track;
-use crate::game::{Action, Area, Entry, GameState, Item, Outcome, Profile, Reply};
+use crate::game::{Action, Area, Entry, GameState, Item, Kind, Outcome, Profile, Reply};
 use crate::street::{Hop, Street};
 
 const NAME_LIMIT: usize = 20;
@@ -245,13 +245,47 @@ impl Shop {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionMenu {
     pub game: GameState,
+    /// The kind of action listed, one tab per kind.
+    pub tab: Kind,
     pub cursor: usize,
 }
 
 impl ActionMenu {
+    /// Opens on the first tab with something to do, so recovery comes first.
+    fn new(game: GameState) -> Self {
+        let tab = game.actions()[0].kind();
+        Self {
+            game,
+            tab,
+            cursor: 0,
+        }
+    }
+
+    /// The actions on the open tab.
+    pub fn listed(&self) -> Vec<Action> {
+        self.game
+            .actions()
+            .into_iter()
+            .filter(|a| a.kind() == self.tab)
+            .collect()
+    }
+
     /// The action under the cursor, or `None` on the way back.
     pub fn action(&self) -> Option<Action> {
-        self.game.actions().get(self.cursor).copied()
+        self.listed().get(self.cursor).copied()
+    }
+
+    /// Moves to the nearest tab with actions to the left or right, if there is one.
+    fn turn(&mut self, hop: Hop) {
+        let kinds: Vec<Kind> = self.game.actions().iter().map(|a| a.kind()).collect();
+        let next = match hop {
+            Hop::Left => kinds.iter().rev().find(|&&k| k < self.tab),
+            _ => kinds.iter().find(|&&k| k > self.tab),
+        };
+        if let Some(&kind) = next {
+            self.tab = kind;
+            self.cursor = 0;
+        }
     }
 }
 
@@ -529,7 +563,7 @@ impl Screen {
                 elapsed_ms: 0,
             }),
             (Self::Play(game), Input::Char('2')) if !game.actions().is_empty() => {
-                Self::Actions(ActionMenu { game, cursor: 0 })
+                Self::Actions(ActionMenu::new(game))
             }
             (Self::Play(game), Input::Char('3')) => Self::Team {
                 game,
@@ -549,7 +583,11 @@ impl Screen {
                 Self::Actions(menu)
             }
             (Self::Actions(mut menu), Input::Arrow(Hop::Down)) => {
-                menu.cursor = (menu.cursor + 1).min(menu.game.actions().len());
+                menu.cursor = (menu.cursor + 1).min(menu.listed().len());
+                Self::Actions(menu)
+            }
+            (Self::Actions(mut menu), Input::Arrow(hop @ (Hop::Left | Hop::Right))) => {
+                menu.turn(hop);
                 Self::Actions(menu)
             }
             (Self::Actions(mut menu), Input::Enter) => match menu.action() {
@@ -762,6 +800,7 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::attack::Condition;
     use crate::game::{COFFEE_RUN_COST, IPO_DAY, Role, Tempo, Tool};
 
     fn type_text(mut screen: Screen, text: &str) -> Screen {
@@ -1050,12 +1089,14 @@ mod tests {
         }
     }
 
-    /// Opens the action menu and moves the cursor to `action`.
+    /// Opens the action menu, turns to `action`'s tab, and moves the cursor to it.
     fn choose(screen: Screen, action: Action) -> Screen {
-        let screen = screen.update(Input::Char('2'));
+        let mut screen = screen.update(Input::Char('2'));
+        while action_menu(&screen).tab != action.kind() {
+            screen = screen.update(Input::Arrow(Hop::Right));
+        }
         let index = action_menu(&screen)
-            .game
-            .actions()
+            .listed()
             .iter()
             .position(|a| *a == action)
             .unwrap();
@@ -1063,10 +1104,63 @@ mod tests {
     }
 
     #[test]
+    fn tabs_skip_kinds_with_nothing_to_do() {
+        let screen = new_game().update(Input::Char('2'));
+        assert_eq!(
+            action_menu(&screen).tab,
+            Kind::Operations,
+            "nothing to deploy or fix"
+        );
+
+        let screen = screen.update(Input::Arrow(Hop::Down));
+        let screen = screen.update(Input::Arrow(Hop::Right));
+        assert_eq!(action_menu(&screen).tab, Kind::Management);
+        assert_eq!(
+            action_menu(&screen).cursor,
+            0,
+            "a new tab starts at the top"
+        );
+        assert_eq!(action_menu(&screen).action(), Some(Action::DayOff));
+        let screen = screen.update(Input::Arrow(Hop::Right));
+        assert_eq!(action_menu(&screen).tab, Kind::Management, "the last tab");
+
+        let screen = arrows(screen, Hop::Left, 3);
+        assert_eq!(
+            action_menu(&screen).tab,
+            Kind::Operations,
+            "empty tabs skipped"
+        );
+    }
+
+    #[test]
+    fn the_action_menu_opens_on_recovery_after_an_incident() {
+        let screen = with_game(new_game(), |game| {
+            game.conditions.push(Condition::Downtime);
+        });
+        let screen = screen.update(Input::Char('2'));
+
+        assert_eq!(action_menu(&screen).tab, Kind::Recovery);
+        assert_eq!(
+            action_menu(&screen).action(),
+            Some(Action::Clear(Condition::Downtime))
+        );
+    }
+
+    #[test]
+    fn enter_starts_the_action_under_the_cursor_on_its_tab() {
+        let screen = choose(new_game(), Action::BriefLeadership).update(Input::Enter);
+
+        assert_eq!(
+            game(&screen).task.as_ref().unwrap().action,
+            Action::BriefLeadership
+        );
+    }
+
+    #[test]
     fn two_lists_actions_and_back_returns_to_the_day_menu() {
         let start = new_game();
         let screen = start.clone().update(Input::Char('2'));
-        let count = action_menu(&screen).game.actions().len();
+        let count = action_menu(&screen).listed().len();
         assert_eq!(action_menu(&screen).action(), Some(PATCH));
 
         let screen = arrows(screen, Hop::Down, count + 3);

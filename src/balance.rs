@@ -375,7 +375,10 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
         .or_else(|| first(|a| matches!(a, Action::Deploy(_))))
         .or_else(|| first(|a| matches!(a, Action::Maintain(_))))
         .or_else(|| {
-            if tired >= 35 {
+            // Push harder in the four weeks before the pen test, so its boosts are fresh.
+            let pen_test = game.landmark_days[Landmark::PenTest as usize];
+            let cramming = game.day + 28 >= pen_test && game.day < pen_test;
+            if tired >= if cramming { 60 } else { 35 } {
                 return None;
             }
             let rotation: Vec<Action> = actions
@@ -487,5 +490,24 @@ fn no_single_action_or_purchase_is_required_to_win() {
                 play(profile, seed, Style::Sensible(Some(skip))).outcome == Some(Outcome::Ipo)
             });
         assert!(wins, "skipping {skip:?} never wins");
+    }
+}
+
+#[test]
+fn sensible_play_earns_passable_pen_test_grades() {
+    // Average grade points over every area and seed, in hundredths: A is 400, F is 0.
+    // Gaming can only afford the cheap tools, so it stays near a D.
+    let floors = [
+        (Profile::Fintech, 190),
+        (Profile::Healthtech, 130),
+        (Profile::Gaming, 70),
+    ];
+    for (profile, floor) in floors {
+        let points: Vec<u32> = (0..SEEDS)
+            .filter_map(|seed| play(profile, seed, Style::Sensible(None)).pen_test)
+            .flat_map(|(_, grades)| grades.map(|(_, grade)| "FDCBA".find(grade).unwrap() as u32))
+            .collect();
+        let average = points.iter().sum::<u32>() * 100 / points.len() as u32;
+        assert!(average >= floor, "{profile}: {average}");
     }
 }
