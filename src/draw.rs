@@ -13,7 +13,7 @@ use crate::scores::Score;
 use crate::street::{self, Leg, Street};
 use crate::ui::{
     ActionMenu, CoffeeRun, LOG_LINE, LineKind, LogLine, Music, PAGE_HEIGHT, Screen, Shop, TABS,
-    WEEKDAYS, log_lines, log_pages, tab_items, tab_name, wrap,
+    WEEKDAYS, candidate, log_lines, log_pages, tab_items, tab_name, wrap,
 };
 
 pub const WIDTH: f32 = 640.0;
@@ -103,11 +103,7 @@ pub fn screen(screen: &Screen, font: &Font, music: Music, scores: &[Score]) {
             } else {
                 "junior"
             };
-            let prompt = if shop.game.hires_now() {
-                format!("Name your new {level} analyst:")
-            } else {
-                format!("Name the {level} analyst to look for:")
-            };
+            let prompt = format!("Name your new {level} analyst:");
             name_popup(font, &prompt, name);
         }
         Screen::Actions(menu) => action_menu(font, menu),
@@ -397,9 +393,23 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     divider(exit_y + 20.0);
 
     let note = match shop.item() {
-        Some(Item::Junior | Item::Senior) if !game.hires_now() => {
-            "Starts a week-long search. The recruiter's fee is paid now."
-        }
+        Some(item @ (Item::Junior | Item::Senior)) => &match candidate(game, item) {
+            Some((pool, i)) => {
+                let r = &game.pool(pool)[i];
+                let skills: Vec<String> = r.proficiencies.iter().map(|a| a.to_string()).collect();
+                let specialty = r
+                    .specialty
+                    .map_or(String::new(), |t| format!(", {} specialist", t.label()));
+                format!(
+                    "{}, {}: {}{specialty}, {}/wk",
+                    r.name,
+                    r.role.title(),
+                    skills.join(" "),
+                    money(r.salary)
+                )
+            }
+            None => "No candidates. Post job openings from the action list.".to_string(),
+        },
         Some(item) => item.description(),
         None if can_open => "Start day 1. Leftover budget pays the weekly payroll.",
         None => "Hire at least one analyst first.",
@@ -410,11 +420,6 @@ fn vendor_hall(font: &Font, shop: &Shop) {
         .team
         .iter()
         .map(|m| format!("{} ({})", m.name, short_role(m.role)))
-        .chain(
-            game.searches
-                .iter()
-                .map(|s| format!("{} (starts in {} days)", s.name, s.days_left)),
-        )
         .collect();
     let roster = format!("Analysts: {}", analysts.join(", "));
     for (i, line) in wrap(&roster, 76).iter().take(4).enumerate() {
@@ -1140,10 +1145,12 @@ fn status_panel(font: &Font, game: &GameState) {
     };
     font.text(&funding, value_x, row(6), 1.0, INK);
     font.text("Hiring", x, row(5), 1.0, INK);
-    let hiring = match game.searches.as_slice() {
-        [] => "-".to_string(),
-        [search] => format!("{}d {}", search.days_left, search.name),
-        searches => format!("{} searches", searches.len()),
+    let hiring = if game.search_days > 0 {
+        format!("{}d search", game.search_days)
+    } else if game.review_days > 0 {
+        format!("{}d to review", game.review_days)
+    } else {
+        "-".to_string()
     };
     font.text(
         &hiring.chars().take(15).collect::<String>(),

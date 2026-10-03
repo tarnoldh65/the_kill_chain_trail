@@ -8,6 +8,7 @@ use crate::game::{
     Action, FUNDING_INTERVAL, GameState, IR_FEE, Item, Outcome, Profile, Reply, Tempo,
 };
 use crate::landmarks::Landmark;
+use crate::ui::candidate;
 
 const SEEDS: u32 = 100;
 
@@ -96,11 +97,38 @@ fn affordable(game: &GameState, cost: i64, weekly: i64) -> bool {
     spare(game) - cost - weekly * paydays_left(game) > CUSHION
 }
 
+/// Hires the first candidate at `level` from any open slate; false if there is none.
+fn hire(game: &mut GameState, level: Item, name: &str) -> bool {
+    match candidate(game, level) {
+        Some((pool, i)) if game.can_hire() => {
+            game.review();
+            game.hire(pool, i, name);
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Whether the next candidate at `level` is allowed and their salary leaves the cushion.
+fn hireable(game: &GameState, style: Style, level: Item) -> bool {
+    may_buy(style, level)
+        && game.can_hire()
+        && candidate(game, level)
+            .is_some_and(|(pool, i)| affordable(game, 0, game.pool(pool)[i].salary))
+}
+
+/// Hires juniors from any open slate until the team has `size` analysts.
+fn staff_up(game: &mut GameState, style: Style, size: usize) {
+    while analysts(game).len() < size && hireable(game, style, Item::Junior) {
+        hire(game, Item::Junior, "Sensible");
+    }
+}
+
 fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
     match style {
         Style::Idle => {
             for _ in 0..3 {
-                game.hire(Item::Junior, "Idle");
+                hire(game, Item::Junior, "Idle");
             }
         }
         Style::Random => {
@@ -110,7 +138,7 @@ fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
                 } else {
                     Item::Junior
                 };
-                game.hire(level, "Random");
+                hire(game, level, "Random");
             }
             for item in &Item::ALL[2..] {
                 if rng.chance(40) && game.can_buy(*item) {
@@ -120,21 +148,17 @@ fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
         }
         Style::Sensible(_) => {
             // A team the budget and the board's funding can carry to the IPO.
-            let hireable = |g: &GameState, level: Item| {
-                may_buy(style, level) && affordable(g, level.price(), level.weekly())
-            };
-            if hireable(game, Item::Senior) {
-                game.hire(Item::Senior, "Sensible");
+            if hireable(game, style, Item::Senior) {
+                hire(game, Item::Senior, "Sensible");
             }
-            while analysts(game).len() < 4 && hireable(game, Item::Junior) {
-                game.hire(Item::Junior, "Sensible");
-            }
+            staff_up(game, style, 4);
             if analysts(game).is_empty() {
-                game.hire(Item::Senior, "Sensible");
+                hire(game, Item::Senior, "Sensible");
             }
             shop(game, style);
         }
     }
+    game.leave_procurement();
 }
 
 /// Buys what a sensible player wants while keeping enough for payroll.
@@ -271,13 +295,9 @@ fn landmark(game: &mut GameState, style: Style, rng: &mut Rng, at: Landmark, att
     if at.is_fort() {
         if let Style::Sensible(_) = style {
             game.rest_at_fort();
-            while analysts(game).len() < 4
-                && may_buy(style, Item::Junior)
-                && affordable(game, game.price(Item::Junior), Item::Junior.weekly())
-            {
-                game.hire(Item::Junior, "Sensible");
-            }
+            staff_up(game, style, 4);
             shop(game, style);
+            game.leave_procurement();
         }
         game.leave_fort();
         return;
@@ -317,9 +337,12 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
             let item = Item::ALL[rng.below(Item::ALL.len())];
             if rng.chance(3) && game.can_buy(item) {
                 match item {
-                    Item::Junior | Item::Senior => game.hire(item, "Random"),
+                    Item::Junior | Item::Senior => {
+                        hire(game, item, "Random");
+                    }
                     _ => game.buy(item),
                 }
+                game.leave_procurement();
             }
         }
         Style::Sensible(_) => {
@@ -336,14 +359,10 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
             // A weekly trip to Procurement for anything missing, and a new hire if short.
             if game.weekday() == 0 {
                 shop(game, style);
-                let short = analysts(game).len() + game.searches.len() < 3;
-                if short
-                    && may_buy(style, Item::Junior)
-                    && game.can_buy(Item::Junior)
-                    && affordable(game, game.price(Item::Junior), Item::Junior.weekly())
-                {
-                    game.hire(Item::Junior, "Sensible");
+                if analysts(game).len() < 3 {
+                    staff_up(game, style, 3);
                 }
+                game.leave_procurement();
             }
             if let Some(action) = sensible_action(game, style, tired) {
                 game.start(action);
@@ -363,6 +382,12 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
 
     first(|a| matches!(a, Action::Clear(_)))
         .or_else(|| (tired >= 55).then(|| offered(Action::DayOff)).flatten())
+        // Short-handed with nobody to hire: look for candidates.
+        .or_else(|| {
+            (game.team.len() < 3 && game.slate.is_empty())
+                .then(|| offered(Action::PostJobs))
+                .flatten()
+        })
         // Trust pays for itself now that the board funds by it.
         .or_else(|| {
             (game.trust < 50)

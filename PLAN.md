@@ -344,6 +344,55 @@ Success criteria:
 - [x] Sensible pen test grade points average at least 1.9 for Fintech, 1.3 for Healthtech, and 0.7 for Gaming, where A is 4 and F is 0 (unit tested).
 - [ ] In a playtest, a maintained build earns Bs or As on the pen test, and no Actions tab overflows.
 
+## Phase 28: Resumes and candidate searches
+
+Issue #20. Analysts become choices: each candidate has a resume with proficiencies, an optional tool specialty, and a salary that reflects them. Hiring happens from a slate of resumes, and new slates come from a two-week candidate search.
+
+Tasks:
+- An analyst has a level, one or more proficiencies (defense areas), an optional tool specialty, and a salary. This replaces the Phase 25 single specialty area.
+  - Each proficiency adds the level's full skill to its area: 15 for a junior, 25 for a senior.
+  - A tool specialty halves the days (rounded up, at least 1) of every action tied to that tool: deploying it, maintaining its area while it is deployed, and its operation. A second specialist in the same tool adds nothing.
+  - Salary is $4K a week for a junior and $8K for a senior, plus $1K for each proficiency after the first and $1K for a specialty.
+- Resumes show the title (Security Analyst or Senior Security Analyst), proficiencies, tool specialty, salary, and a generated name, which is prefilled when hiring and can be changed.
+  - Juniors have 1-2 proficiencies and sometimes a specialty; seniors have 1-3 and more often a specialty. A specialty is always a tool in one of their proficiency areas.
+  - Resumes are generated from the game's seed, so a seed always offers the same candidates.
+- A slate holds 5 senior and 5 junior resumes. Hiring from it is instant and has no fee; the hired resume leaves the slate. Hiring windows are short, and candidates who are not picked find other jobs:
+  - Day 1 starts with a slate, which clears when the first Procurement opens for business.
+  - A new Management action, Post job openings, costs $10K and takes a day; the search then runs in the background, and the resumes arrive 14 days after posting. Only one search runs at a time. When it ends, a result card says the candidates are in, and Procurement offers Review resumes for 7 days, with the countdown on SOC STATUS.
+  - Once the resumes have been reviewed, leaving Procurement clears the slate. If they are not reviewed within the 7 days, a result card says the candidates all found other jobs.
+- Attending the security conference brings a separate job fair slate, available only at the conference fort and cleared on leaving it. It never touches a waiting slate or a running search.
+  - It is smaller but stronger: 2 seniors and 2 juniors, each with a tool specialty and one more proficiency than usual (juniors 2, seniors 2-3). Salaries follow the usual formula.
+  - The after-party card adds a bargain senior: a fifth job fair resume at the base salary, whatever its skills.
+- Paranoia blocks posting job openings and hiring, as it blocks hiring today. The eight-desk limit still applies.
+- Remove the recruiter's fee, week-long per-analyst searches, instant hiring rules, and the free-senior perk.
+
+Success criteria:
+- [x] Proficiencies add 15 or 25 per area by level, and leave with the analyst (unit tested).
+- [x] A specialist halves the days of deploying, maintaining, and operating their tool, and no other action (unit tested).
+- [x] Salaries follow the formula, and every resume's specialty is a tool in one of its proficiency areas (unit tested).
+- [x] Day 1 offers 5 senior and 5 junior resumes; hiring one is instant, free, and removes it from the slate; opening for business clears the rest (unit tested).
+- [x] Posting job openings costs $10K and brings 5 and 5 new resumes 14 days later with a result card; a second search cannot start while one runs (unit tested).
+- [x] A slate clears on leaving Procurement after review, or after 7 unreviewed days with a result card saying the candidates found other jobs (unit tested).
+- [x] The job fair offers 2 seniors and 2 juniors, all with a specialty and an extra proficiency, only at the conference fort, without touching a waiting slate or a running search; the after-party adds a senior at base salary (unit tested).
+- [x] Paranoia blocks posting and hiring, and the desk limit holds (unit tested).
+- [x] The same seed always offers the same resumes (unit tested).
+
+## Phase 29: Resume screens, balance, and docs
+
+Tasks:
+- While a slate is open, Procurement's Staff tab lists "Review senior resumes" and "Review junior resumes" with how many are waiting, and at the conference fort a "Job fair candidates" row. ENTER opens the resume viewer for that row. With no slate, the tab says when the next resumes arrive, or to post job openings.
+- The resume viewer shows one resume as a card. LEFT/RIGHT cycle through that row's resumes, ENTER hires (opening the name popup with the suggested name), and B goes back. Once every resume at a level is hired, its row says so.
+- The team screen shows the selected analyst's proficiencies and specialty below the roster. SOC STATUS shows days left in a running search, then days left to review resumes.
+- The Sensible strategy hires from the slate, preferring candidates whose proficiencies cover its weakest areas, and posts job openings when it is short-handed. Re-measure the pen test grades and raise the floors to match.
+- Update REDESIGN.md (setup, people, and posture sections), the manual, README, and PLAYTEST.md.
+
+Success criteria:
+- [ ] The Staff tab opens the resume viewer for each level; LEFT/RIGHT cycle, ENTER hires with the suggested name, and B returns to Procurement (unit tested).
+- [ ] With no slate open, nothing can be hired, and the Staff tab says how to get more candidates (unit tested).
+- [ ] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile, and every ending is still reachable (unit tested).
+- [ ] Sensible pen test grade floors are re-measured and raised (unit tested).
+- [ ] In a playtest, the resume viewer is readable at 640x480, and hiring, posting job openings, and the conference slate all work.
+
 ## Current status
 
 - [x] MVP (Phases 1-11)
@@ -363,3 +412,5 @@ Success criteria:
 - [x] Phase 25: Posture from tools and analysts
 - [x] Phase 26: Tool operations
 - [ ] Phase 27: Actions screen, balance, and docs
+- [x] Phase 28: Resumes and candidate searches
+- [ ] Phase 29: Resume screens, balance, and docs
