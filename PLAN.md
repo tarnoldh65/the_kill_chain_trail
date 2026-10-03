@@ -319,12 +319,12 @@ Tasks:
 - A brace halves the damage of the next incident from a matching attacker, then is used up.
 
 Success criteria:
-- [ ] Each operation is offered only while its tool is deployed (unit tested).
-- [ ] A finished operation applies exactly its boosts, scaled by the tool's condition (unit tested).
-- [ ] Boosts expire after four weeks, and a re-run refreshes instead of stacking (unit tested).
-- [ ] A brace halves one matching incident's damage and is then gone (unit tested).
-- [ ] Targeted evictions only end campaigns by their attackers (unit tested).
-- [ ] Every operation has three distinct result messages (unit tested).
+- [x] Each operation is offered only while its tool is deployed (unit tested).
+- [x] A finished operation applies exactly its boosts, scaled by the tool's condition (unit tested).
+- [x] Boosts expire after four weeks, and a re-run refreshes instead of stacking (unit tested).
+- [x] A brace halves one matching incident's damage and is then gone (unit tested).
+- [x] Targeted evictions only end campaigns by their attackers (unit tested).
+- [x] Every operation has three distinct result messages (unit tested).
 
 ## Phase 27: Actions screen, balance, and docs
 
@@ -360,5 +360,5 @@ Success criteria:
 - [x] Phase 23: Quarterly board funding
 - [ ] Phase 24: Rebalance and release
 - [x] Phase 25: Posture from tools and analysts
-- [ ] Phase 26: Tool operations
+- [x] Phase 26: Tool operations
 - [ ] Phase 27: Actions screen, balance, and docs

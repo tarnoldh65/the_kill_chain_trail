@@ -366,7 +366,10 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
         // Trust pays for itself now that the board funds by it.
         .or_else(|| {
             (game.trust < 50)
-                .then(|| offered(Action::BriefLeadership).or_else(|| offered(Action::Tabletop)))
+                .then(|| {
+                    offered(Action::BriefLeadership)
+                        .or_else(|| offered(Action::Operate(Item::Runbooks)))
+                })
                 .flatten()
         })
         .or_else(|| first(|a| matches!(a, Action::Deploy(_))))
@@ -375,13 +378,12 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
             if tired >= 35 {
                 return None;
             }
-            let rotation = [
-                Action::ThreatHunt,
-                Action::PatchSprint,
-                Action::PhishingSim,
-                Action::Tabletop,
-                Action::BriefLeadership,
-            ];
+            let rotation: Vec<Action> = actions
+                .iter()
+                .copied()
+                .filter(|a| matches!(a, Action::Operate(_)))
+                .chain([Action::BriefLeadership])
+                .collect();
             // Each start is logged, so counting them walks the rotation.
             let started = game
                 .log
@@ -468,12 +470,10 @@ fn every_ending_happens_to_some_strategy() {
 fn no_single_action_or_purchase_is_required_to_win() {
     let skips = Item::ALL.map(Skip::Buy).into_iter().chain(
         [
-            Action::PhishingSim,
-            Action::PatchSprint,
-            Action::Tabletop,
+            // Skipping one operation skips them all.
+            Action::Operate(Item::Siem),
             Action::DayOff,
             Action::BriefLeadership,
-            Action::ThreatHunt,
             Action::Maintain(crate::game::Area::Detection),
             Action::Clear(crate::attack::Condition::SystemsDown),
         ]

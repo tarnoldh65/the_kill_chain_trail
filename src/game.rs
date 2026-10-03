@@ -4,6 +4,7 @@ use crate::attack::{Actor, Alert, Campaign, Condition, End, Response, Stage};
 use crate::conference::{CONFERENCE_DAYS, Card, LEAD_CARDS, TICKET, Track};
 use crate::events::{Choice, EVENTS, Effect, PET_PROJECT};
 use crate::landmarks::{Landmark, Odds};
+use crate::operations::{OPERATIONS, Operation};
 
 /// The day the IPO bell is scheduled to ring, 26 weeks after day 1.
 pub const IPO_DAY: u32 = 182;
@@ -54,6 +55,8 @@ const SENIOR_SALARY: i64 = 8_000;
 const TOOL_WEAR: i32 = 8;
 /// Condition below which a category's maintenance action is offered.
 const MAINTAIN_BELOW: i32 = 80;
+/// Days an operation's boost lasts.
+const BOOST_DAYS: u32 = 28;
 /// Days a search for a new analyst takes.
 const SEARCH_DAYS: u32 = 7;
 /// Most analysts the SOC has desks for.
@@ -497,6 +500,11 @@ impl Item {
         }
     }
 
+    /// The operation this tool unlocks once deployed, if any.
+    pub fn operation(self) -> Option<&'static Operation> {
+        OPERATIONS.iter().find(|o| o.tool == self)
+    }
+
     /// Analysts and coffee can be bought again; tools and services cannot.
     fn once(self) -> bool {
         !matches!(self, Self::Junior | Self::Senior | Self::Coffee)
@@ -570,13 +578,11 @@ impl Tool {
 pub enum Action {
     /// Rolls out an owned tool from Procurement.
     Deploy(Item),
-    PhishingSim,
-    PatchSprint,
-    Tabletop,
+    /// Runs the operation a deployed tool unlocks.
+    Operate(Item),
     DayOff,
     Offsite,
     BriefLeadership,
-    ThreatHunt,
     /// Restores every deployed tool in an area to full condition.
     Maintain(Area),
     /// Ends a lingering condition left by an incident.
@@ -588,13 +594,10 @@ impl Action {
         match self {
             Self::Deploy(Item::MfaTokens) => "Enforce MFA everywhere".to_string(),
             Self::Deploy(item) => format!("Deploy {}", item.label()),
-            Self::PhishingSim => "Run a phishing simulation".to_string(),
-            Self::PatchSprint => "Patch sprint".to_string(),
-            Self::Tabletop => "Tabletop exercise".to_string(),
+            Self::Operate(item) => item.operation().unwrap().label.to_string(),
             Self::DayOff => "Give everyone the day off".to_string(),
             Self::Offsite => "Team offsite".to_string(),
             Self::BriefLeadership => "Brief leadership".to_string(),
-            Self::ThreatHunt => "Threat hunt".to_string(),
             Self::Maintain(area) => match area {
                 Area::Identity => "Run an access review",
                 Area::Endpoint => "Update endpoint policies",
@@ -612,15 +615,10 @@ impl Action {
         match self {
             Self::Deploy(Item::MfaTokens) => "Big identity boost. Employees will complain.",
             Self::Deploy(_) => "Turns the tool on so it actually helps.",
-            Self::PhishingSim => "Freshens up the People tools. Executives hate it.",
-            Self::PatchSprint => "Freshens up the endpoint and perimeter tools. Tiring.",
-            Self::Tabletop => "Freshens up the Resilience tools. Leadership likes it.",
+            Self::Operate(item) => item.operation().unwrap().description,
             Self::DayOff => "Everyone recovers. Nobody is watching for a day.",
             Self::Offsite => "A week of trust falls. Large burnout recovery.",
             Self::BriefLeadership => "Tell the board what the SOC is doing.",
-            Self::ThreatHunt => {
-                "Look for attackers already inside. Better with seniors and a SIEM."
-            }
             Self::Maintain(_) => "Brings this area's tools back to full strength.",
             Self::Clear(condition) => condition.effect(),
         }
@@ -628,7 +626,7 @@ impl Action {
 
     pub fn cost(self) -> i64 {
         match self {
-            Self::PhishingSim => 5_000,
+            Self::Operate(item) => item.operation().unwrap().cost,
             Self::Offsite => 20_000,
             Self::Clear(Condition::RegulatorInquiry) => 20_000,
             Self::Clear(Condition::Downtime) => 30_000,
@@ -641,22 +639,18 @@ impl Action {
             Self::Clear(_) => Kind::Recovery,
             Self::Deploy(_) => Kind::Implementation,
             Self::Maintain(_) => Kind::Maintenance,
-            Self::PhishingSim | Self::PatchSprint | Self::Tabletop | Self::ThreatHunt => {
-                Kind::Operations
-            }
+            Self::Operate(_) => Kind::Operations,
             Self::DayOff | Self::Offsite | Self::BriefLeadership => Kind::Management,
         }
     }
 
-    /// The areas an action helps, for the IMPROVES strip: a tool's boosts, or the areas
-    /// whose tools an action restores.
+    /// The areas an action helps, for the IMPROVES strip: a tool's boosts, the area a
+    /// maintenance action restores, or an operation's boosts.
     pub fn improves(self) -> &'static [(Area, i32)] {
         match self {
             Self::Deploy(item) => item.boosts(),
             Self::Maintain(area) => std::slice::from_ref(&AREA_TAGS[area as usize]),
-            Self::PhishingSim => &AREA_TAGS[2..3],
-            Self::PatchSprint => &[(Area::Endpoint, 0), (Area::Perimeter, 0)],
-            Self::Tabletop => &AREA_TAGS[4..5],
+            Self::Operate(item) => item.operation().unwrap().boosts,
             _ => &[],
         }
     }
@@ -675,11 +669,10 @@ impl Action {
                 Item::Pam => 8,
                 _ => 10,
             },
-            Self::PhishingSim | Self::Maintain(_) => 2,
-            Self::PatchSprint => 4,
-            Self::Tabletop | Self::DayOff | Self::BriefLeadership => 1,
+            Self::Operate(item) => item.operation().unwrap().days,
+            Self::Maintain(_) => 2,
+            Self::DayOff | Self::BriefLeadership => 1,
             Self::Offsite => 5,
-            Self::ThreatHunt => 3,
             Self::Clear(Condition::SystemsDown) => 7,
             Self::Clear(Condition::RegulatorInquiry) => 5,
             Self::Clear(Condition::LeakyRoadmap | Condition::Paranoia) => 4,
@@ -701,6 +694,15 @@ impl Action {
             _ => None,
         }
     }
+}
+
+/// A finished operation's lift to one area, until the day it wears off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Boost {
+    pub item: Item,
+    pub area: Area,
+    pub amount: i32,
+    pub until: u32,
 }
 
 /// What the player can see of the company, to describe what an outcome changed.
@@ -1041,6 +1043,10 @@ pub struct GameState {
     /// Tools and services bought through Procurement. Tools need deploying before they help.
     pub owned: Vec<Item>,
     pub deployed: Vec<Tool>,
+    /// Operation boosts still in effect.
+    pub boosts: Vec<Boost>,
+    /// Attackers whose next incident does half the damage, one charge each.
+    pub braced: Vec<Actor>,
     pub task: Option<Task>,
     pub investigation: Option<Investigation>,
     /// Analysts being recruited; they join when their search ends.
@@ -1100,6 +1106,8 @@ impl GameState {
             team: Vec::new(),
             owned: Vec::new(),
             deployed: Vec::new(),
+            boosts: Vec::new(),
+            braced: Vec::new(),
             task: None,
             investigation: None,
             searches: Vec::new(),
@@ -1274,8 +1282,8 @@ impl GameState {
         self.deployed.iter().any(|t| t.item == item)
     }
 
-    /// Deployed tools by their condition, plus the specialty and expertise of analysts on
-    /// the team. Nothing else holds posture, so nothing else drifts.
+    /// Deployed tools by their condition, the specialty and expertise of analysts on the
+    /// team, and operation boosts. Nothing else holds posture, so nothing else drifts.
     fn level(&self, area: Area) -> i32 {
         let skill: i32 = self
             .team
@@ -1306,9 +1314,15 @@ impl GameState {
             .filter(|&(a, _)| a == area)
             .map(|(_, b)| b)
             .sum();
+        let boosts: i32 = self
+            .boosts
+            .iter()
+            .filter(|b| b.area == area)
+            .map(|b| b.amount)
+            .sum();
         #[cfg(test)]
         let tools = tools + self.bonus[area as usize];
-        (tools + skill).min(100)
+        (tools + skill + boosts).min(100)
     }
 
     /// Actions the SOC can start now, grouped by kind: prerequisites met, affordable, and
@@ -1338,15 +1352,14 @@ impl GameState {
                     .any(|t| t.item.category() == Some(area) && t.condition < MAINTAIN_BELOW)
             })
             .map(Action::Maintain);
+        let operations = Item::ALL
+            .into_iter()
+            .filter(|&item| item.operation().is_some() && self.is_deployed(item))
+            .map(Action::Operate);
         cures
             .chain(deployable)
             .chain(upkeep)
-            .chain([
-                Action::PatchSprint,
-                Action::PhishingSim,
-                Action::ThreatHunt,
-                Action::Tabletop,
-            ])
+            .chain(operations)
             .chain([Action::DayOff, Action::Offsite, Action::BriefLeadership])
             .filter(|action| self.affords(action.cost()))
             .collect()
@@ -1496,31 +1509,7 @@ impl GameState {
                 }
                 item.rollout()[self.chance() as usize % 3].to_string()
             }
-            Action::PhishingSim => {
-                self.wear(Area::People, 100);
-                if self.chance() < 333 {
-                    self.trust -= 3;
-                    "The VP of Sales clicked the test phish and is furious about being \"tricked\"."
-                        .to_string()
-                } else {
-                    "Phishing simulation done. 23% clicked. One person replied with their password."
-                        .to_string()
-                }
-            }
-            Action::PatchSprint => {
-                self.wear(Area::Endpoint, 100);
-                self.wear(Area::Perimeter, 100);
-                for member in self.team.iter_mut() {
-                    member.burnout += 8;
-                }
-                "Patch sprint complete. 1,200 patches applied, 3 servers rebooted unexpectedly."
-                    .to_string()
-            }
-            Action::Tabletop => {
-                self.wear(Area::Resilience, 100);
-                self.trust += 2;
-                "The tabletop exercise went well. The CEO learned what ransomware is.".to_string()
-            }
+            Action::Operate(item) => self.operate(item),
             Action::DayOff => "The team is back from a day off, slightly less haunted.".to_string(),
             Action::Offsite => {
                 "The team offsite is over. Trust falls were had. Nobody was dropped.".to_string()
@@ -1529,7 +1518,6 @@ impl GameState {
                 self.trust += 4;
                 "You briefed leadership. The board nodded at all the right moments.".to_string()
             }
-            Action::ThreatHunt => self.hunt(),
             Action::Maintain(area) => {
                 self.wear(area, 100);
                 area.upkeep()[self.chance() as usize % 3].to_string()
@@ -1545,6 +1533,63 @@ impl GameState {
         // A third of briefings end with the CIO pitching a pet project.
         if action == Action::BriefLeadership && self.chance() < 333 {
             self.trigger(PET_PROJECT);
+        }
+    }
+
+    /// Finishes a tool's operation: boosts, evictions, and braces scaled by the tool's
+    /// condition, plus its effects or, sometimes, its mishap.
+    fn operate(&mut self, item: Item) -> String {
+        let op = item.operation().unwrap();
+        let condition = self
+            .deployed
+            .iter()
+            .find(|t| t.item == item)
+            .map_or(0, |t| t.condition);
+        self.boosts.retain(|b| b.item != item);
+        for &(area, amount) in op.boosts {
+            self.boosts.push(Boost {
+                item,
+                area,
+                amount: amount * condition / 100,
+                until: self.day + BOOST_DAYS,
+            });
+        }
+        for &actor in op.braces {
+            if !self.braced.contains(&actor) {
+                self.braced.push(actor);
+            }
+        }
+        self.apply(&op.effect, usize::MAX);
+        let mut message = match op.mishap {
+            Some((odds, effect, text)) if self.chance() < odds => {
+                self.apply(&effect, usize::MAX);
+                text.to_string()
+            }
+            _ => op.results[self.chance() as usize % 3].to_string(),
+        };
+        if !op.evicts.is_empty() {
+            let found = self.hunt(op.evicts, op.odds * condition as u32 / 100);
+            message += &if found.is_empty() {
+                " They found nothing. Either you are clean or they are good.".to_string()
+            } else {
+                format!(" They found and evicted: {}.", found.join(", "))
+            };
+        }
+        message
+    }
+
+    /// Drops the operation boosts that have run out, saying which ones faded.
+    fn expire(&mut self) {
+        let day = self.day;
+        let mut faded: Vec<Item> = Vec::new();
+        for boost in self.boosts.iter().filter(|b| b.until <= day) {
+            if !faded.contains(&boost.item) {
+                faded.push(boost.item);
+            }
+        }
+        self.boosts.retain(|b| b.until > day);
+        for item in faded {
+            self.note(item.operation().unwrap().fades);
         }
     }
 
@@ -1922,22 +1967,22 @@ impl GameState {
         (base + 15 * self.seniors()).min(90) * 10
     }
 
-    fn hunt(&mut self) -> String {
-        let siem = if self.is_deployed(Item::Siem) { 25 } else { 0 };
+    /// Looks for running campaigns by `actors`, evicting each one found; returns who.
+    fn hunt(&mut self, actors: &[Actor], base: u32) -> Vec<String> {
         let mut found = Vec::new();
         for i in 0..self.campaigns.len() {
-            if self.campaigns[i].end.is_none() && self.chance() < self.find_odds(25 + siem) {
+            let campaign = &self.campaigns[i];
+            if campaign.end.is_none()
+                && actors.contains(&campaign.actor)
+                && self.chance() < self.find_odds(base)
+            {
                 let campaign = &mut self.campaigns[i];
                 campaign.end = Some(End::Evicted);
                 campaign.seen = true;
                 found.push(campaign.actor.to_string());
             }
         }
-        if found.is_empty() {
-            "The threat hunt found nothing. Either you are clean or they are good.".to_string()
-        } else {
-            format!("The threat hunt found and evicted: {}.", found.join(", "))
-        }
+        found
     }
 
     /// The alert waiting for a reply, if any.
@@ -2050,7 +2095,13 @@ impl GameState {
         let actor = self.incident.take().expect("an incident to respond to");
         let response = actor.responses()[index];
         let before = self.glance();
-        let scale = 200 - self.level(Area::Resilience) as i64;
+        let mut scale = 200 - self.level(Area::Resilience) as i64;
+        let mut text = response.text.to_string();
+        if let Some(i) = self.braced.iter().position(|&a| a == actor) {
+            self.braced.remove(i);
+            scale /= 2;
+            text += " The drills paid off: the damage is half what it could have been.";
+        }
         self.valuation -= self.base_valuation * response.valuation * scale / 200_000;
         self.trust = (self.trust + response.trust * scale as i32 / 200).clamp(0, 100);
         self.brand = (self.brand + response.brand * scale as i32 / 200).clamp(0, 100);
@@ -2059,14 +2110,14 @@ impl GameState {
         if response.lingers && !self.conditions.contains(&condition) {
             self.conditions.push(condition);
         }
-        self.note(response.text.to_string());
+        self.note(text.clone());
         let flipped = self.next_landmark > Landmark::Flip as usize;
         if flipped && !self.amended && matches!(actor, Actor::DataThief | Actor::Insider) {
             self.amended = true;
             self.note("The leak forces an amended S-1.".to_string());
             self.slip();
         }
-        self.card(response.label, response.text, &before);
+        self.card(response.label, &text, &before);
         self.check_outcome();
     }
 
@@ -2383,6 +2434,7 @@ impl GameState {
             stop |= self.investigate();
             stop |= self.recruit();
             stop |= self.conferencing();
+            self.expire();
             self.linger();
             stop |= self.attack();
             stop |= self.maybe_event();
@@ -3062,6 +3114,21 @@ mod tests {
     }
 
     /// Starts an action and advances until it finishes, keeping the coffee topped up.
+    const PATCH: Action = Action::Operate(Item::VulnScanner);
+    const PHISH: Action = Action::Operate(Item::TrainingPlatform);
+    const TABLETOP: Action = Action::Operate(Item::Runbooks);
+    const HUNT: Action = Action::Operate(Item::Siem);
+
+    /// `game()` with the tools behind the patch sprint, phishing simulation, and tabletop.
+    fn equipped() -> GameState {
+        GameState {
+            deployed: [Item::VulnScanner, Item::TrainingPlatform, Item::Runbooks]
+                .map(Tool::new)
+                .to_vec(),
+            ..game()
+        }
+    }
+
     fn run(game: &mut GameState, action: Action) {
         game.start(action);
         while game.task.is_some() {
@@ -3121,37 +3188,25 @@ mod tests {
 
     #[test]
     fn each_action_applies_its_cost_duration_and_effects() {
-        let mut game = game();
-        game.deployed = [
-            Item::Edr,
-            Item::Waf,
-            Item::TrainingPlatform,
-            Item::Backups,
-            Item::Siem,
-        ]
-        .map(|item| Tool {
-            item,
-            condition: 40,
-        })
-        .to_vec();
-        let conditions = |g: &GameState| g.deployed.iter().map(|t| t.condition).collect::<Vec<_>>();
+        let mut game = equipped();
 
         let start = game.clone();
-        run(&mut game, Action::PatchSprint);
-        assert_eq!(game.day, start.day + 4);
-        assert_eq!(conditions(&game), [100, 100, 40, 40, 40]);
+        run(&mut game, PATCH);
+        assert_eq!(game.day, start.day + 5);
+        assert_eq!(game.level(Area::Perimeter), 12 + 15);
+        assert_eq!(game.level(Area::Endpoint), 5 + 10);
         assert!(game.team[0].burnout > start.team[0].burnout + 4, "tiring");
 
         let mut game = start.clone();
-        run(&mut game, Action::PhishingSim);
-        assert_eq!(game.day, start.day + 2);
+        run(&mut game, PHISH);
+        assert_eq!(game.day, start.day + 4);
         assert_eq!(game.budget, start.budget - 5_000);
-        assert_eq!(conditions(&game), [40, 40, 100, 40, 40]);
+        assert_eq!(game.level(Area::People), 30 + 20);
 
         let mut game = start.clone();
-        run(&mut game, Action::Tabletop);
-        assert_eq!(game.day, start.day + 1);
-        assert_eq!(conditions(&game), [40, 40, 40, 100, 40]);
+        run(&mut game, TABLETOP);
+        assert_eq!(game.day, start.day + 2);
+        assert_eq!(game.level(Area::Resilience), 10 + 10);
         assert_eq!(game.trust, 62);
 
         let mut game = start.clone();
@@ -3177,8 +3232,8 @@ mod tests {
     fn phishing_simulations_sometimes_upset_a_vp() {
         let mut outcomes = Vec::new();
         for seed in 0..30 {
-            let mut game = GameState { seed, ..game() };
-            run(&mut game, Action::PhishingSim);
+            let mut game = GameState { seed, ..equipped() };
+            run(&mut game, PHISH);
             outcomes.push(game.trust);
         }
 
@@ -3241,63 +3296,65 @@ mod tests {
 
     #[test]
     fn unaffordable_actions_and_unmet_prerequisites_are_not_offered() {
-        let mut game = game();
+        let mut game = equipped();
         assert!(!game.actions().contains(&Action::Deploy(Item::Backups)));
         game.owned.push(Item::Backups);
         assert!(game.actions().contains(&Action::Deploy(Item::Backups)));
 
         game.budget = 4_999;
         let offered = game.actions();
-        assert!(!offered.contains(&Action::PhishingSim));
+        assert!(!offered.contains(&PHISH));
         assert!(!offered.contains(&Action::Offsite));
-        assert!(offered.contains(&Action::PatchSprint));
+        assert!(offered.contains(&PATCH));
     }
 
     #[test]
     fn nothing_else_starts_while_an_action_is_under_way() {
-        let mut game = game();
+        let mut game = equipped();
 
-        game.start(Action::PatchSprint);
+        game.start(PATCH);
 
         assert!(game.actions().is_empty());
     }
 
     #[test]
     fn tempo_and_seniors_change_how_long_actions_take() {
-        let mut game = game();
-        let sprint = Action::PatchSprint;
-        assert_eq!(game.duration(sprint), 4);
+        let mut game = equipped();
+        assert_eq!(game.duration(PATCH), 5);
 
         game.tempo = Tempo::Relaxed;
-        assert_eq!(game.duration(sprint), 6);
+        assert_eq!(game.duration(PATCH), 8);
         game.tempo = Tempo::Crunch;
-        assert_eq!(game.duration(sprint), 3);
+        assert_eq!(game.duration(PATCH), 4);
 
         game.tempo = Tempo::Steady;
         game.team.push(member("S1", Role::Senior, 0, 0));
-        assert_eq!(game.duration(sprint), 4, "one senior is not enough");
+        assert_eq!(game.duration(PATCH), 5, "one senior is not enough");
         game.team.push(member("S2", Role::Senior, 0, 0));
-        assert_eq!(game.duration(sprint), 3);
+        assert_eq!(game.duration(PATCH), 4);
 
         game.tempo = Tempo::Crunch;
-        assert_eq!(game.duration(Action::Tabletop), 1, "never under a day");
+        game.team.push(member("S3", Role::Senior, 0, 0));
+        game.team.push(member("S4", Role::Senior, 0, 0));
+        assert_eq!(game.duration(TABLETOP), 1, "never under a day");
         assert_eq!(game.duration(Action::DayOff), 1, "fixed");
     }
 
     #[test]
     fn an_interrupted_action_resumes_where_it_left_off() {
-        let mut game = game();
+        let mut game = equipped();
         game.coffee = 2;
-        game.start(Action::PatchSprint);
+        game.start(PATCH);
 
         assert!(game.advance(), "running out of coffee stops the clock");
-        assert_eq!(game.task.as_ref().unwrap().days_left, 3);
+        assert_eq!(game.task.as_ref().unwrap().days_left, 4);
 
+        assert!(!game.advance());
         assert!(!game.advance());
         assert!(!game.advance());
         assert!(game.advance(), "finishing stops the clock");
         assert_eq!(game.task, None);
-        assert_eq!(game.day, 5);
+        assert_eq!(game.day, 6);
     }
 
     #[test]
@@ -3739,31 +3796,178 @@ mod tests {
 
     #[test]
     fn hunting_finds_more_with_seniors_and_a_siem() {
-        let found = |seniors: usize, siem: bool| -> usize {
+        let found = |seniors: usize, condition: i32| -> usize {
             (0..60)
                 .map(|seed| {
                     let mut game = GameState { seed, ..game() };
                     game.team
                         .extend((0..seniors).map(|_| member("S", Role::Senior, 0, 0)));
-                    if siem {
-                        game.deployed.push(Tool::new(Item::Siem));
-                    }
+                    game.deployed.push(Tool {
+                        item: Item::Siem,
+                        condition,
+                    });
                     let i = plant(&mut game, Actor::Apt, Stage::Foothold);
-                    game.hunt();
+                    game.operate(Item::Siem);
                     (game.campaigns[i].end == Some(End::Evicted)) as usize
                 })
                 .sum()
         };
 
-        assert!(found(0, false) < found(0, true));
-        assert!(found(0, false) < found(4, false));
+        assert!(found(0, 20) < found(0, 100));
+        assert!(found(0, 100) < found(4, 100));
+    }
+
+    #[test]
+    fn only_some_tools_unlock_an_operation_and_only_once_deployed() {
+        let tools: Vec<Item> = OPERATIONS.iter().map(|o| o.tool).collect();
+        assert_eq!(
+            tools,
+            [
+                Item::PasswordManager,
+                Item::Pam,
+                Item::Edr,
+                Item::TrainingPlatform,
+                Item::VulnScanner,
+                Item::Asm,
+                Item::Runbooks,
+                Item::Backups,
+                Item::DrSite,
+                Item::LogCollection,
+                Item::Siem,
+            ]
+        );
+        for item in tools {
+            let mut game = game();
+            game.owned.push(item);
+            assert!(!game.actions().contains(&Action::Operate(item)), "{item:?}");
+            game.deployed.push(Tool::new(item));
+            assert!(game.actions().contains(&Action::Operate(item)), "{item:?}");
+        }
+    }
+
+    #[test]
+    fn every_operation_reads_well() {
+        for op in &OPERATIONS {
+            assert!(!op.label.is_empty() && !op.description.is_empty());
+            assert!(op.days > 0, "{}", op.label);
+            let [a, b, c] = op.results;
+            assert!(a != b && b != c && a != c, "{}", op.label);
+            assert_eq!(op.boosts.is_empty(), op.fades.is_empty(), "{}", op.label);
+            assert_eq!(op.evicts.is_empty(), op.odds == 0, "{}", op.label);
+        }
+    }
+
+    #[test]
+    fn operations_boost_by_the_tools_condition() {
+        for op in &OPERATIONS {
+            let mut game = game();
+            game.deployed.push(Tool {
+                item: op.tool,
+                condition: 60,
+            });
+            let before = Area::ALL.map(|a| game.level(a));
+
+            game.operate(op.tool);
+
+            for area in Area::ALL {
+                let boost: i32 = op
+                    .boosts
+                    .iter()
+                    .filter(|&&(a, _)| a == area)
+                    .map(|&(_, b)| b * 60 / 100)
+                    .sum();
+                assert_eq!(
+                    game.level(area),
+                    before[area as usize] + boost,
+                    "{} {area}",
+                    op.label
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn boosts_wear_off_after_four_weeks_and_rerunning_refreshes_them() {
+        let mut game = equipped();
+        game.operate(Item::VulnScanner);
+        game.operate(Item::VulnScanner);
+        assert_eq!(game.boosts.len(), 2, "refreshed, not stacked");
+        assert!(game.boosts.iter().all(|b| b.until == 1 + BOOST_DAYS));
+
+        advance_to(&mut game, BOOST_DAYS);
+        assert_eq!(game.boosts.len(), 2);
+        advance_to(&mut game, 1 + BOOST_DAYS);
+        assert!(game.boosts.is_empty());
+        let fades = Item::VulnScanner.operation().unwrap().fades;
+        assert_eq!(game.log.iter().filter(|e| e.text == fades).count(), 1);
+    }
+
+    #[test]
+    fn a_brace_halves_one_matching_incident() {
+        let hit = |game: &mut GameState, actor: Actor| {
+            let before = game.valuation;
+            game.incident = Some(actor);
+            game.respond(0);
+            before - game.valuation
+        };
+        let mut game = game();
+        game.operate(Item::Backups);
+        assert_eq!(game.braced, [Actor::Ransomware]);
+
+        let full = hit(&mut game.clone(), Actor::DataThief);
+        let thief = hit(&mut game, Actor::DataThief);
+        assert_eq!(thief, full, "a different attacker leaves the brace alone");
+        assert_eq!(game.braced, [Actor::Ransomware]);
+
+        let full = hit(
+            &mut GameState {
+                braced: Vec::new(),
+                ..game.clone()
+            },
+            Actor::Ransomware,
+        );
+        let braced = hit(&mut game, Actor::Ransomware);
+        assert_eq!(braced, full / 2);
+        assert!(game.log.last().unwrap().contains("drills paid off"));
+        assert!(game.braced.is_empty(), "used up");
+        assert_eq!(hit(&mut game, Actor::Ransomware), full);
+    }
+
+    #[test]
+    fn a_failover_test_braces_for_everyone_once() {
+        let mut game = game();
+        game.operate(Item::DrSite);
+        game.operate(Item::DrSite);
+
+        assert_eq!(game.braced, Actor::ALL);
+    }
+
+    #[test]
+    fn targeted_evictions_only_hit_their_attackers() {
+        let mut evicted = [0; 2];
+        for seed in 0..40 {
+            let mut game = GameState { seed, ..game() };
+            game.deployed.push(Tool::new(Item::Pam));
+            let ransomware = plant(&mut game, Actor::Ransomware, Stage::Foothold);
+            let thief = plant(&mut game, Actor::DataThief, Stage::Foothold);
+
+            game.operate(Item::Pam);
+
+            for (count, i) in evicted.iter_mut().zip([ransomware, thief]) {
+                *count += (game.campaigns[i].end == Some(End::Evicted)) as u32;
+            }
+        }
+
+        assert_eq!(evicted[0], 0, "PAM never finds ransomware");
+        assert!(evicted[1] > 10, "{}", evicted[1]);
     }
 
     #[test]
     fn a_fruitless_hunt_says_so() {
         let mut game = game();
+        game.deployed.push(Tool::new(Item::Siem));
 
-        run(&mut game, Action::ThreatHunt);
+        run(&mut game, HUNT);
 
         assert!(game.log.iter().any(|e| e.contains("found nothing")));
     }
@@ -4702,11 +4906,11 @@ mod tests {
 
     #[test]
     fn free_choices_stay_open_when_the_budget_is_negative() {
-        let mut game = game();
+        let mut game = equipped();
         game.budget = -5_000;
 
-        assert!(game.actions().contains(&Action::PatchSprint));
-        assert!(!game.actions().contains(&Action::PhishingSim));
+        assert!(game.actions().contains(&PATCH));
+        assert!(!game.actions().contains(&PHISH));
         game.incident = Some(Actor::Ransomware);
         assert!(game.can_respond(&Actor::Ransomware.responses()[2]));
         assert!(!game.can_respond(&Actor::Ransomware.responses()[1]));
@@ -4729,11 +4933,8 @@ mod tests {
     #[test]
     fn result_cards_describe_what_visibly_changed() {
         let mut tabletop = game();
-        tabletop.deployed.push(Tool {
-            item: Item::Backups,
-            condition: 50,
-        });
-        run(&mut tabletop, Action::Tabletop);
+        tabletop.deployed.push(Tool::new(Item::Runbooks));
+        run(&mut tabletop, TABLETOP);
         let card = tabletop.cards.last().unwrap();
         assert_eq!(card.title, "TABLETOP EXERCISE");
         assert_eq!(card.effect, "Trust +2. Resilience improved.");
@@ -4939,7 +5140,7 @@ mod tests {
         let mut game = game();
         game.owned.push(Item::Edr);
         game.deployed.push(Tool {
-            item: Item::Waf,
+            item: Item::VulnScanner,
             condition: 50,
         });
         game.conditions.push(Condition::Downtime);

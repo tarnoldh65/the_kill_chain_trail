@@ -9,6 +9,7 @@ mod events;
 mod game;
 mod landmarks;
 mod manual;
+mod operations;
 mod scores;
 mod street;
 mod ui;

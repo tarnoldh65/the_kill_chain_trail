@@ -762,7 +762,7 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::{COFFEE_RUN_COST, IPO_DAY, Role, Tempo};
+    use crate::game::{COFFEE_RUN_COST, IPO_DAY, Role, Tempo, Tool};
 
     fn type_text(mut screen: Screen, text: &str) -> Screen {
         for c in text.chars() {
@@ -802,6 +802,7 @@ mod tests {
     fn new_game() -> Screen {
         let screen = open_for_business(hire_junior(hire_junior(vendor_hall(), "Maya"), "Dev"));
         with_game(screen, |game| {
+            game.deployed = vec![Tool::new(Item::VulnScanner), Tool::new(Item::Runbooks)];
             game.seed = (0..)
                 .find(|&seed| {
                     let mut quiet = game.clone();
@@ -1040,6 +1041,8 @@ mod tests {
         assert_eq!(screen.update(Input::Enter), start);
     }
 
+    const PATCH: Action = Action::Operate(Item::VulnScanner);
+
     fn action_menu(screen: &Screen) -> &ActionMenu {
         match screen {
             Screen::Actions(menu) => menu,
@@ -1064,7 +1067,7 @@ mod tests {
         let start = new_game();
         let screen = start.clone().update(Input::Char('2'));
         let count = action_menu(&screen).game.actions().len();
-        assert_eq!(action_menu(&screen).action(), Some(Action::PatchSprint));
+        assert_eq!(action_menu(&screen).action(), Some(PATCH));
 
         let screen = arrows(screen, Hop::Down, count + 3);
         assert_eq!(action_menu(&screen).cursor, count);
@@ -1073,21 +1076,17 @@ mod tests {
 
     #[test]
     fn t_changes_the_tempo_from_the_action_list() {
-        let screen = choose(new_game(), Action::PatchSprint);
-        let days = |s: &Screen| action_menu(s).game.duration(Action::PatchSprint);
-        assert_eq!(days(&screen), 4);
+        let screen = choose(new_game(), PATCH);
+        let days = |s: &Screen| action_menu(s).game.duration(PATCH);
+        assert_eq!(days(&screen), 5);
 
         let screen = screen.update(Input::Char('t'));
         assert_eq!(action_menu(&screen).game.tempo, Tempo::Crunch);
-        assert_eq!(days(&screen), 3);
-        assert_eq!(
-            action_menu(&screen).action(),
-            Some(Action::PatchSprint),
-            "cursor stays"
-        );
+        assert_eq!(days(&screen), 4);
+        assert_eq!(action_menu(&screen).action(), Some(PATCH), "cursor stays");
 
         let screen = screen.update(Input::Char('T'));
-        assert_eq!(days(&screen), 6, "Relaxed");
+        assert_eq!(days(&screen), 8, "Relaxed");
 
         let screen = screen.update(Input::Enter);
         assert_eq!(game(&screen).tempo, Tempo::Relaxed, "the tempo sticks");
@@ -1095,15 +1094,12 @@ mod tests {
 
     #[test]
     fn choosing_an_action_starts_it_and_runs_the_clock() {
-        let screen = choose(new_game(), Action::PatchSprint).update(Input::Enter);
+        let screen = choose(new_game(), PATCH).update(Input::Enter);
 
         let Screen::Travel(travel) = &screen else {
             panic!("expected Travel, got {screen:?}");
         };
-        assert_eq!(
-            travel.game.task.as_ref().unwrap().action,
-            Action::PatchSprint
-        );
+        assert_eq!(travel.game.task.as_ref().unwrap().action, PATCH);
 
         let screen = screen.tick(DAY_SECONDS * 10.0);
         assert!(
@@ -1111,12 +1107,12 @@ mod tests {
             "finishing stops the clock"
         );
         assert_eq!(game(&screen).task, None);
-        assert_eq!(game(&screen).day, 5);
+        assert_eq!(game(&screen).day, 6);
     }
 
     #[test]
     fn no_new_action_while_one_is_under_way() {
-        let screen = choose(new_game(), Action::PatchSprint)
+        let screen = choose(new_game(), PATCH)
             .update(Input::Enter)
             .update(Input::Char('x'));
         assert!(matches!(screen, Screen::Play(_)));
@@ -1319,7 +1315,7 @@ mod tests {
 
     #[test]
     fn finished_actions_show_a_result_card() {
-        let screen = choose(new_game(), Action::Tabletop).update(Input::Enter);
+        let screen = choose(new_game(), Action::Operate(Item::Runbooks)).update(Input::Enter);
         let screen = screen.tick(DAY_SECONDS * 2.0);
 
         let card = &game(&screen).cards[0];
