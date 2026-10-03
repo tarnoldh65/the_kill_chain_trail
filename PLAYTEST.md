@@ -7,7 +7,11 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [x] Company and lead names accept typing and Backspace; empty names are refused.
 - [x] Each profile shows its budget, valuation, and multiplier, and starts with them.
 - [x] Procurement hires and names analysts, buys tools and services once, stops coffee at 36 pots, and needs an analyst before opening.
-- [x] Option 6 opens Procurement any day; hires after day 1 start a week-long search shown on the Hiring line, and the analyst joins with a result card.
+- [x] Option 6 opens Procurement any day.
+- [ ] The resume viewer is readable: LEFT/RIGHT cycle, ENTER hires with the suggested name, B returns; skipped day 1 candidates are gone after opening for business.
+- [ ] Post job openings shows the search on the Hiring line, then a card and a review countdown; reviewed resumes clear on leaving Procurement, and unreviewed ones expire with a card.
+- [ ] The conference job fair row appears only at the conference fort and leaves other candidates alone.
+- [ ] The team screen shows the selected analyst's proficiencies and specialty.
 - [x] Days pass on Continue and any key stops the clock; the timeline marker moves and the days-to-IPO count drops.
 - [x] Actions start, show in the status panel, pause when interrupted, and resume with option 1.
 - [x] The intern coffee run is playable and fair, and Rush Hour music plays during it.

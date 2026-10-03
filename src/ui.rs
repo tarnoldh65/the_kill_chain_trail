@@ -1,7 +1,7 @@
 use crate::audio::TRACKS;
 use crate::conference::Track;
 use crate::game::{
-    Action, Area, Entry, GameState, Item, Kind, Outcome, Pool, Profile, Reply, Role,
+    Action, Area, Entry, GameState, Item, Kind, Outcome, Pool, Profile, Reply, Resume, Role,
 };
 use crate::street::{Hop, Street};
 
@@ -139,9 +139,11 @@ pub enum Screen {
     },
     /// Procurement before day 1.
     Shop(Shop),
-    /// Naming the analyst being hired through Procurement.
+    /// Reading resumes from one of Procurement's Staff rows.
+    Resumes(Viewer),
+    /// Naming the candidate being hired.
     Hire {
-        shop: Shop,
+        viewer: Viewer,
         name: String,
     },
     /// Picking something for the SOC to spend its days on.
@@ -197,10 +199,9 @@ pub const TABS: usize = 8;
 
 /// The tab an item is listed under.
 fn tab_of(item: Item) -> usize {
-    match (item, item.category()) {
-        (Item::Junior | Item::Senior, _) => 0,
-        (_, Some(area)) => 1 + area as usize,
-        (_, None) => TABS - 1,
+    match item.category() {
+        Some(area) => 1 + area as usize,
+        None => TABS - 1,
     }
 }
 
@@ -237,9 +238,81 @@ impl Shop {
         }
     }
 
-    /// The item under the cursor, or `None` on the exit row.
+    /// The item under the cursor, or `None` on the Staff tab or the exit row.
     pub fn item(&self) -> Option<Item> {
         tab_items(self.tab).get(self.cursor).copied()
+    }
+
+    /// The Staff tab's rows: each level of an open slate, and the job fair while it lasts.
+    pub fn staff(&self) -> Vec<Candidates> {
+        let slate = (!self.game.slate.is_empty())
+            .then_some([Role::Senior, Role::Junior])
+            .into_iter()
+            .flatten()
+            .map(|role| Candidates {
+                pool: Pool::Slate,
+                role: Some(role),
+            });
+        let fair = (!self.game.job_fair.is_empty()).then_some(Candidates {
+            pool: Pool::JobFair,
+            role: None,
+        });
+        slate.chain(fair).collect()
+    }
+
+    /// The Staff row under the cursor, if any.
+    pub fn candidates(&self) -> Option<Candidates> {
+        if self.tab == 0 {
+            self.staff().get(self.cursor).copied()
+        } else {
+            None
+        }
+    }
+
+    /// Rows above the exit on the open tab.
+    pub fn rows(&self) -> usize {
+        if self.tab == 0 {
+            self.staff().len()
+        } else {
+            tab_items(self.tab).len()
+        }
+    }
+}
+
+/// A Staff row: one level of the slate, or everyone at the job fair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Candidates {
+    pub pool: Pool,
+    pub role: Option<Role>,
+}
+
+/// Resumes from one Staff row, one at a time, over Procurement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Viewer {
+    pub shop: Shop,
+    pub row: Candidates,
+    /// Position among the row's resumes.
+    pub index: usize,
+}
+
+impl Viewer {
+    /// Where the row's resumes sit in their pool.
+    pub fn listed(&self) -> Vec<usize> {
+        let role = self.row.role;
+        self.shop
+            .game
+            .pool(self.row.pool)
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| role.is_none_or(|role| r.role == role))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// The resume on show, if the row has any left.
+    pub fn resume(&self) -> Option<&Resume> {
+        let i = *self.listed().get(self.index)?;
+        Some(&self.shop.game.pool(self.row.pool)[i])
     }
 }
 
@@ -291,20 +364,6 @@ impl ActionMenu {
     }
 }
 
-/// The first resume at an analyst listing's level: the slate's, then the job fair's.
-pub fn candidate(game: &GameState, item: Item) -> Option<(Pool, usize)> {
-    let role = match item {
-        Item::Senior => Role::Senior,
-        _ => Role::Junior,
-    };
-    [Pool::Slate, Pool::JobFair].into_iter().find_map(|pool| {
-        game.pool(pool)
-            .iter()
-            .position(|r| r.role == role)
-            .map(|i| (pool, i))
-    })
-}
-
 /// The intern's trip across the street, with the game waiting on the result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoffeeRun {
@@ -325,8 +384,16 @@ impl Screen {
             | Self::Tracks { game, .. }
             | Self::Shop(Shop { game, .. })
             | Self::Actions(ActionMenu { game, .. })
-            | Self::Hire {
+            | Self::Resumes(Viewer {
                 shop: Shop { game, .. },
+                ..
+            })
+            | Self::Hire {
+                viewer:
+                    Viewer {
+                        shop: Shop { game, .. },
+                        ..
+                    },
                 ..
             }
             | Self::Travel(Travel { game, .. })
@@ -414,7 +481,7 @@ impl Screen {
                 Self::Shop(shop)
             }
             (Self::Shop(mut shop), Input::Arrow(Hop::Down)) => {
-                shop.cursor = (shop.cursor + 1).min(tab_items(shop.tab).len());
+                shop.cursor = (shop.cursor + 1).min(shop.rows());
                 Self::Shop(shop)
             }
             (Self::Shop(mut shop), Input::Arrow(hop @ (Hop::Left | Hop::Right))) => {
@@ -425,38 +492,56 @@ impl Screen {
                 shop.cursor = 0;
                 Self::Shop(shop)
             }
-            (Self::Shop(mut shop), Input::Enter) => match shop.item() {
-                None if shop.game.analysts() > 0 => {
-                    shop.game.leave_procurement();
-                    Self::Play(shop.game)
-                }
-                Some(item) if shop.game.can_buy(item) => match item {
-                    Item::Junior | Item::Senior => match candidate(&shop.game, item) {
-                        Some((pool, i)) => {
-                            shop.game.review();
-                            let name = shop.game.pool(pool)[i].name.clone();
-                            Self::Hire { shop, name }
-                        }
-                        None => Self::Shop(shop),
-                    },
-                    _ => {
-                        shop.game.buy(item);
-                        Self::Shop(shop)
+            (Self::Shop(mut shop), Input::Enter) => {
+                if let Some(row) = shop.candidates() {
+                    if row.pool == Pool::Slate {
+                        shop.game.review();
                     }
-                },
-                _ => Self::Shop(shop),
-            },
-            (Self::Hire { mut shop, name }, Input::Enter) => {
-                let item = shop.item().expect("hiring from an item row");
-                if let Some((pool, i)) = candidate(&shop.game, item)
-                    && !name.trim().is_empty()
-                {
-                    shop.game.hire(pool, i, name.trim());
+                    return Self::Resumes(Viewer {
+                        shop,
+                        row,
+                        index: 0,
+                    });
+                }
+                match shop.item() {
+                    Some(item) if shop.game.can_buy(item) => shop.game.buy(item),
+                    None if shop.cursor == shop.rows() && shop.game.analysts() > 0 => {
+                        shop.game.leave_procurement();
+                        return Self::Play(shop.game);
+                    }
+                    _ => {}
                 }
                 Self::Shop(shop)
             }
-            (Self::Hire { shop, name }, input) => Self::Hire {
-                shop,
+            (Self::Resumes(mut viewer), Input::Arrow(hop @ (Hop::Left | Hop::Right))) => {
+                let count = viewer.listed().len().max(1);
+                viewer.index = match hop {
+                    Hop::Left => (viewer.index + count - 1) % count,
+                    _ => (viewer.index + 1) % count,
+                };
+                Self::Resumes(viewer)
+            }
+            (Self::Resumes(viewer), Input::Enter) => match viewer.resume() {
+                Some(resume) if viewer.shop.game.can_hire() => {
+                    let name = resume.name.clone();
+                    Self::Hire { viewer, name }
+                }
+                _ => Self::Resumes(viewer),
+            },
+            (Self::Resumes(mut viewer), Input::Char('b' | 'B')) => {
+                viewer.shop.cursor = viewer.shop.cursor.min(viewer.shop.rows());
+                Self::Shop(viewer.shop)
+            }
+            (Self::Hire { mut viewer, name }, Input::Enter) => {
+                if !name.trim().is_empty() {
+                    let i = viewer.listed()[viewer.index];
+                    viewer.shop.game.hire(viewer.row.pool, i, name.trim());
+                    viewer.index = viewer.index.min(viewer.listed().len().saturating_sub(1));
+                }
+                Self::Resumes(viewer)
+            }
+            (Self::Hire { viewer, name }, input) => Self::Hire {
+                viewer,
                 name: edit(name, input),
             },
             (Self::Play(game), Input::Char('d' | 'D')) => Self::Defenses(game),
@@ -851,10 +936,16 @@ mod tests {
         screen
     }
 
-    /// Hires a junior analyst from the top row and returns to the top.
+    /// Hires the first junior resume under a new name and returns to Procurement.
     fn hire_junior(screen: Screen, name: &str) -> Screen {
-        let screen = arrows(screen, Hop::Up, Item::ALL.len()).update(Input::Enter);
-        type_text(clear_name(screen), name).update(Input::Enter)
+        let screen = arrows(screen, Hop::Up, Item::ALL.len());
+        let screen = screen
+            .update(Input::Arrow(Hop::Down))
+            .update(Input::Enter)
+            .update(Input::Enter);
+        type_text(clear_name(screen), name)
+            .update(Input::Enter)
+            .update(Input::Char('b'))
     }
 
     /// Erases the suggested name in the naming popup.
@@ -885,10 +976,23 @@ mod tests {
         })
     }
 
+    /// Procurement, whether open or under a resume.
     fn shop(screen: &Screen) -> &Shop {
         match screen {
-            Screen::Shop(shop) => shop,
+            Screen::Shop(shop)
+            | Screen::Resumes(Viewer { shop, .. })
+            | Screen::Hire {
+                viewer: Viewer { shop, .. },
+                ..
+            } => shop,
             other => panic!("expected Shop, got {other:?}"),
+        }
+    }
+
+    fn viewer(screen: &Screen) -> &Viewer {
+        match screen {
+            Screen::Resumes(viewer) => viewer,
+            other => panic!("expected Resumes, got {other:?}"),
         }
     }
 
@@ -933,10 +1037,15 @@ mod tests {
     fn arrows_move_the_cursor_within_the_listing_and_exit() {
         let screen = vendor_hall().update(Input::Arrow(Hop::Up));
         assert_eq!(shop(&screen).cursor, 0);
-        assert_eq!(shop(&screen).item(), Some(Item::Junior));
+        let senior = Candidates {
+            pool: Pool::Slate,
+            role: Some(Role::Senior),
+        };
+        assert_eq!(shop(&screen).candidates(), Some(senior));
 
         let screen = arrows(screen, Hop::Down, 20);
         assert_eq!(shop(&screen).cursor, 2, "stops on the exit below the staff");
+        assert_eq!(shop(&screen).candidates(), None);
         assert_eq!(shop(&screen).item(), None);
 
         let screen = screen.update(Input::Arrow(Hop::Right));
@@ -992,7 +1101,7 @@ mod tests {
 
     #[test]
     fn hiring_asks_for_a_name() {
-        let screen = arrows(vendor_hall(), Hop::Down, 1).update(Input::Enter);
+        let screen = vendor_hall().update(Input::Enter).update(Input::Enter);
         let Screen::Hire { name, .. } = &screen else {
             panic!("expected Hire, got {screen:?}");
         };
@@ -1011,7 +1120,9 @@ mod tests {
     #[test]
     fn an_empty_name_cancels_the_hire() {
         let before = vendor_hall();
-        let screen = clear_name(before.clone().update(Input::Enter)).update(Input::Enter);
+        let screen = before.clone().update(Input::Enter).update(Input::Enter);
+        let screen = clear_name(screen).update(Input::Enter);
+        assert!(matches!(screen, Screen::Resumes(_)), "back to the resumes");
 
         assert_eq!(shop(&screen).game.team, shop(&before).game.team);
         assert_eq!(shop(&screen).game.slate, shop(&before).game.slate);
@@ -1032,8 +1143,78 @@ mod tests {
 
         assert_eq!(
             game(&screen).budget,
-            Profile::Healthtech.budget() - 2 * Item::Junior.price()
+            Profile::Healthtech.budget(),
+            "hiring has no fee"
         );
+    }
+
+    #[test]
+    fn the_resume_viewer_cycles_hires_and_goes_back() {
+        let screen = vendor_hall()
+            .update(Input::Arrow(Hop::Down))
+            .update(Input::Enter);
+        let first = viewer(&screen).resume().unwrap().clone();
+        assert_eq!(first.role, Role::Junior);
+        assert_eq!(viewer(&screen).listed().len(), 5);
+
+        let screen = screen.update(Input::Arrow(Hop::Left));
+        assert_eq!(viewer(&screen).index, 4, "wraps around");
+        let screen = arrows(screen, Hop::Right, 2);
+        assert_eq!(viewer(&screen).index, 1);
+        let second = viewer(&screen).resume().unwrap().clone();
+
+        let screen = screen.update(Input::Enter).update(Input::Enter);
+        let game = &shop(&screen).game;
+        assert_eq!(
+            game.team[0].name, second.name,
+            "hired under the suggested name"
+        );
+        assert_eq!(game.team[0].salary, second.salary);
+        assert!(!game.slate.contains(&second));
+        assert_eq!(viewer(&screen).listed().len(), 4);
+
+        let screen = screen.update(Input::Char('b'));
+        assert!(matches!(screen, Screen::Shop(_)));
+        assert_eq!(shop(&screen).cursor, 1, "back on the junior row");
+    }
+
+    #[test]
+    fn without_an_open_slate_nobody_can_be_hired() {
+        let screen = with_game(new_game(), |game| game.day = 20).update(Input::Char('6'));
+        assert!(shop(&screen).staff().is_empty());
+        assert_eq!(shop(&screen).candidates(), None);
+        assert!(
+            matches!(screen.update(Input::Enter), Screen::Play(_)),
+            "only the exit"
+        );
+
+        let mut paranoid = vendor_hall();
+        if let Screen::Shop(shop) = &mut paranoid {
+            shop.game.conditions.push(Condition::Paranoia);
+        }
+        let screen = paranoid.update(Input::Enter);
+        assert_eq!(
+            screen.clone().update(Input::Enter),
+            screen,
+            "no hiring under paranoia"
+        );
+    }
+
+    #[test]
+    fn the_job_fair_has_its_own_row() {
+        let mut screen = vendor_hall();
+        if let Screen::Shop(shop) = &mut screen {
+            shop.game.slate.clear();
+            shop.game.job_fair = GameState::new("Acme", "Alex", Profile::Fintech, 3).slate;
+        }
+        let fair = Candidates {
+            pool: Pool::JobFair,
+            role: None,
+        };
+        assert_eq!(shop(&screen).staff(), [fair]);
+
+        let screen = screen.update(Input::Enter);
+        assert_eq!(viewer(&screen).listed().len(), 10, "every level at once");
     }
 
     #[test]
@@ -1271,10 +1452,6 @@ mod tests {
             [Item::PasswordManager],
             "bought mid-game"
         );
-
-        let screen = arrows(screen, Hop::Left, 1).update(Input::Enter);
-        assert!(matches!(screen, Screen::Shop(_)), "no candidates to hire");
-        assert_eq!(game(&screen).analysts(), 2);
 
         let screen = arrows(screen, Hop::Down, 20).update(Input::Enter);
         assert!(matches!(screen, Screen::Play(_)), "back to the day menu");

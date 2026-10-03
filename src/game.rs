@@ -225,11 +225,9 @@ impl fmt::Display for Profile {
     }
 }
 
-/// Everything for sale through Procurement, in shop order.
+/// Everything for sale through Procurement, in shop order. Analysts are hired from resumes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Item {
-    Junior,
-    Senior,
     PasswordManager,
     MfaTokens,
     Pam,
@@ -255,10 +253,8 @@ pub enum Item {
 }
 
 impl Item {
-    /// Staff, then three tools per defense area from cheapest to premium, then services.
-    pub const ALL: [Item; 24] = [
-        Self::Junior,
-        Self::Senior,
+    /// Three tools per defense area from cheapest to premium, then services.
+    pub const ALL: [Item; 22] = [
         Self::PasswordManager,
         Self::MfaTokens,
         Self::Pam,
@@ -283,10 +279,9 @@ impl Item {
         Self::CoffeeSubscription,
     ];
 
-    /// One-time cost; analysts are hired from resumes with no fee.
+    /// One-time cost.
     pub fn price(self) -> i64 {
         match self {
-            Self::Junior | Self::Senior => 0,
             Self::PasswordManager => 10_000,
             Self::MfaTokens => 20_000,
             Self::Pam => 70_000,
@@ -314,8 +309,6 @@ impl Item {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Junior => "Hire a junior analyst",
-            Self::Senior => "Hire a senior analyst",
             Self::PasswordManager => "Password manager",
             Self::MfaTokens => "MFA tokens",
             Self::Pam => "Privileged access management",
@@ -343,8 +336,6 @@ impl Item {
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::Junior => "Cheap and eager. Slower, and burns out faster.",
-            Self::Senior => "Expensive. Faster at everything and harder to burn out.",
             Self::PasswordManager => "Fewer sticky notes with passwords. Must be deployed.",
             Self::MfaTokens => "Protects identities. Employees will complain. Must be deployed.",
             Self::Pam => "Locks down the admin accounts attackers want. Must be deployed.",
@@ -467,17 +458,15 @@ impl Item {
         }
     }
 
-    /// What this costs every Monday: an analyst's salary or the coffee subscription.
+    /// What this costs every Monday: only the coffee subscription.
     pub fn weekly(self) -> i64 {
         match self {
-            Self::Junior => JUNIOR_SALARY,
-            Self::Senior => SENIOR_SALARY,
             Self::CoffeeSubscription => SUBSCRIPTION_FEE,
             _ => 0,
         }
     }
 
-    /// The defense area a tool belongs to; `None` for staff and services.
+    /// The defense area a tool belongs to; `None` for services.
     pub fn category(self) -> Option<Area> {
         match self {
             Self::PasswordManager | Self::MfaTokens | Self::Pam => Some(Area::Identity),
@@ -520,9 +509,9 @@ impl Item {
         OPERATIONS.iter().find(|o| o.tool == self)
     }
 
-    /// Analysts and coffee can be bought again; tools and services cannot.
+    /// Coffee can be bought again; tools and services cannot.
     fn once(self) -> bool {
-        !matches!(self, Self::Junior | Self::Senior | Self::Coffee)
+        self != Self::Coffee
     }
 }
 
@@ -954,7 +943,7 @@ pub enum Role {
 
 impl Role {
     /// What each proficiency at this level adds to its area.
-    fn skill(self) -> i32 {
+    pub fn skill(self) -> i32 {
         match self {
             Self::Junior => JUNIOR_SKILL,
             Self::Senior => SENIOR_SKILL,
@@ -1255,18 +1244,16 @@ impl GameState {
         self.affords(self.price(item))
             && !(item.once() && self.owned.contains(&item))
             && match item {
-                Item::Junior | Item::Senior => self.can_hire(),
                 Item::Coffee => !self.coffee_full(),
                 _ => true,
             }
     }
 
-    /// Buys a tool, service, or coffee. Analysts are hired by name with `hire`.
+    /// Buys a tool, service, or coffee.
     pub fn buy(&mut self, item: Item) {
         self.budget -= self.price(item);
         match item {
             Item::Coffee => self.coffee = (self.coffee + CASE_POTS).min(COFFEE_CAPACITY),
-            Item::Junior | Item::Senior => unreachable!("analysts are hired from resumes"),
             _ => self.owned.push(item),
         }
     }
@@ -2912,13 +2899,13 @@ mod tests {
     #[test]
     fn tools_and_services_are_bought_once_and_kept() {
         let mut game = game();
-        for item in &Item::ALL[2..10] {
+        for item in &Item::ALL[..8] {
             game.buy(*item);
             assert!(!game.can_buy(*item), "{item:?}");
         }
 
-        assert_eq!(game.owned, &Item::ALL[2..10]);
-        let total: i64 = Item::ALL[2..10].iter().map(|i| i.price()).sum();
+        assert_eq!(game.owned, &Item::ALL[..8]);
+        let total: i64 = Item::ALL[..8].iter().map(|i| i.price()).sum();
         assert_eq!(game.budget, 500_000 - total);
     }
 
@@ -2971,7 +2958,6 @@ mod tests {
             .collect();
 
         assert!(!game.can_hire());
-        assert!(!game.can_buy(Item::Junior));
         assert!(!game.actions().contains(&Action::PostJobs));
     }
 
@@ -3012,7 +2998,7 @@ mod tests {
     fn owned_tools_do_not_change_posture() {
         let mut game = game();
 
-        for item in &Item::ALL[2..10] {
+        for item in &Item::ALL[..8] {
             game.buy(*item);
         }
 
@@ -3540,8 +3526,6 @@ mod tests {
         paranoid.conditions.push(Condition::Paranoia);
 
         assert!(!paranoid.can_hire());
-        assert!(!paranoid.can_buy(Item::Junior));
-        assert!(!paranoid.can_buy(Item::Senior));
         assert!(!paranoid.actions().contains(&Action::PostJobs));
     }
 
@@ -4004,7 +3988,7 @@ mod tests {
 
         let mut paranoid = game();
         paranoid.conditions.push(Condition::Paranoia);
-        assert!(!paranoid.can_buy(Item::Junior), "nobody can be recruited");
+        assert!(!paranoid.can_hire(), "nobody can be recruited");
     }
 
     #[test]

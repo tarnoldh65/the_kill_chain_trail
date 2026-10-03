@@ -387,10 +387,10 @@ Tasks:
 - Update REDESIGN.md (setup, people, and posture sections), the manual, README, and PLAYTEST.md.
 
 Success criteria:
-- [ ] The Staff tab opens the resume viewer for each level; LEFT/RIGHT cycle, ENTER hires with the suggested name, and B returns to Procurement (unit tested).
-- [ ] With no slate open, nothing can be hired, and the Staff tab says how to get more candidates (unit tested).
-- [ ] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile, and every ending is still reachable (unit tested).
-- [ ] Sensible pen test grade floors are re-measured and raised (unit tested).
+- [x] The Staff tab opens the resume viewer for each level; LEFT/RIGHT cycle, ENTER hires with the suggested name, and B returns to Procurement (unit tested).
+- [x] With no slate open, nothing can be hired, and the Staff tab says how to get more candidates (unit tested).
+- [x] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile, and every ending is still reachable (unit tested).
+- [x] Sensible pen test grade floors are re-measured and raised to 2.7 for Fintech, 2.2 for Healthtech, and 1.15 for Gaming (unit tested).
 - [ ] In a playtest, the resume viewer is readable at 640x480, and hiring, posting job openings, and the conference slate all work.
 
 ## Current status

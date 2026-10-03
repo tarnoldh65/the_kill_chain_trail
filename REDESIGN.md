@@ -16,7 +16,7 @@ The name stays. The kill chain is still there, but on the attacker's side and hi
 | One decision per stage, seven turns total | Days pass continuously; actions take days or weeks; events interrupt |
 | Containment meter | Hidden security posture and hidden attacker campaigns |
 | Win = contain the attacker | Win = reach the IPO; score = final valuation |
-| Fixed roster | Hire and name analysts at setup and at landmarks |
+| Fixed roster | Hire and name analysts from resumes at setup, after candidate searches, and at the conference job fair |
 | Choices cost budget, coffee, fatigue | Actions cost budget and/or days; tools must be bought and then deployed |
 
 Kept as-is or lightly reworked: name entry (company and incident lead), burnout and Oregon Trail-style departure messages, the log plus numbered options layout, illustrated incident reports, the intern coffee run, 8-bit graphics, synthesized music and sound, 640x480 scaling, the web build.
@@ -51,10 +51,12 @@ The profile sets the starting budget, the starting valuation, which threat actor
 
 A shop screen where the player spends the starting budget. A leftover balance carries into the game and pays weekly costs.
 
-**Staff** (paid weekly):
-- Junior analyst: cheap, slower, burns out faster.
-- Senior analyst: expensive, faster at actions, better at investigating alerts.
-- The player names each hire. Three to five analysts is a reasonable start.
+**Staff** (paid weekly, hired from resumes with no fee):
+- Security Analyst (junior): cheap, slower, burns out faster. 1-2 proficiencies.
+- Senior Security Analyst: expensive, faster at actions, better at investigating alerts. 1-3 proficiencies.
+- Each proficiency adds the level's skill to a defense area (section 8). Some candidates also have a tool specialty: they deploy, maintain, and operate that tool in half the time. A specialty is always a tool in one of their proficiency areas.
+- Salary is $4K a week for a junior and $8K for a senior, plus $1K for each proficiency after the first and $1K for a specialty.
+- Day 1 offers 5 senior and 5 junior resumes. LEFT/RIGHT cycle through them, and the player names each hire (the resume's name is suggested). Three to five analysts is a reasonable start. Candidates who are not hired take other jobs when Procurement opens for business.
 
 **Tools** (one-time cost; each must be *deployed* by an action before it helps, and loses strength each week until maintained, see section 7). Three per defense area, from cheap to premium; tools in the same area stack:
 
@@ -67,7 +69,7 @@ A shop screen where the player spends the starting budget. A leftover balance ca
 | Resilience | Incident runbooks $8K | Immutable backups $30K | Disaster recovery site $80K |
 | Detection | Log collection $15K | SIEM $80K | Managed detection service $100K |
 
-Procurement has a tab for staff, one for each area, and one for services. The IMPROVES row lights up the areas the selected tool helps.
+Procurement has a tab for staff, one for each area, and one for services. The Staff tab lists the open slates of resumes. The IMPROVES row shows how much the selected tool helps each area.
 
 **Services and supplies**:
 - Incident response retainer: unlocks "Call the IR firm" during incidents.
@@ -75,7 +77,7 @@ Procurement has a tab for staff, one for each area, and one for services. The IM
 - Coffee: cases of 12 pots for the break room (capacity 36).
 - Coffee subscription: nothing up front, $2K every Monday for 18 pots, enough for Relaxed or Steady tempo but not for Crunch.
 
-Procurement stays open: visit it from the day menu any day to pivot as threats change. After day 1, hiring starts a week-long search; only the conference job fair hires on the spot.
+Procurement stays open: visit it from the day menu any day to pivot as threats change. After day 1, hiring needs candidates. The Post job openings action ($10K) starts a search; 14 days later 5 senior and 5 junior resumes arrive, and the player has 7 days (counted down on SOC STATUS) to review them in Procurement. Once reviewed, leaving Procurement sends the unpicked candidates elsewhere; left unreviewed, they all find other jobs when the week is up. Only one search runs at a time.
 
 ## 5. The calendar and timeline
 
@@ -91,7 +93,7 @@ Procurement stays open: visit it from the day menu any day to pivot as threats c
 | --- | --- | --- | --- |
 | 0 | IPO Kickoff | Fort | Outfitting (section 4.3) |
 | 4 | Board Security Briefing | River | Board judges your progress; trust rises or falls based on posture and incidents so far |
-| 7 | Security Conference | Fort | Send yourself and chosen teammates for 3 days (section 5.3); hire on the spot at the job fair |
+| 7 | Security Conference | Fort | Send yourself and chosen teammates for 3 days (section 5.3); hire from the job fair's resumes |
 | 10 | SOC 2 Type II Audit | River | Choose how to cross: rely on your controls, hire consultants (budget), or crunch to fix findings (days and fatigue). Failing hurts valuation and trust and delays the IPO |
 | 13 | Confidential S-1 Filing | Fort | Decide whether to disclose past incidents in the risk factors: disclosure costs valuation now; hiding it risks a much bigger hit if it surfaces later |
 | 16 | Third-Party Pen Test | River | Testers grade your posture as letter grades, the only time it is ever shown; weak areas cost valuation |
@@ -156,10 +158,10 @@ The week 7 landmark is a small minigame. You always attend; the question is who 
 | --- | --- |
 | "You gave a lightning talk about your SOC. The CISO saw it on LinkedIn." | Trust up |
 | "You let a vendor scan your badge. You now get 40 emails a day and a 20% discount through Procurement." | Procurement discount at this conference |
-| "You met a senior analyst at the after-party who wants a job." | A senior candidate waits at the job fair with no hiring fee |
+| "You met a senior analyst at the after-party who wants a job." | A bargain senior joins the job fair: base salary, whatever their skills |
 | "You spent the whole conference answering Slack from your hotel room." | Nothing; your team is grateful you were reachable |
 
-After the report, the fort opens: Procurement with any perks, the job fair (hiring on the spot), and a rest.
+After the report, the fort opens: Procurement with any perks, the job fair, and a rest. Attending brings a job fair slate of 2 seniors and 2 juniors, each with a tool specialty and an extra proficiency (juniors 2, seniors 2-3). It is separate from any search or waiting slate, and it ends when the team leaves the fort.
 
 ## 6. The day menu
 
@@ -195,6 +197,7 @@ The action screen has one tab per kind (Recovery, Implementation, Maintenance, O
 | Give everyone the day off | 1 | None | Large burnout recovery; nobody watching for a day |
 | Team offsite | 5 | Medium | Very large burnout recovery; reduced watch for the week |
 | Brief leadership | 1 | None | Trust boost; the CIO may assign a pet project |
+| Post job openings | 1 | $10K | Starts a candidate search; resumes arrive 14 days after posting (section 4.3) |
 
 ### 7.1 Operations
 
@@ -230,7 +233,7 @@ Posture is hidden: no numbers or meters on screen, and the only grades are the p
 Posture is not stored. Each area's level is calculated from what the player controls, capped at 100:
 
 - Deployed tools, each adding its boost times its condition / 100.
-- Analysts specialized in the area: 15 for a junior, 25 for a senior. Hiring specialists is a future feature.
+- Analysts proficient in the area: 15 for a junior, 25 for a senior, for each proficiency they have.
 - Analysts with conference expertise in the area (section 5.3): 10 each.
 - Operation boosts still in effect (section 7.1).
 
@@ -245,7 +248,7 @@ Every area is 0 on day 1, so the opening purchases set the starting posture. The
 | Resilience | Runbooks 10 | Backups 25 | DR site 35 |
 | Detection | Log collection 12 | SIEM 30 | MDR 35 |
 
-The pen test grades A/B/C/D/F at 80/60/40/20. With tools at about 88% condition, MFA plus a junior specialist grades a C, two tools plus a senior a B, and all three tools plus a senior an A in any area.
+The pen test grades A/B/C/D/F at 80/60/40/20. With tools at about 88% condition, MFA plus a proficient junior grades a C, two tools plus a proficient senior a B, and all three tools plus a proficient senior an A in any area.
 
 The player gets fuzzy hints: the board briefing reaction, result cards that say an area improved or weakened, the defenses screen's list of what is helping each area, and the pen test report card. The report card is a snapshot from the day of the pen test.
 
@@ -314,7 +317,7 @@ Non-attacker events that interrupt travel and force small decisions, good and ba
 
 ### 11.1 Analysts
 
-Each hired analyst has a name, a level (junior or senior), burnout from 0 to 100, and at most one area of conference expertise (section 5.3). Burnout rises with workload, Crunch tempo, incidents, and missing coffee, and falls with days off and Relaxed tempo. Workload is shared, so more analysts means less burnout per person, at a higher weekly cost.
+Each hired analyst has a name, a level (junior or senior), a salary, one or more proficiencies, an optional tool specialty (section 4.3), burnout from 0 to 100, and at most one area of conference expertise (section 5.3). All of it leaves with them. Burnout rises with workload, Crunch tempo, incidents, and missing coffee, and falls with days off and Relaxed tempo. Workload is shared, so more analysts means less burnout per person, at a higher weekly cost.
 
 At 100 burnout an analyst leaves, with Oregon Trail-style messages:
 
@@ -393,7 +396,7 @@ Balance targets, verified by simulated strategies across many seeds:
 - **Idle** (always Continue, ignore every alert): almost always loses before IPO day.
 - **Random**: reaches the IPO roughly a third of the time.
 - **Sensible scripted** (deploy tools, investigate alerts, rest when burned out, run operations): reaches the IPO most of the time.
-- Sensible pen test grades stay above regression floors: Fintech near a C, Healthtech a D+, Gaming near a D, since it can only afford cheap tools. Real C floors wait for analyst specialists.
+- Sensible play hires toward its weakest areas, and its pen test grades stay above regression floors: Fintech about a B-, Healthtech a C+, Gaming a D+, since it can only afford cheap tools.
 - With tools at 88% condition, an area's grade follows the table in section 8, and a pricier tool never gives less.
 - Conference outcomes never reduce posture, every conference card occurs across seeds, and expertise leaves with the analyst who holds it.
 - Every ending is reachable, every incident type occurs, every landmark outcome occurs, and every IPO delay trigger occurs.
@@ -403,7 +406,7 @@ Balance targets, verified by simulated strategies across many seeds:
 
 **In**: everything above.
 
-**Out** (for now): saving mid-game, multiple difficulty levels beyond the company profile, choosing an analyst's specialty when hiring (specialties already count toward posture), mouse input, online scoreboards.
+**Out** (for now): saving mid-game, multiple difficulty levels beyond the company profile, training courses that teach analysts a tool specialty, mouse input, online scoreboards.
 
 ## 17. Decisions
 

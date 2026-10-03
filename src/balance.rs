@@ -5,10 +5,10 @@ use std::mem::discriminant;
 use crate::conference::Track;
 use crate::events::PET_PROJECT;
 use crate::game::{
-    Action, FUNDING_INTERVAL, GameState, IR_FEE, Item, Outcome, Profile, Reply, Tempo,
+    Action, FUNDING_INTERVAL, GameState, IR_FEE, Item, Outcome, Pool, Profile, Reply, Resume, Role,
+    Tempo,
 };
 use crate::landmarks::Landmark;
-use crate::ui::candidate;
 
 const SEEDS: u32 = 100;
 
@@ -97,30 +97,55 @@ fn affordable(game: &GameState, cost: i64, weekly: i64) -> bool {
     spare(game) - cost - weekly * paydays_left(game) > CUSHION
 }
 
-/// Hires the first candidate at `level` from any open slate; false if there is none.
-fn hire(game: &mut GameState, level: Item, name: &str) -> bool {
-    match candidate(game, level) {
+/// The candidate a strategy picks at a level from any open slate. Sensible favors
+/// proficiencies in its weakest areas, then the lower salary; the others take the first.
+fn pick(game: &GameState, style: Style, role: Role) -> Option<(Pool, usize)> {
+    let grades = game.report_card();
+    let weakness = |r: &Resume| -> usize {
+        r.proficiencies
+            .iter()
+            .map(|&a| "ABCDF".find(grades[a as usize].1).unwrap())
+            .sum()
+    };
+    let mut candidates = [Pool::Slate, Pool::JobFair].into_iter().flat_map(|pool| {
+        game.pool(pool)
+            .iter()
+            .enumerate()
+            .filter(move |(_, r)| r.role == role)
+            .map(move |(i, r)| (pool, i, r))
+    });
+    match style {
+        Style::Sensible(_) => {
+            candidates.max_by_key(|&(_, _, r)| (weakness(r), std::cmp::Reverse(r.salary)))
+        }
+        _ => candidates.next(),
+    }
+    .map(|(pool, i, _)| (pool, i))
+}
+
+/// Hires the strategy's pick at a level; false if there is nobody to hire.
+fn hire(game: &mut GameState, style: Style, role: Role) -> bool {
+    match pick(game, style, role) {
         Some((pool, i)) if game.can_hire() => {
             game.review();
-            game.hire(pool, i, name);
+            game.hire(pool, i, "Hire");
             true
         }
         _ => false,
     }
 }
 
-/// Whether the next candidate at `level` is allowed and their salary leaves the cushion.
-fn hireable(game: &GameState, style: Style, level: Item) -> bool {
-    may_buy(style, level)
-        && game.can_hire()
-        && candidate(game, level)
+/// Whether the pick at a level can be hired and their salary leaves the cushion.
+fn hireable(game: &GameState, style: Style, role: Role) -> bool {
+    game.can_hire()
+        && pick(game, style, role)
             .is_some_and(|(pool, i)| affordable(game, 0, game.pool(pool)[i].salary))
 }
 
 /// Hires juniors from any open slate until the team has `size` analysts.
 fn staff_up(game: &mut GameState, style: Style, size: usize) {
-    while analysts(game).len() < size && hireable(game, style, Item::Junior) {
-        hire(game, Item::Junior, "Sensible");
+    while analysts(game).len() < size && hireable(game, style, Role::Junior) {
+        hire(game, style, Role::Junior);
     }
 }
 
@@ -128,19 +153,19 @@ fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
     match style {
         Style::Idle => {
             for _ in 0..3 {
-                hire(game, Item::Junior, "Idle");
+                hire(game, style, Role::Junior);
             }
         }
         Style::Random => {
             for _ in 0..2 + rng.below(3) {
-                let level = if rng.chance(30) {
-                    Item::Senior
+                let role = if rng.chance(30) {
+                    Role::Senior
                 } else {
-                    Item::Junior
+                    Role::Junior
                 };
-                hire(game, level, "Random");
+                hire(game, style, role);
             }
-            for item in &Item::ALL[2..] {
+            for item in &Item::ALL {
                 if rng.chance(40) && game.can_buy(*item) {
                     game.buy(*item);
                 }
@@ -148,12 +173,12 @@ fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
         }
         Style::Sensible(_) => {
             // A team the budget and the board's funding can carry to the IPO.
-            if hireable(game, style, Item::Senior) {
-                hire(game, Item::Senior, "Sensible");
+            if hireable(game, style, Role::Senior) {
+                hire(game, style, Role::Senior);
             }
             staff_up(game, style, 4);
             if analysts(game).is_empty() {
-                hire(game, Item::Senior, "Sensible");
+                hire(game, style, Role::Senior);
             }
             shop(game, style);
         }
@@ -336,12 +361,16 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
             // An impulse buy through Procurement now and then.
             let item = Item::ALL[rng.below(Item::ALL.len())];
             if rng.chance(3) && game.can_buy(item) {
-                match item {
-                    Item::Junior | Item::Senior => {
-                        hire(game, item, "Random");
-                    }
-                    _ => game.buy(item),
-                }
+                game.buy(item);
+            }
+            // And an impulse hire from whatever slate is open.
+            if rng.chance(3) {
+                let role = if rng.chance(30) {
+                    Role::Senior
+                } else {
+                    Role::Junior
+                };
+                hire(game, style, role);
                 game.leave_procurement();
             }
         }
@@ -521,11 +550,11 @@ fn no_single_action_or_purchase_is_required_to_win() {
 #[test]
 fn sensible_play_earns_passable_pen_test_grades() {
     // Average grade points over every area and seed, in hundredths: A is 400, F is 0.
-    // Gaming can only afford the cheap tools, so it stays near a D.
+    // Gaming can only afford the cheap tools, so it leans on its analysts' proficiencies.
     let floors = [
-        (Profile::Fintech, 190),
-        (Profile::Healthtech, 130),
-        (Profile::Gaming, 70),
+        (Profile::Fintech, 270),
+        (Profile::Healthtech, 220),
+        (Profile::Gaming, 115),
     ];
     for (profile, floor) in floors {
         let points: Vec<u32> = (0..SEEDS)
