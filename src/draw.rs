@@ -5,15 +5,15 @@ use crate::art::{self, Sprite};
 use crate::audio::TRACKS;
 use crate::conference::Track;
 use crate::game::{
-    Area, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Outcome, Profile, Reply, Role,
-    SECOND_THOUGHTS, TeamMember, money,
+    Action, Area, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Kind, MAX_ANALYSTS,
+    Outcome, Pool, Profile, Reply, Role, SECOND_THOUGHTS, TeamMember, money, strength,
 };
 use crate::landmarks::Landmark;
 use crate::scores::Score;
 use crate::street::{self, Leg, Street};
 use crate::ui::{
     ActionMenu, CoffeeRun, LOG_LINE, LineKind, LogLine, Music, PAGE_HEIGHT, Screen, Shop, TABS,
-    WEEKDAYS, log_lines, log_pages, tab_items, tab_name, wrap,
+    Viewer, WEEKDAYS, log_lines, log_pages, tab_items, tab_name, wrap,
 };
 
 pub const WIDTH: f32 = 640.0;
@@ -96,19 +96,15 @@ pub fn screen(screen: &Screen, font: &Font, music: Music, scores: &[Score]) {
         ),
         Screen::Profile { company, .. } => profile_choice(font, company.trim()),
         Screen::Shop(shop) => vendor_hall(font, shop),
-        Screen::Hire { shop, name } => {
-            vendor_hall(font, shop);
-            let level = if shop.item() == Some(Item::Senior) {
-                "senior"
-            } else {
-                "junior"
-            };
-            let prompt = if shop.game.hires_now() {
-                format!("Name your new {level} analyst:")
-            } else {
-                format!("Name the {level} analyst to look for:")
-            };
-            name_popup(font, &prompt, name);
+        Screen::Resumes(viewer) => {
+            vendor_hall(font, &viewer.shop);
+            resume_card(font, viewer);
+        }
+        Screen::Hire { viewer, name } => {
+            vendor_hall(font, &viewer.shop);
+            resume_card(font, viewer);
+            let title = viewer.resume().map_or("", |r| r.role.title());
+            name_popup(font, &format!("Name your new {title}:"), name);
         }
         Screen::Actions(menu) => action_menu(font, menu),
         Screen::Play(game) => play(font, game, false),
@@ -351,6 +347,30 @@ fn vendor_hall(font: &Font, shop: &Shop) {
 
     let items = tab_items(shop.tab);
     let row_y = |i: usize| 88.0 + i as f32 * 16.0;
+    for (i, row) in shop.staff().iter().enumerate().filter(|_| shop.tab == 0) {
+        let waiting = game
+            .pool(row.pool)
+            .iter()
+            .filter(|r| row.role.is_none_or(|role| r.role == role))
+            .count();
+        let label = match row.role {
+            Some(Role::Senior) => "Review senior resumes",
+            Some(Role::Junior) => "Review junior resumes",
+            None => "Job fair candidates",
+        };
+        let (status, color) = match waiting {
+            0 => ("all hired".to_string(), DIM),
+            n if game.can_hire() => (format!("{n} waiting"), INK),
+            n => (format!("{n} waiting"), DIM),
+        };
+        font.text(
+            &format!("{label:<30}{status}"),
+            MARGIN + 24.0,
+            row_y(i),
+            1.0,
+            color,
+        );
+    }
     for (i, item) in items.iter().enumerate() {
         let y = row_y(i);
         let owned = game.owned.contains(item);
@@ -379,7 +399,7 @@ fn vendor_hall(font: &Font, shop: &Shop) {
             color,
         );
     }
-    let exit_y = row_y(items.len());
+    let exit_y = row_y(shop.rows());
     let can_open = game.analysts() > 0;
     let exit = if game.day == 1 {
         "Open for business"
@@ -396,29 +416,60 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     font.text(">", MARGIN + 8.0, row_y(shop.cursor), 1.0, AMBER);
     divider(exit_y + 20.0);
 
-    let note = match shop.item() {
-        Some(Item::Junior | Item::Senior) if !game.hires_now() => {
-            "Starts a week-long search. The recruiter's fee is paid now."
+    let note = match (shop.candidates(), shop.item()) {
+        (Some(_), _) if !game.can_hire() => hiring_blocked(game).to_string(),
+        (Some(row), _) if row.pool == Pool::JobFair => {
+            "Strong candidates, here only while you are at the conference.".to_string()
         }
-        Some(item) => item.description(),
-        None if can_open => "Start day 1. Leftover budget pays the weekly payroll.",
-        None => "Hire at least one analyst first.",
+        (Some(_), _) => {
+            "Hire who you want. The rest take other jobs when you leave Procurement.".to_string()
+        }
+        (None, Some(item)) => item.description().to_string(),
+        (None, None) if shop.tab == 0 && shop.staff().is_empty() => {
+            if game.search_days > 0 {
+                format!("New resumes arrive in {} days.", game.search_days)
+            } else {
+                "No candidates. Post job openings from the action list.".to_string()
+            }
+        }
+        (None, None) if can_open => {
+            "Start day 1. Leftover budget pays the weekly payroll.".to_string()
+        }
+        (None, None) => "Hire at least one analyst first.".to_string(),
     };
-    font.text(note, MARGIN, exit_y + 32.0, 1.0, CYAN);
+    font.text(&note, MARGIN, exit_y + 32.0, 1.0, CYAN);
 
-    let analysts: Vec<String> = game
-        .team
-        .iter()
-        .map(|m| format!("{} ({})", m.name, short_role(m.role)))
-        .chain(
-            game.searches
-                .iter()
-                .map(|s| format!("{} (starts in {} days)", s.name, s.days_left)),
-        )
-        .collect();
-    let roster = format!("Analysts: {}", analysts.join(", "));
-    for (i, line) in wrap(&roster, 76).iter().take(4).enumerate() {
-        font.text(line, MARGIN, exit_y + 56.0 + i as f32 * 12.0, 1.0, INK);
+    // The team so far, one per line, so their skills can guide what to buy.
+    let y = exit_y + 56.0;
+    if game.team.is_empty() {
+        font.text("No analysts yet.", MARGIN, y, 1.0, DIM);
+    } else {
+        font.text(
+            &format!(
+                "{:<8}{:<7}{:<33}SPECIALTY",
+                "ANALYST", "LEVEL", "PROFICIENCIES"
+            ),
+            MARGIN,
+            y,
+            1.0,
+            CYAN,
+        );
+    }
+    for (i, member) in game.team.iter().enumerate() {
+        let name: String = member.name.chars().take(7).collect();
+        let areas: Vec<String> = member.proficiencies.iter().map(|a| a.to_string()).collect();
+        let specialty = member.specialty.map_or("-", |tool| tool.label());
+        font.text(
+            &format!(
+                "{name:<8}{:<7}{:<33}{specialty}",
+                short_role(member.role),
+                areas.join(", ")
+            ),
+            MARGIN,
+            y + 12.0 * (i + 1) as f32,
+            1.0,
+            INK,
+        );
     }
     improves_strip(font, shop.item().map_or(&[], |i| i.boosts()), 432.0);
     font.text(
@@ -428,6 +479,118 @@ fn vendor_hall(font: &Font, shop: &Shop) {
         1.0,
         DIM,
     );
+}
+
+/// What an analyst knows, for the team screen.
+fn skills(member: &TeamMember) -> String {
+    let areas: Vec<String> = member.proficiencies.iter().map(|a| a.to_string()).collect();
+    let mut text = format!("{}: proficient in {}.", member.name, areas.join(", "));
+    if let Some(tool) = member.specialty {
+        text += &format!(" {} specialist.", tool.label());
+    }
+    if let Some(area) = member.expertise {
+        text += &format!(" {area} expertise.");
+    }
+    text
+}
+
+/// Why nobody can be hired right now.
+fn hiring_blocked(game: &GameState) -> &'static str {
+    if game.analysts() >= MAX_ANALYSTS {
+        "Every desk is taken."
+    } else {
+        "Paranoia: nobody wants to join a SOC under investigation."
+    }
+}
+
+/// One resume from a Staff row, over Procurement.
+fn resume_card(font: &Font, viewer: &Viewer) {
+    let game = &viewer.shop.game;
+    let (x, y, w, h) = (8.0, 72.0, WIDTH - 16.0, 400.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, CYAN);
+    let heading = match viewer.row.role {
+        Some(Role::Senior) => "SENIOR RESUMES",
+        Some(Role::Junior) => "JUNIOR RESUMES",
+        None => "JOB FAIR",
+    };
+    font.text(heading, x + 16.0, y + 12.0, 1.0, AMBER);
+    let listed = viewer.listed();
+    if !listed.is_empty() {
+        right(
+            font,
+            &format!("{} of {}", viewer.index + 1, listed.len()),
+            y + 12.0,
+            INK,
+        );
+    }
+    let Some(resume) = viewer.resume() else {
+        font.centered(
+            "Everyone here has been hired.",
+            WIDTH / 2.0,
+            y + 140.0,
+            1.0,
+            INK,
+        );
+        font.text("B to go back.", x + 16.0, y + h - 20.0, 1.0, DIM);
+        return;
+    };
+    font.text(&resume.name, x + 16.0, y + 40.0, 2.0, INK);
+    font.text(resume.role.title(), x + 16.0, y + 64.0, 1.0, CYAN);
+    let areas: Vec<String> = resume.proficiencies.iter().map(|a| a.to_string()).collect();
+    font.text("PROFICIENT IN", x + 16.0, y + 96.0, 1.0, AMBER);
+    font.text(&areas.join(", "), x + 16.0, y + 110.0, 1.0, INK);
+    font.text("TOOL SPECIALTY", x + 16.0, y + 138.0, 1.0, AMBER);
+    match resume.specialty {
+        Some(tool) => {
+            let have = if game.is_deployed(tool) {
+                " (deployed)"
+            } else if game.owned.contains(&tool) {
+                " (owned)"
+            } else {
+                ""
+            };
+            font.text(
+                &format!("{}{have}", tool.label()),
+                x + 16.0,
+                y + 152.0,
+                1.0,
+                INK,
+            );
+            font.text(
+                "Deploys, maintains, and operates it in half the time.",
+                x + 16.0,
+                y + 166.0,
+                1.0,
+                DIM,
+            );
+        }
+        None => font.text("None", x + 16.0, y + 152.0, 1.0, DIM),
+    }
+    font.text("SALARY", x + 16.0, y + 194.0, 1.0, AMBER);
+    font.text(
+        &format!("{} a week", money(resume.salary)),
+        x + 16.0,
+        y + 208.0,
+        1.0,
+        INK,
+    );
+    font.text("ABOUT", x + 16.0, y + 236.0, 1.0, AMBER);
+    for (i, line) in wrap(&format!("\"{}\"", resume.quote), 74)
+        .iter()
+        .enumerate()
+    {
+        font.text(line, x + 16.0, y + 250.0 + i as f32 * 12.0, 1.0, CYAN);
+    }
+    let (hint, color) = if game.can_hire() {
+        (
+            "LEFT/RIGHT for more resumes, ENTER to hire, B to go back.",
+            DIM,
+        )
+    } else {
+        (hiring_blocked(game), RED)
+    };
+    font.text(hint, x + 16.0, y + h - 20.0, 1.0, color);
 }
 
 fn name_popup(font: &Font, prompt: &str, name: &str) {
@@ -465,28 +628,31 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
         1.0,
         DIM,
     );
-    // Actions under a header for each kind; the cursor only lands on actions and Back.
-    let actions = game.actions();
-    let mut y = 102.0;
+    // One tab per kind: the open one amber, the others lit if they have actions.
+    let all = game.actions();
+    let mut x = MARGIN;
+    for kind in Kind::ALL {
+        let name = kind.to_string().to_uppercase();
+        let color = if kind == menu.tab {
+            AMBER
+        } else if all.iter().any(|a| a.kind() == kind) {
+            INK
+        } else {
+            DIM
+        };
+        font.text(&name, x, 118.0, 1.0, color);
+        x += (name.len() + 2) as f32 * GLYPH;
+    }
     let mut rows = Vec::new();
-    for (i, action) in actions.iter().enumerate() {
-        if i == 0 || actions[i - 1].kind() != action.kind() {
-            y += 16.0;
-            font.text(
-                &action.kind().to_string().to_uppercase(),
-                MARGIN,
-                y,
-                1.0,
-                CYAN,
-            );
-        }
+    let mut y = 126.0;
+    for action in menu.listed() {
         y += 12.0;
         let cost = match action.cost() {
             0 => "-".to_string(),
             cost => money(cost),
         };
         font.text(
-            &format!("{:<38}{:<8}{cost}", action.label(), game.duration(*action)),
+            &format!("{:<38}{:<8}{cost}", action.label(), game.duration(action)),
             MARGIN + 24.0,
             y,
             1.0,
@@ -499,13 +665,27 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
     rows.push(y);
     font.text(">", MARGIN + 8.0, rows[menu.cursor], 1.0, AMBER);
     divider(384.0);
-    let note = menu
-        .action()
-        .map_or("Return to the day menu.", |a| a.description());
+    let action = menu.action();
+    let note = action.map_or("Return to the day menu.", |a| a.description());
     font.text(note, MARGIN, 396.0, 1.0, CYAN);
-    improves_strip(font, menu.action().map_or(&[], |a| a.improves()), 424.0);
+    if let Some(Action::Operate(item)) = action
+        && let Some(tool) = game.worn(item)
+    {
+        font.text(
+            &format!("The {} is {}: weaker results.", item.label(), tool.state()),
+            MARGIN,
+            408.0,
+            1.0,
+            AMBER,
+        );
+    }
+    improves_strip(
+        font,
+        &action.map_or(Vec::new(), |a| game.improves(a)),
+        424.0,
+    );
     font.text(
-        "UP/DOWN to choose, T for tempo, ENTER to start. Days pass while you work.",
+        "LEFT/RIGHT for tabs, UP/DOWN to choose, T for tempo, ENTER to start.",
         MARGIN,
         460.0,
         1.0,
@@ -513,14 +693,21 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
     );
 }
 
-/// The six defense areas in a row, with the ones `improved` lit up.
+/// The six defense areas in a row, with the ones `improved` lit up and plus signs under
+/// each for how much it helps.
 fn improves_strip(font: &Font, improved: &[(Area, i32)], y: f32) {
     font.text("IMPROVES", MARGIN, y, 1.0, CYAN);
     let mut x = MARGIN + 80.0;
     for area in Area::ALL {
-        let lit = improved.iter().any(|&(a, _)| a == area);
+        let amount: i32 = improved
+            .iter()
+            .filter(|&&(a, _)| a == area)
+            .map(|&(_, b)| b)
+            .sum();
         let name = area.to_string();
-        font.text(&name, x, y, 1.0, if lit { GREEN } else { DIM });
+        let color = if amount > 0 { GREEN } else { DIM };
+        font.text(&name, x, y, 1.0, color);
+        font.text(strength(amount), x, y + 10.0, 1.0, GREEN);
         x += (name.len() + 2) as f32 * GLYPH;
     }
 }
@@ -582,7 +769,7 @@ fn defenses(font: &Font, game: &GameState) {
         } else {
             helping.join(", ")
         };
-        for (j, line) in wrap(&format!("Tools: {helping}"), 70)
+        for (j, line) in wrap(&format!("Helping: {helping}"), 70)
             .iter()
             .take(2)
             .enumerate()
@@ -1116,10 +1303,12 @@ fn status_panel(font: &Font, game: &GameState) {
     };
     font.text(&funding, value_x, row(6), 1.0, INK);
     font.text("Hiring", x, row(5), 1.0, INK);
-    let hiring = match game.searches.as_slice() {
-        [] => "-".to_string(),
-        [search] => format!("{}d {}", search.days_left, search.name),
-        searches => format!("{} searches", searches.len()),
+    let hiring = if game.search_days > 0 {
+        format!("{}d search", game.search_days)
+    } else if game.review_days > 0 {
+        format!("{}d to review", game.review_days)
+    } else {
+        "-".to_string()
     };
     font.text(
         &hiring.chars().take(15).collect::<String>(),
@@ -1342,6 +1531,11 @@ fn team_screen(font: &Font, game: &GameState, cursor: usize) {
         "Only analysts who are here can be let go, and never the last one.".to_string()
     };
     font.text(&hint, MARGIN, 412.0, 1.0, CYAN);
+    if let Some(member) = game.team.get(cursor) {
+        for (i, line) in wrap(&skills(member), 76).iter().take(2).enumerate() {
+            font.text(line, MARGIN, 428.0 + i as f32 * 12.0, 1.0, INK);
+        }
+    }
     font.text(
         "UP/DOWN to choose, ENTER to return.",
         MARGIN,

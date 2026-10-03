@@ -7,7 +7,11 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [x] Company and lead names accept typing and Backspace; empty names are refused.
 - [x] Each profile shows its budget, valuation, and multiplier, and starts with them.
 - [x] Procurement hires and names analysts, buys tools and services once, stops coffee at 36 pots, and needs an analyst before opening.
-- [x] Option 6 opens Procurement any day; hires after day 1 start a week-long search shown on the Hiring line, and the analyst joins with a result card.
+- [x] Option 6 opens Procurement any day.
+- [ ] The resume viewer is readable: LEFT/RIGHT cycle, ENTER hires with the suggested name, B returns; skipped day 1 candidates are gone after opening for business.
+- [ ] Post job openings shows the search on the Hiring line, then a card and a review countdown; reviewed resumes clear on leaving Procurement, and unreviewed ones expire with a card.
+- [ ] The conference job fair row appears only at the conference fort and leaves other candidates alone.
+- [ ] The team screen shows the selected analyst's proficiencies and specialty.
 - [x] Days pass on Continue and any key stops the clock; the timeline marker moves and the days-to-IPO count drops.
 - [x] Actions start, show in the status panel, pause when interrupted, and resume with option 1.
 - [x] The intern coffee run is playable and fair, and Rush Hour music plays during it.
@@ -23,7 +27,10 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [ ] The board releases funding every sixth Monday, scaled by trust, with a result card; SOC Status shows the next funding day.
 - [ ] The last eight weeks still offer a meaningful choice every week.
 - [x] D opens the defenses screen from any play screen: each defense shows who it slows, what is helping it (amber for tools not yet deployed), and the pen test grade, which stays after the pen test.
-- [x] Procurement and the action list light up the defenses the selected item or action improves.
+- [ ] Procurement and the action list light up the defenses the selected item or action improves, with +, ++, or +++ under each.
+- [ ] The action list has a tab per kind; LEFT/RIGHT skip empty tabs, it opens on Recovery after an incident, and no tab runs past the divider.
+- [ ] Deploying a tool with an operation adds it to the Operations tab; finishing it shows its boost on the defenses screen with days left, and the log says when it wears off.
+- [ ] A maintained mid-range build earns Bs or better on the pen test.
 - [x] L opens the full log on its newest page from any play screen; LEFT/RIGHT turn pages back to the first entry, and ENTER returns where you were.
 - [x] Every landmark stops the clock on its day: forts offer Procurement, rest, and moving on; rivers offer their choices; the pen test shows letter grades.
 - [x] The conference picker, track picker, three days away, and card reveal all work, and perks apply through Procurement.

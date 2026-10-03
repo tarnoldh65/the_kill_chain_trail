@@ -5,7 +5,8 @@ use std::mem::discriminant;
 use crate::conference::Track;
 use crate::events::PET_PROJECT;
 use crate::game::{
-    Action, FUNDING_INTERVAL, GameState, IR_FEE, Item, Outcome, Profile, Reply, Tempo,
+    Action, FUNDING_INTERVAL, GameState, IR_FEE, Item, Outcome, Pool, Profile, Reply, Resume, Role,
+    Tempo,
 };
 use crate::landmarks::Landmark;
 
@@ -96,23 +97,75 @@ fn affordable(game: &GameState, cost: i64, weekly: i64) -> bool {
     spare(game) - cost - weekly * paydays_left(game) > CUSHION
 }
 
+/// The candidate a strategy picks at a level from any open slate. Sensible favors
+/// proficiencies in its weakest areas, then the lower salary; the others take the first.
+fn pick(game: &GameState, style: Style, role: Role) -> Option<(Pool, usize)> {
+    let grades = game.report_card();
+    let weakness = |r: &Resume| -> usize {
+        r.proficiencies
+            .iter()
+            .map(|&a| "ABCDF".find(grades[a as usize].1).unwrap())
+            .sum()
+    };
+    let mut candidates = [Pool::Slate, Pool::JobFair].into_iter().flat_map(|pool| {
+        game.pool(pool)
+            .iter()
+            .enumerate()
+            .filter(move |(_, r)| r.role == role)
+            .map(move |(i, r)| (pool, i, r))
+    });
+    match style {
+        Style::Sensible(_) => {
+            candidates.max_by_key(|&(_, _, r)| (weakness(r), std::cmp::Reverse(r.salary)))
+        }
+        _ => candidates.next(),
+    }
+    .map(|(pool, i, _)| (pool, i))
+}
+
+/// Hires the strategy's pick at a level; false if there is nobody to hire.
+fn hire(game: &mut GameState, style: Style, role: Role) -> bool {
+    match pick(game, style, role) {
+        Some((pool, i)) if game.can_hire() => {
+            game.review();
+            game.hire(pool, i, "Hire");
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Whether the pick at a level can be hired and their salary leaves the cushion.
+fn hireable(game: &GameState, style: Style, role: Role) -> bool {
+    game.can_hire()
+        && pick(game, style, role)
+            .is_some_and(|(pool, i)| affordable(game, 0, game.pool(pool)[i].salary))
+}
+
+/// Hires juniors from any open slate until the team has `size` analysts.
+fn staff_up(game: &mut GameState, style: Style, size: usize) {
+    while analysts(game).len() < size && hireable(game, style, Role::Junior) {
+        hire(game, style, Role::Junior);
+    }
+}
+
 fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
     match style {
         Style::Idle => {
             for _ in 0..3 {
-                game.hire(Item::Junior, "Idle");
+                hire(game, style, Role::Junior);
             }
         }
         Style::Random => {
             for _ in 0..2 + rng.below(3) {
-                let level = if rng.chance(30) {
-                    Item::Senior
+                let role = if rng.chance(30) {
+                    Role::Senior
                 } else {
-                    Item::Junior
+                    Role::Junior
                 };
-                game.hire(level, "Random");
+                hire(game, style, role);
             }
-            for item in &Item::ALL[2..] {
+            for item in &Item::ALL {
                 if rng.chance(40) && game.can_buy(*item) {
                     game.buy(*item);
                 }
@@ -120,21 +173,17 @@ fn setup(game: &mut GameState, style: Style, rng: &mut Rng) {
         }
         Style::Sensible(_) => {
             // A team the budget and the board's funding can carry to the IPO.
-            let hireable = |g: &GameState, level: Item| {
-                may_buy(style, level) && affordable(g, level.price(), level.weekly())
-            };
-            if hireable(game, Item::Senior) {
-                game.hire(Item::Senior, "Sensible");
+            if hireable(game, style, Role::Senior) {
+                hire(game, style, Role::Senior);
             }
-            while analysts(game).len() < 4 && hireable(game, Item::Junior) {
-                game.hire(Item::Junior, "Sensible");
-            }
+            staff_up(game, style, 4);
             if analysts(game).is_empty() {
-                game.hire(Item::Senior, "Sensible");
+                hire(game, style, Role::Senior);
             }
             shop(game, style);
         }
     }
+    game.leave_procurement();
 }
 
 /// Buys what a sensible player wants while keeping enough for payroll.
@@ -271,13 +320,9 @@ fn landmark(game: &mut GameState, style: Style, rng: &mut Rng, at: Landmark, att
     if at.is_fort() {
         if let Style::Sensible(_) = style {
             game.rest_at_fort();
-            while analysts(game).len() < 4
-                && may_buy(style, Item::Junior)
-                && affordable(game, game.price(Item::Junior), Item::Junior.weekly())
-            {
-                game.hire(Item::Junior, "Sensible");
-            }
+            staff_up(game, style, 4);
             shop(game, style);
+            game.leave_procurement();
         }
         game.leave_fort();
         return;
@@ -316,10 +361,17 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
             // An impulse buy through Procurement now and then.
             let item = Item::ALL[rng.below(Item::ALL.len())];
             if rng.chance(3) && game.can_buy(item) {
-                match item {
-                    Item::Junior | Item::Senior => game.hire(item, "Random"),
-                    _ => game.buy(item),
-                }
+                game.buy(item);
+            }
+            // And an impulse hire from whatever slate is open.
+            if rng.chance(3) {
+                let role = if rng.chance(30) {
+                    Role::Senior
+                } else {
+                    Role::Junior
+                };
+                hire(game, style, role);
+                game.leave_procurement();
             }
         }
         Style::Sensible(_) => {
@@ -336,14 +388,10 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
             // A weekly trip to Procurement for anything missing, and a new hire if short.
             if game.weekday() == 0 {
                 shop(game, style);
-                let short = analysts(game).len() + game.searches.len() < 3;
-                if short
-                    && may_buy(style, Item::Junior)
-                    && game.can_buy(Item::Junior)
-                    && affordable(game, game.price(Item::Junior), Item::Junior.weekly())
-                {
-                    game.hire(Item::Junior, "Sensible");
+                if analysts(game).len() < 3 {
+                    staff_up(game, style, 3);
                 }
+                game.leave_procurement();
             }
             if let Some(action) = sensible_action(game, style, tired) {
                 game.start(action);
@@ -363,25 +411,36 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
 
     first(|a| matches!(a, Action::Clear(_)))
         .or_else(|| (tired >= 55).then(|| offered(Action::DayOff)).flatten())
+        // Short-handed with nobody to hire: look for candidates.
+        .or_else(|| {
+            (game.team.len() < 3 && game.slate.is_empty())
+                .then(|| offered(Action::PostJobs))
+                .flatten()
+        })
         // Trust pays for itself now that the board funds by it.
         .or_else(|| {
             (game.trust < 50)
-                .then(|| offered(Action::BriefLeadership).or_else(|| offered(Action::Tabletop)))
+                .then(|| {
+                    offered(Action::BriefLeadership)
+                        .or_else(|| offered(Action::Operate(Item::Runbooks)))
+                })
                 .flatten()
         })
         .or_else(|| first(|a| matches!(a, Action::Deploy(_))))
         .or_else(|| first(|a| matches!(a, Action::Maintain(_))))
         .or_else(|| {
-            if tired >= 35 {
+            // Push harder in the four weeks before the pen test, so its boosts are fresh.
+            let pen_test = game.landmark_days[Landmark::PenTest as usize];
+            let cramming = game.day + 28 >= pen_test && game.day < pen_test;
+            if tired >= if cramming { 60 } else { 35 } {
                 return None;
             }
-            let rotation = [
-                Action::ThreatHunt,
-                Action::PatchSprint,
-                Action::PhishingSim,
-                Action::Tabletop,
-                Action::BriefLeadership,
-            ];
+            let rotation: Vec<Action> = actions
+                .iter()
+                .copied()
+                .filter(|a| matches!(a, Action::Operate(_)))
+                .chain([Action::BriefLeadership])
+                .collect();
             // Each start is logged, so counting them walks the rotation.
             let started = game
                 .log
@@ -468,12 +527,10 @@ fn every_ending_happens_to_some_strategy() {
 fn no_single_action_or_purchase_is_required_to_win() {
     let skips = Item::ALL.map(Skip::Buy).into_iter().chain(
         [
-            Action::PhishingSim,
-            Action::PatchSprint,
-            Action::Tabletop,
+            // Skipping one operation skips them all.
+            Action::Operate(Item::Siem),
             Action::DayOff,
             Action::BriefLeadership,
-            Action::ThreatHunt,
             Action::Maintain(crate::game::Area::Detection),
             Action::Clear(crate::attack::Condition::SystemsDown),
         ]
@@ -487,5 +544,24 @@ fn no_single_action_or_purchase_is_required_to_win() {
                 play(profile, seed, Style::Sensible(Some(skip))).outcome == Some(Outcome::Ipo)
             });
         assert!(wins, "skipping {skip:?} never wins");
+    }
+}
+
+#[test]
+fn sensible_play_earns_passable_pen_test_grades() {
+    // Average grade points over every area and seed, in hundredths: A is 400, F is 0.
+    // Gaming can only afford the cheap tools, so it leans on its analysts' proficiencies.
+    let floors = [
+        (Profile::Fintech, 270),
+        (Profile::Healthtech, 220),
+        (Profile::Gaming, 115),
+    ];
+    for (profile, floor) in floors {
+        let points: Vec<u32> = (0..SEEDS)
+            .filter_map(|seed| play(profile, seed, Style::Sensible(None)).pen_test)
+            .flat_map(|(_, grades)| grades.map(|(_, grade)| "FDCBA".find(grade).unwrap() as u32))
+            .collect();
+        let average = points.iter().sum::<u32>() * 100 / points.len() as u32;
+        assert!(average >= floor, "{profile}: {average}");
     }
 }

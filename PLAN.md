@@ -269,6 +269,130 @@ Success criteria:
 - [ ] In a playtest, the last eight weeks still offer meaningful choices every week.
 - [ ] Every item in PLAYTEST.md passes, and the Pages URL serves the new version.
 
+## Phase 25: Posture from tools and analysts
+
+Issue #19. Raw posture starts at 30 and loses 2 every Monday, so it is 0 by the pen test and the best grade a player can earn is about a C. Posture becomes a value calculated from what the player controls.
+
+Tasks:
+- Remove the stored `posture` array, its weekly decay, and its starting value of 30. An area's level is the sum of deployed tools' boosts times condition / 100, plus specialty skill (junior 15, senior 25), plus 10 per analyst with conference expertise in the area, plus active operation boosts (Phase 26), capped at 100. Every area is 0 on day 1.
+- Analysts may carry a specialty area. New hires have none for now; choosing a specialty belongs to a later hiring feature. A specialty leaves with the analyst.
+- Retune tool boosts so pricier tools never give less:
+  - Identity: password manager 12, MFA 30, PAM 30 plus Detection 15.
+  - Endpoint: antivirus 12, allowlisting 25, EDR 30 plus Detection 15.
+  - People: posters 10, email gateway 25, training platform 30.
+  - Perimeter: vulnerability scanner 12 plus Endpoint 5, WAF 30, ASM 30 plus Detection 10.
+  - Resilience: runbooks 10, backups 25, DR site 35.
+  - Detection: log collection 12, SIEM 30, MDR 35.
+- Events wear tools instead of posture. The zero-day's "Patch it tonight" restores 20 condition to Perimeter and Endpoint tools, and "Accept the risk" costs Perimeter tools 30. Going along with the CIO's migration costs every deployed tool 10.
+- Until Phase 26 replaces them, the patch sprint, phishing simulation, and tabletop restore their areas' tools to full condition instead of adding posture.
+
+Success criteria:
+- [x] A new game is 0 in every area, and a Monday lowers a level only through tool wear (unit tested).
+- [x] A specialty adds 15 for a junior and 25 for a senior, and leaves with the analyst (unit tested).
+- [x] Event wear changes only the tools in the named areas, and condition stays in 0-100 (unit tested).
+- [x] With tools at 88% condition, nothing grades F, MFA plus a junior specialist grades C, two tools plus a senior grade B, and all three tools plus a senior grade A (unit tested).
+- [x] Within each area, a pricier tool never gives less total boost (unit tested).
+
+## Phase 26: Tool operations
+
+Patch sprint, phishing simulation, tabletop, and threat hunt stop being always available. Operations become longer tasks that a deployed tool unlocks, each with a tangible payoff. Posters, MFA, antivirus, allowlisting, the email gateway, the WAF, and MDR have none.
+
+Tasks:
+- Operations by tool:
+
+| Tool | Operation | Days | Payoff |
+|---|---|---|---|
+| Password manager | Sticky note sweep | 3 | Identity +10; 1 in 4 chance trust -2 |
+| PAM | Rotate the keys | 5 | Evict data thieves and insiders; Identity +10 |
+| EDR | Compromise assessment | 6 | Evict ransomware and nation-states; Endpoint +10 |
+| Training platform | Phishing simulation | 4, $5K | People +20; 1 in 3 chance trust -3 |
+| Vulnerability scanner | Patch sprint | 5 | Perimeter +15, Endpoint +10; burnout +8 |
+| ASM | Forgotten server cleanup | 5 | Evict hacktivists; Perimeter +10 |
+| Runbooks | Tabletop exercise | 2 | Resilience +10; trust +2 |
+| Immutable backups | Backup recovery drill | 4 | Brace against ransomware; Resilience +10 |
+| DR site | Failover test | 5 | Brace against every attacker; 1 in 4 chance brand -3 |
+| Log collection | Log review | 3 | Weak eviction roll against insiders; Detection +10 |
+| SIEM | Threat hunt | 6 | Eviction roll against every campaign |
+
+- Boosts last four weeks; running an operation again refreshes its boost instead of stacking. When a boost wears off, the log says so.
+- Boosts and eviction odds scale with the tool's condition when the operation finishes. Seniors still improve eviction odds.
+- A brace halves the damage of the next incident from a matching attacker, then is used up.
+
+Success criteria:
+- [x] Each operation is offered only while its tool is deployed (unit tested).
+- [x] A finished operation applies exactly its boosts, scaled by the tool's condition (unit tested).
+- [x] Boosts expire after four weeks, and a re-run refreshes instead of stacking (unit tested).
+- [x] A brace halves one matching incident's damage and is then gone (unit tested).
+- [x] Targeted evictions only end campaigns by their attackers (unit tested).
+- [x] Every operation has three distinct result messages (unit tested).
+
+## Phase 27: Actions screen, balance, and docs
+
+Tasks:
+- The Actions screen gets LEFT/RIGHT tabs, one per kind: Recovery, Implementation, Maintenance, Operations, Management. Empty tabs are dimmed and skipped. The menu opens on the first tab with actions, so Recovery comes first after an incident. When a tool is not fresh, the action's description says the results will be weaker.
+- The IMPROVES strip in Procurement and on the Actions screen shows relative benefit without numbers: + for small (under 15), ++ for medium (15-29), +++ for large (30 and up), under each area it improves.
+- The defenses screen lists active operation boosts with days left, and braces under Resilience.
+- The Sensible strategy runs operations in rotation and pushes harder in the four weeks before the pen test. Operation boosts rise by 5 (Identity, Endpoint, Perimeter, Resilience, and Detection boosts become 15; the phishing simulation 25; the patch sprint 20 Perimeter and 15 Endpoint). The Phase 20 targets still hold, so attacker and landmark odds are unchanged.
+- Sensible pen test grades are locked in as regression floors rather than a C everywhere: Gaming can afford only cheap tools, and real C floors wait for a hiring feature that adds specialists.
+- Update REDESIGN.md (sections 7, 8, 10, 15, 17), the manual, README, and PLAYTEST.md.
+
+Success criteria:
+- [x] LEFT/RIGHT change tabs and skip empty ones, the menu opens on Recovery when a condition is active, and ENTER starts the action under the cursor (unit tested).
+- [x] Benefit strength maps to +, ++, and +++ at the documented thresholds (unit tested).
+- [x] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile (unit tested).
+- [x] Every ending is still reachable, and Sensible skipping any one purchase or action, including all operations, still wins some games (unit tested).
+- [x] Sensible pen test grade points average at least 1.9 for Fintech, 1.3 for Healthtech, and 0.7 for Gaming, where A is 4 and F is 0 (unit tested).
+- [ ] In a playtest, a maintained build earns Bs or As on the pen test, and no Actions tab overflows.
+
+## Phase 28: Resumes and candidate searches
+
+Issue #20. Analysts become choices: each candidate has a resume with proficiencies, an optional tool specialty, and a salary that reflects them. Hiring happens from a slate of resumes, and new slates come from a two-week candidate search.
+
+Tasks:
+- An analyst has a level, one or more proficiencies (defense areas), an optional tool specialty, and a salary. This replaces the Phase 25 single specialty area.
+  - Each proficiency adds the level's full skill to its area: 15 for a junior, 25 for a senior.
+  - A tool specialty halves the days (rounded up, at least 1) of every action tied to that tool: deploying it, maintaining its area while it is deployed, and its operation. A second specialist in the same tool adds nothing.
+  - Salary is $4K a week for a junior and $8K for a senior, plus $1K for each proficiency after the first and $1K for a specialty.
+- Resumes show the title (Security Analyst or Senior Security Analyst), proficiencies, tool specialty, salary, and a generated name, which is prefilled when hiring and can be changed.
+  - Juniors have 1-2 proficiencies and sometimes a specialty; seniors have 1-3 and more often a specialty. A specialty is always a tool in one of their proficiency areas.
+  - Resumes are generated from the game's seed, so a seed always offers the same candidates.
+- A slate holds 5 senior and 5 junior resumes. Hiring from it is instant and has no fee; the hired resume leaves the slate. Hiring windows are short, and candidates who are not picked find other jobs:
+  - Day 1 starts with a slate, which clears when the first Procurement opens for business.
+  - A new Management action, Post job openings, costs $10K and takes a day; the search then runs in the background, and the resumes arrive 14 days after posting. Only one search runs at a time. When it ends, a result card says the candidates are in, and Procurement offers Review resumes for 7 days, with the countdown on SOC STATUS.
+  - Once the resumes have been reviewed, leaving Procurement clears the slate. If they are not reviewed within the 7 days, a result card says the candidates all found other jobs.
+- Attending the security conference brings a separate job fair slate, available only at the conference fort and cleared on leaving it. It never touches a waiting slate or a running search.
+  - It is smaller but stronger: 2 seniors and 2 juniors, each with a tool specialty and one more proficiency than usual (juniors 2, seniors 2-3). Salaries follow the usual formula.
+  - The after-party card adds a bargain senior: a fifth job fair resume at the base salary, whatever its skills.
+- Paranoia blocks posting job openings and hiring, as it blocks hiring today. The eight-desk limit still applies.
+- Remove the recruiter's fee, week-long per-analyst searches, instant hiring rules, and the free-senior perk.
+
+Success criteria:
+- [x] Proficiencies add 15 or 25 per area by level, and leave with the analyst (unit tested).
+- [x] A specialist halves the days of deploying, maintaining, and operating their tool, and no other action (unit tested).
+- [x] Salaries follow the formula, and every resume's specialty is a tool in one of its proficiency areas (unit tested).
+- [x] Day 1 offers 5 senior and 5 junior resumes; hiring one is instant, free, and removes it from the slate; opening for business clears the rest (unit tested).
+- [x] Posting job openings costs $10K and brings 5 and 5 new resumes 14 days later with a result card; a second search cannot start while one runs (unit tested).
+- [x] A slate clears on leaving Procurement after review, or after 7 unreviewed days with a result card saying the candidates found other jobs (unit tested).
+- [x] The job fair offers 2 seniors and 2 juniors, all with a specialty and an extra proficiency, only at the conference fort, without touching a waiting slate or a running search; the after-party adds a senior at base salary (unit tested).
+- [x] Paranoia blocks posting and hiring, and the desk limit holds (unit tested).
+- [x] The same seed always offers the same resumes (unit tested).
+
+## Phase 29: Resume screens, balance, and docs
+
+Tasks:
+- While a slate is open, Procurement's Staff tab lists "Review senior resumes" and "Review junior resumes" with how many are waiting, and at the conference fort a "Job fair candidates" row. ENTER opens the resume viewer for that row. With no slate, the tab says when the next resumes arrive, or to post job openings.
+- The resume viewer shows one resume as a card. LEFT/RIGHT cycle through that row's resumes, ENTER hires (opening the name popup with the suggested name), and B goes back. Once every resume at a level is hired, its row says so.
+- The team screen shows the selected analyst's proficiencies and specialty below the roster. SOC STATUS shows days left in a running search, then days left to review resumes.
+- The Sensible strategy hires from the slate, preferring candidates whose proficiencies cover its weakest areas, and posts job openings when it is short-handed. Re-measure the pen test grades and raise the floors to match.
+- Update REDESIGN.md (setup, people, and posture sections), the manual, README, and PLAYTEST.md.
+
+Success criteria:
+- [x] The Staff tab opens the resume viewer for each level; LEFT/RIGHT cycle, ENTER hires with the suggested name, and B returns to Procurement (unit tested).
+- [x] With no slate open, nothing can be hired, and the Staff tab says how to get more candidates (unit tested).
+- [x] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile, and every ending is still reachable (unit tested).
+- [x] Sensible pen test grade floors are re-measured and raised to 2.7 for Fintech, 2.2 for Healthtech, and 1.15 for Gaming (unit tested).
+- [ ] In a playtest, the resume viewer is readable at 640x480, and hiring, posting job openings, and the conference slate all work.
+
 ## Current status
 
 - [x] MVP (Phases 1-11)
@@ -285,3 +409,8 @@ Success criteria:
 - [x] Phase 22: Tool upkeep
 - [x] Phase 23: Quarterly board funding
 - [ ] Phase 24: Rebalance and release
+- [x] Phase 25: Posture from tools and analysts
+- [x] Phase 26: Tool operations
+- [ ] Phase 27: Actions screen, balance, and docs
+- [x] Phase 28: Resumes and candidate searches
+- [ ] Phase 29: Resume screens, balance, and docs
