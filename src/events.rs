@@ -13,7 +13,8 @@ pub struct Effect {
     pub burnout: i32,
     /// Extra burnout for the analyst the event names.
     pub patient: i32,
-    pub posture: &'static [(Area, i32)],
+    /// Condition added to (or taken from) every deployed tool in each area.
+    pub wear: &'static [(Area, i32)],
     pub coffee: i32,
     /// Added to the daily odds, in thousandths, of a new attacker showing up.
     pub threat: u32,
@@ -32,7 +33,7 @@ pub const NOTHING: Effect = Effect {
     valuation: 0,
     burnout: 0,
     patient: 0,
-    posture: &[],
+    wear: &[],
     coffee: 0,
     threat: 0,
     holiday: 0,
@@ -101,7 +102,7 @@ pub const EVENTS: [Event; 11] = [
                 text: "Patched by 3 AM. The team is tired but the VPN is safe.",
                 effect: Effect {
                     burnout: 8,
-                    posture: &[(Area::Perimeter, 5), (Area::Endpoint, 5)],
+                    wear: &[(Area::Perimeter, 20), (Area::Endpoint, 20)],
                     ..NOTHING
                 },
             },
@@ -109,7 +110,7 @@ pub const EVENTS: [Event; 11] = [
                 label: "Accept the risk",
                 text: "You accept the risk. The risk accepts you back.",
                 effect: Effect {
-                    posture: &[(Area::Perimeter, -15)],
+                    wear: &[(Area::Perimeter, -30)],
                     ..NOTHING
                 },
             },
@@ -142,13 +143,13 @@ pub const EVENTS: [Event; 11] = [
                 text: "The migration begins. Firewall rules are \"temporarily\" wide open.",
                 effect: Effect {
                     trust: 3,
-                    posture: &[
-                        (Area::Identity, -5),
-                        (Area::Endpoint, -5),
-                        (Area::People, -5),
-                        (Area::Perimeter, -5),
-                        (Area::Resilience, -5),
-                        (Area::Detection, -5),
+                    wear: &[
+                        (Area::Identity, -10),
+                        (Area::Endpoint, -10),
+                        (Area::People, -10),
+                        (Area::Perimeter, -10),
+                        (Area::Resilience, -10),
+                        (Area::Detection, -10),
                     ],
                     ..NOTHING
                 },

@@ -269,6 +269,80 @@ Success criteria:
 - [ ] In a playtest, the last eight weeks still offer meaningful choices every week.
 - [ ] Every item in PLAYTEST.md passes, and the Pages URL serves the new version.
 
+## Phase 25: Posture from tools and analysts
+
+Issue #19. Raw posture starts at 30 and loses 2 every Monday, so it is 0 by the pen test and the best grade a player can earn is about a C. Posture becomes a value calculated from what the player controls.
+
+Tasks:
+- Remove the stored `posture` array, its weekly decay, and its starting value of 30. An area's level is the sum of deployed tools' boosts times condition / 100, plus specialty skill (junior 15, senior 25), plus 10 per analyst with conference expertise in the area, plus active operation boosts (Phase 26), capped at 100. Every area is 0 on day 1.
+- Analysts may carry a specialty area. New hires have none for now; choosing a specialty belongs to a later hiring feature. A specialty leaves with the analyst.
+- Retune tool boosts so pricier tools never give less:
+  - Identity: password manager 12, MFA 30, PAM 30 plus Detection 15.
+  - Endpoint: antivirus 12, allowlisting 25, EDR 30 plus Detection 15.
+  - People: posters 10, email gateway 25, training platform 30.
+  - Perimeter: vulnerability scanner 12 plus Endpoint 5, WAF 30, ASM 30 plus Detection 10.
+  - Resilience: runbooks 10, backups 25, DR site 35.
+  - Detection: log collection 12, SIEM 30, MDR 35.
+- Events wear tools instead of posture. The zero-day's "Patch it tonight" restores 20 condition to Perimeter and Endpoint tools, and "Accept the risk" costs Perimeter tools 30. Going along with the CIO's migration costs every deployed tool 10.
+- Until Phase 26 replaces them, the patch sprint, phishing simulation, and tabletop restore their areas' tools to full condition instead of adding posture.
+
+Success criteria:
+- [x] A new game is 0 in every area, and a Monday lowers a level only through tool wear (unit tested).
+- [x] A specialty adds 15 for a junior and 25 for a senior, and leaves with the analyst (unit tested).
+- [x] Event wear changes only the tools in the named areas, and condition stays in 0-100 (unit tested).
+- [x] With tools at 88% condition, nothing grades F, MFA plus a junior specialist grades C, two tools plus a senior grade B, and all three tools plus a senior grade A (unit tested).
+- [x] Within each area, a pricier tool never gives less total boost (unit tested).
+
+## Phase 26: Tool operations
+
+Patch sprint, phishing simulation, tabletop, and threat hunt stop being always available. Operations become longer tasks that a deployed tool unlocks, each with a tangible payoff. Posters, MFA, antivirus, allowlisting, the email gateway, the WAF, and MDR have none.
+
+Tasks:
+- Operations by tool:
+
+| Tool | Operation | Days | Payoff |
+|---|---|---|---|
+| Password manager | Sticky note sweep | 3 | Identity +10; 1 in 4 chance trust -2 |
+| PAM | Rotate the keys | 5 | Evict data thieves and insiders; Identity +10 |
+| EDR | Compromise assessment | 6 | Evict ransomware and nation-states; Endpoint +10 |
+| Training platform | Phishing simulation | 4, $5K | People +20; 1 in 3 chance trust -3 |
+| Vulnerability scanner | Patch sprint | 5 | Perimeter +15, Endpoint +10; burnout +8 |
+| ASM | Forgotten server cleanup | 5 | Evict hacktivists; Perimeter +10 |
+| Runbooks | Tabletop exercise | 2 | Resilience +10; trust +2 |
+| Immutable backups | Backup recovery drill | 4 | Brace against ransomware; Resilience +10 |
+| DR site | Failover test | 5 | Brace against every attacker; 1 in 4 chance brand -3 |
+| Log collection | Log review | 3 | Weak eviction roll against insiders; Detection +10 |
+| SIEM | Threat hunt | 6 | Eviction roll against every campaign |
+
+- Boosts last four weeks; running an operation again refreshes its boost instead of stacking. When a boost wears off, the log says so.
+- Boosts and eviction odds scale with the tool's condition when the operation finishes. Seniors still improve eviction odds.
+- A brace halves the damage of the next incident from a matching attacker, then is used up.
+
+Success criteria:
+- [ ] Each operation is offered only while its tool is deployed (unit tested).
+- [ ] A finished operation applies exactly its boosts, scaled by the tool's condition (unit tested).
+- [ ] Boosts expire after four weeks, and a re-run refreshes instead of stacking (unit tested).
+- [ ] A brace halves one matching incident's damage and is then gone (unit tested).
+- [ ] Targeted evictions only end campaigns by their attackers (unit tested).
+- [ ] Every operation has three distinct result messages (unit tested).
+
+## Phase 27: Actions screen, balance, and docs
+
+Tasks:
+- The Actions screen gets LEFT/RIGHT tabs, one per kind: Recovery, Implementation, Maintenance, Operations, Management. Empty tabs are dimmed and skipped. The menu opens on the first tab with actions, so Recovery comes first after an incident. When a tool is not fresh, the action's description says the results will be weaker.
+- The IMPROVES strip in Procurement and on the Actions screen shows relative benefit without numbers: + for small (under 15), ++ for medium (15-29), +++ for large (30 and up), under each area it improves.
+- The defenses screen lists active operation boosts with days left, and braces under Resilience.
+- The Sensible strategy runs operations in rotation. Retune attacker advance and give-up odds, landmark posture odds, and operation sizes until the Phase 20 targets hold.
+- Update REDESIGN.md (sections 7, 8, 10, 15, 17), the manual, README, and PLAYTEST.md.
+
+Success criteria:
+- [ ] LEFT/RIGHT change tabs and skip empty ones, the menu opens on Recovery when a condition is active, and ENTER starts the action under the cursor (unit tested).
+- [ ] Benefit strength maps to +, ++, and +++ at the documented thresholds (unit tested).
+- [ ] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile (unit tested).
+- [ ] Every ending is still reachable, and Sensible skipping any one purchase or action, including all operations, still wins some games (unit tested).
+- [ ] Sensible averages at least a C on the pen test (unit tested).
+- [ ] In a playtest, a maintained build earns Bs or As on the pen test, and no Actions tab overflows.
+
 ## Current status
 
 - [x] MVP (Phases 1-11)
@@ -285,3 +359,6 @@ Success criteria:
 - [x] Phase 22: Tool upkeep
 - [x] Phase 23: Quarterly board funding
 - [ ] Phase 24: Rebalance and release
+- [x] Phase 25: Posture from tools and analysts
+- [ ] Phase 26: Tool operations
+- [ ] Phase 27: Actions screen, balance, and docs

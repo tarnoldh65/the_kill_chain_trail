@@ -19,6 +19,9 @@ pub const FUNDING_INTERVAL: u32 = 42;
 const FUNDING_TRUST: i64 = 60;
 /// What each analyst's conference expertise adds to their area.
 const EXPERTISE_BONUS: i32 = 10;
+/// What a specialist adds to their area, by level.
+const JUNIOR_SKILL: i32 = 15;
+const SENIOR_SKILL: i32 = 25;
 /// Extra daily burnout for analysts left holding the fort during the conference.
 const STAY_HOME_BURNOUT: i32 = 2;
 /// Percent of list price through Procurement with the conference badge-scan discount.
@@ -55,8 +58,6 @@ const MAINTAIN_BELOW: i32 = 80;
 const SEARCH_DAYS: u32 = 7;
 /// Most analysts the SOC has desks for.
 pub const MAX_ANALYSTS: i32 = 8;
-/// Posture each area loses every Monday as systems drift.
-const POSTURE_DECAY: i32 = 2;
 /// Brand loyalty below this drags the valuation down every Monday.
 const BRAND_DRAG_LEVEL: i32 = 50;
 /// Valuation below this percentage of the base valuation pulls the IPO.
@@ -476,19 +477,19 @@ impl Item {
         match self {
             Self::PasswordManager => &[(Area::Identity, 12)],
             Self::MfaTokens => &[(Area::Identity, 30)],
-            Self::Pam => &[(Area::Identity, 25), (Area::Detection, 10)],
+            Self::Pam => &[(Area::Identity, 30), (Area::Detection, 15)],
             Self::Antivirus => &[(Area::Endpoint, 12)],
-            Self::Allowlisting => &[(Area::Endpoint, 20)],
-            Self::Edr => &[(Area::Endpoint, 25), (Area::Detection, 10)],
-            Self::Posters => &[(Area::People, 8)],
-            Self::EmailGateway => &[(Area::People, 20)],
-            Self::TrainingPlatform => &[(Area::People, 25)],
+            Self::Allowlisting => &[(Area::Endpoint, 25)],
+            Self::Edr => &[(Area::Endpoint, 30), (Area::Detection, 15)],
+            Self::Posters => &[(Area::People, 10)],
+            Self::EmailGateway => &[(Area::People, 25)],
+            Self::TrainingPlatform => &[(Area::People, 30)],
             Self::VulnScanner => &[(Area::Perimeter, 12), (Area::Endpoint, 5)],
             Self::Waf => &[(Area::Perimeter, 30)],
-            Self::Asm => &[(Area::Perimeter, 25), (Area::Detection, 5)],
+            Self::Asm => &[(Area::Perimeter, 30), (Area::Detection, 10)],
             Self::Runbooks => &[(Area::Resilience, 10)],
             Self::Backups => &[(Area::Resilience, 25)],
-            Self::DrSite => &[(Area::Resilience, 30)],
+            Self::DrSite => &[(Area::Resilience, 35)],
             Self::LogCollection => &[(Area::Detection, 12)],
             Self::Siem => &[(Area::Detection, 30)],
             Self::Mdr => &[(Area::Detection, 35)],
@@ -611,9 +612,9 @@ impl Action {
         match self {
             Self::Deploy(Item::MfaTokens) => "Big identity boost. Employees will complain.",
             Self::Deploy(_) => "Turns the tool on so it actually helps.",
-            Self::PhishingSim => "Teaches people to spot phishing. Executives hate it.",
-            Self::PatchSprint => "Hardens endpoints and the perimeter. Tiring.",
-            Self::Tabletop => "Practice for the worst day. Leadership likes it.",
+            Self::PhishingSim => "Freshens up the People tools. Executives hate it.",
+            Self::PatchSprint => "Freshens up the endpoint and perimeter tools. Tiring.",
+            Self::Tabletop => "Freshens up the Resilience tools. Leadership likes it.",
             Self::DayOff => "Everyone recovers. Nobody is watching for a day.",
             Self::Offsite => "A week of trust falls. Large burnout recovery.",
             Self::BriefLeadership => "Tell the board what the SOC is doing.",
@@ -647,22 +648,15 @@ impl Action {
         }
     }
 
-    /// The areas an action helps, for the IMPROVES strip: a tool's boosts, the area a
-    /// maintenance action restores, or the posture an action adds.
+    /// The areas an action helps, for the IMPROVES strip: a tool's boosts, or the areas
+    /// whose tools an action restores.
     pub fn improves(self) -> &'static [(Area, i32)] {
         match self {
             Self::Deploy(item) => item.boosts(),
             Self::Maintain(area) => std::slice::from_ref(&AREA_TAGS[area as usize]),
-            _ => self.boosts(),
-        }
-    }
-
-    /// Posture the action adds when it finishes. Tools help through their condition instead.
-    pub fn boosts(self) -> &'static [(Area, i32)] {
-        match self {
-            Self::PhishingSim => &[(Area::People, 8)],
-            Self::PatchSprint => &[(Area::Endpoint, 8), (Area::Perimeter, 5)],
-            Self::Tabletop => &[(Area::Resilience, 6)],
+            Self::PhishingSim => &AREA_TAGS[2..3],
+            Self::PatchSprint => &[(Area::Endpoint, 0), (Area::Perimeter, 0)],
+            Self::Tabletop => &AREA_TAGS[4..5],
             _ => &[],
         }
     }
@@ -719,7 +713,7 @@ struct Glance {
     coffee: i32,
     /// Average analyst burnout.
     burnout: i32,
-    /// Posture with expertise, shown only as better or worse.
+    /// Each area's level, shown only as better or worse.
     levels: [i32; 6],
     ipo_day: u32,
     team: Vec<String>,
@@ -834,7 +828,8 @@ impl fmt::Display for Tempo {
     }
 }
 
-/// Hidden security posture areas, shown to the player only on the pen test report.
+/// Hidden security posture areas, shown to the player only on the pen test report. Their
+/// levels come from deployed tools and the analysts on the team.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Area {
     Identity,
@@ -919,6 +914,16 @@ pub enum Role {
     Senior,
 }
 
+impl Role {
+    /// What a specialist at this level adds to their area.
+    fn skill(self) -> i32 {
+        match self {
+            Self::Junior => JUNIOR_SKILL,
+            Self::Senior => SENIOR_SKILL,
+        }
+    }
+}
+
 impl fmt::Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match self {
@@ -935,6 +940,8 @@ pub struct TeamMember {
     pub burnout: i32,
     /// Weekly pay from the SOC budget.
     pub salary: i64,
+    /// The posture area this analyst specializes in.
+    pub specialty: Option<Area>,
     /// A posture area this analyst picked up at the conference.
     pub expertise: Option<Area>,
     /// The track they are on while away at the conference.
@@ -942,12 +949,15 @@ pub struct TeamMember {
 }
 
 impl TeamMember {
-    /// How a departure message ends: expertise leaves with the person.
+    /// How a departure message ends: specialty and expertise leave with the person.
     fn farewell(&self) -> String {
-        match self.expertise {
-            Some(area) => format!(" They took their {area} expertise with them."),
-            None => String::new(),
-        }
+        let specialty = self
+            .specialty
+            .map(|area| format!(" Their {area} specialty went with them."));
+        let expertise = self
+            .expertise
+            .map(|area| format!(" They took their {area} expertise with them."));
+        specialty.into_iter().chain(expertise).collect()
     }
 }
 
@@ -1024,8 +1034,9 @@ pub struct GameState {
     pub budget: i64,
     pub coffee: i32,
     pub tempo: Tempo,
-    /// Indexed by `Area`; kept private so it can never be drawn.
-    posture: [i32; Area::ALL.len()],
+    /// Added to each area's level, indexed by `Area`, so tests can set posture directly.
+    #[cfg(test)]
+    bonus: [i32; Area::ALL.len()],
     pub team: Vec<TeamMember>,
     /// Tools and services bought through Procurement. Tools need deploying before they help.
     pub owned: Vec<Item>,
@@ -1084,7 +1095,8 @@ impl GameState {
             budget: profile.budget(),
             coffee: 12,
             tempo: Tempo::Steady,
-            posture: [30; Area::ALL.len()],
+            #[cfg(test)]
+            bonus: [0; Area::ALL.len()],
             team: Vec::new(),
             owned: Vec::new(),
             deployed: Vec::new(),
@@ -1252,6 +1264,7 @@ impl GameState {
             role,
             burnout: 0,
             salary: item.weekly(),
+            specialty: None,
             expertise: None,
             track: None,
         });
@@ -1261,13 +1274,26 @@ impl GameState {
         self.deployed.iter().any(|t| t.item == item)
     }
 
-    /// Posture plus the expertise of analysts on the team and the deployed tools' condition.
+    /// Deployed tools by their condition, plus the specialty and expertise of analysts on
+    /// the team. Nothing else holds posture, so nothing else drifts.
     fn level(&self, area: Area) -> i32 {
-        let experts = self
+        let skill: i32 = self
             .team
             .iter()
-            .filter(|m| m.expertise == Some(area))
-            .count() as i32;
+            .map(|m| {
+                let specialty = if m.specialty == Some(area) {
+                    m.role.skill()
+                } else {
+                    0
+                };
+                let expertise = if m.expertise == Some(area) {
+                    EXPERTISE_BONUS
+                } else {
+                    0
+                };
+                specialty + expertise
+            })
+            .sum();
         let tools: i32 = self
             .deployed
             .iter()
@@ -1280,7 +1306,9 @@ impl GameState {
             .filter(|&(a, _)| a == area)
             .map(|(_, b)| b)
             .sum();
-        (self.posture[area as usize] + EXPERTISE_BONUS * experts + tools).min(100)
+        #[cfg(test)]
+        let tools = tools + self.bonus[area as usize];
+        (tools + skill).min(100)
     }
 
     /// Actions the SOC can start now, grouped by kind: prerequisites met, affordable, and
@@ -1444,9 +1472,13 @@ impl GameState {
         });
     }
 
-    fn boost(&mut self, area: Area, amount: i32) {
-        let value = &mut self.posture[area as usize];
-        *value = (*value + amount).clamp(0, 100);
+    /// Adds to the condition of every deployed tool in an area.
+    fn wear(&mut self, area: Area, change: i32) {
+        for tool in &mut self.deployed {
+            if tool.item.category() == Some(area) {
+                tool.condition = (tool.condition + change).clamp(0, 100);
+            }
+        }
     }
 
     /// Applies a finished action's effects.
@@ -1455,9 +1487,6 @@ impl GameState {
         let mut before = self.glance();
         if action.rest().is_some() {
             before.burnout = task.start_burnout;
-        }
-        for &(area, amount) in action.boosts() {
-            self.boost(area, amount);
         }
         let message = match task.action {
             Action::Deploy(item) => {
@@ -1468,6 +1497,7 @@ impl GameState {
                 item.rollout()[self.chance() as usize % 3].to_string()
             }
             Action::PhishingSim => {
+                self.wear(Area::People, 100);
                 if self.chance() < 333 {
                     self.trust -= 3;
                     "The VP of Sales clicked the test phish and is furious about being \"tricked\"."
@@ -1478,6 +1508,8 @@ impl GameState {
                 }
             }
             Action::PatchSprint => {
+                self.wear(Area::Endpoint, 100);
+                self.wear(Area::Perimeter, 100);
                 for member in self.team.iter_mut() {
                     member.burnout += 8;
                 }
@@ -1485,6 +1517,7 @@ impl GameState {
                     .to_string()
             }
             Action::Tabletop => {
+                self.wear(Area::Resilience, 100);
                 self.trust += 2;
                 "The tabletop exercise went well. The CEO learned what ransomware is.".to_string()
             }
@@ -1498,11 +1531,7 @@ impl GameState {
             }
             Action::ThreatHunt => self.hunt(),
             Action::Maintain(area) => {
-                for tool in &mut self.deployed {
-                    if tool.item.category() == Some(area) {
-                        tool.condition = 100;
-                    }
-                }
+                self.wear(area, 100);
                 area.upkeep()[self.chance() as usize % 3].to_string()
             }
             Action::Clear(condition) => {
@@ -1545,8 +1574,8 @@ impl GameState {
         if let Some(patient) = self.team.get_mut(patient) {
             patient.burnout = (patient.burnout + effect.patient).max(0);
         }
-        for &(area, change) in effect.posture {
-            self.boost(area, change);
+        for &(area, change) in effect.wear {
+            self.wear(area, change);
         }
         self.coffee = (self.coffee + effect.coffee).clamp(0, COFFEE_CAPACITY);
         self.threat += effect.threat;
@@ -2192,12 +2221,17 @@ impl GameState {
                     None => format!("{} (not deployed)", item.label()),
                 },
             );
+        let specialists = self
+            .team
+            .iter()
+            .filter(|m| m.specialty == Some(area))
+            .map(|m| format!("{}'s specialty", m.name));
         let experts = self
             .team
             .iter()
             .filter(|m| m.expertise == Some(area))
             .map(|m| format!("{}'s expertise", m.name));
-        tools.chain(experts).collect()
+        tools.chain(specialists).chain(experts).collect()
     }
 
     /// What really happened, shown only once the game is over.
@@ -2360,7 +2394,7 @@ impl GameState {
         stop || self.outcome.is_some()
     }
 
-    /// Weekly upkeep: posture drift, brand drag, and payroll.
+    /// Weekly upkeep: tool wear, brand drag, and payroll.
     fn monday(&mut self) -> bool {
         self.coffee_run_made = false;
         if (self.day - 1).is_multiple_of(FUNDING_INTERVAL) {
@@ -2368,10 +2402,6 @@ impl GameState {
         }
         for tool in &mut self.deployed {
             tool.condition = (tool.condition - TOOL_WEAR).max(0);
-        }
-
-        for value in &mut self.posture {
-            *value = (*value - POSTURE_DECAY).clamp(0, 100);
         }
         if self.brand < BRAND_DRAG_LEVEL {
             let drag = self.base_valuation * (BRAND_DRAG_LEVEL - self.brand) as i64 / 1000;
@@ -2526,6 +2556,7 @@ mod tests {
             role,
             burnout,
             salary,
+            specialty: None,
             expertise: None,
             track: None,
         }
@@ -2681,13 +2712,12 @@ mod tests {
     #[test]
     fn owned_tools_do_not_change_posture() {
         let mut game = game();
-        let posture = game.posture;
 
         for item in &Item::ALL[2..10] {
             game.buy(*item);
         }
 
-        assert_eq!(game.posture, posture);
+        assert_eq!(Area::ALL.map(|a| game.level(a)), [0; 6]);
     }
 
     #[test]
@@ -2830,21 +2860,29 @@ mod tests {
     }
 
     #[test]
-    fn posture_decays_every_monday_and_stays_in_range() {
+    fn posture_starts_at_zero_and_drifts_only_through_tool_wear() {
         let mut game = game();
+        assert_eq!(Area::ALL.map(|a| game.level(a)), [0; 6]);
 
-        advance_to(&mut game, 7);
-        assert_eq!(game.posture, [30; 6]);
+        game.team[0].specialty = Some(Area::Identity);
+        game.team[1].expertise = Some(Area::People);
+        game.deployed.push(Tool::new(Item::Waf));
+        let levels = Area::ALL.map(|a| game.level(a));
+        assert_eq!(levels, [JUNIOR_SKILL, 0, EXPERTISE_BONUS, 30, 0, 0]);
+
         advance_to(&mut game, 8);
-        assert_eq!(game.posture, [30 - POSTURE_DECAY; 6]);
-
-        game.tempo = Tempo::Relaxed;
-        while game.outcome.is_none() {
-            game.coffee = COFFEE_CAPACITY;
-            game.advance();
-            assert!(game.posture.iter().all(|p| (0..=100).contains(p)));
-        }
-        assert_eq!(game.posture, [0; 6]);
+        assert_eq!(
+            Area::ALL.map(|a| game.level(a)),
+            [
+                JUNIOR_SKILL,
+                0,
+                EXPERTISE_BONUS,
+                30 * (100 - TOOL_WEAR) / 100,
+                0,
+                0
+            ],
+            "only the tool wore"
+        );
     }
 
     #[test]
@@ -3084,26 +3122,36 @@ mod tests {
     #[test]
     fn each_action_applies_its_cost_duration_and_effects() {
         let mut game = game();
-        game.deployed.push(Tool::new(Item::Backups));
-        let posture = |g: &GameState, area: Area| g.posture[area as usize];
+        game.deployed = [
+            Item::Edr,
+            Item::Waf,
+            Item::TrainingPlatform,
+            Item::Backups,
+            Item::Siem,
+        ]
+        .map(|item| Tool {
+            item,
+            condition: 40,
+        })
+        .to_vec();
+        let conditions = |g: &GameState| g.deployed.iter().map(|t| t.condition).collect::<Vec<_>>();
 
         let start = game.clone();
         run(&mut game, Action::PatchSprint);
         assert_eq!(game.day, start.day + 4);
-        assert_eq!(posture(&game, Area::Endpoint), 38);
-        assert_eq!(posture(&game, Area::Perimeter), 35);
+        assert_eq!(conditions(&game), [100, 100, 40, 40, 40]);
         assert!(game.team[0].burnout > start.team[0].burnout + 4, "tiring");
 
         let mut game = start.clone();
         run(&mut game, Action::PhishingSim);
         assert_eq!(game.day, start.day + 2);
         assert_eq!(game.budget, start.budget - 5_000);
-        assert_eq!(posture(&game, Area::People), 38);
+        assert_eq!(conditions(&game), [40, 40, 100, 40, 40]);
 
         let mut game = start.clone();
         run(&mut game, Action::Tabletop);
         assert_eq!(game.day, start.day + 1);
-        assert_eq!(posture(&game, Area::Resilience), 36);
+        assert_eq!(conditions(&game), [40, 40, 40, 100, 40]);
         assert_eq!(game.trust, 62);
 
         let mut game = start.clone();
@@ -3334,7 +3382,7 @@ mod tests {
         let index = Landmark::ALL.iter().position(|&l| l == landmark).unwrap();
         GameState {
             seed,
-            posture: [posture; 6],
+            bonus: [posture; 6],
             day: landmark.day(),
             next_landmark: index + 1,
             stop: Some(Stop {
@@ -3349,7 +3397,7 @@ mod tests {
     fn with_posture(seed: u32, value: i32) -> GameState {
         GameState {
             seed,
-            posture: [value; 6],
+            bonus: [value; 6],
             ..game()
         }
     }
@@ -3421,7 +3469,7 @@ mod tests {
             (0..40)
                 .map(|seed| {
                     let mut game = with_posture(seed, 20);
-                    game.posture[Area::Detection as usize] = detection;
+                    game.bonus[Area::Detection as usize] = detection;
                     idle(&mut game, 120, &mut Vec::new());
                     game.alerts.iter().filter(|a| a.campaign.is_some()).count()
                 })
@@ -3562,7 +3610,7 @@ mod tests {
                 let mut game = GameState {
                     seed,
                     profile,
-                    posture: [0; 6],
+                    bonus: [0; 6],
                     ..game()
                 };
                 idle(&mut game, IPO_DAY, &mut incidents);
@@ -3583,10 +3631,10 @@ mod tests {
                 game.incident = Some(actor);
                 assert!(game.can_respond(response), "{}", response.label);
 
-                // Resilience 30 plus fresh backups' 25 scales damage to 145/200.
-                assert_eq!(game.level(Area::Resilience), 55);
+                // Fresh backups' Resilience 25 scales damage to 175/200.
+                assert_eq!(game.level(Area::Resilience), 25);
                 game.respond(i);
-                let scale = 145;
+                let scale = 175;
                 assert_eq!(
                     game.valuation,
                     1_000_000_000 - 1_000_000_000 * response.valuation * scale / 200_000
@@ -3721,30 +3769,146 @@ mod tests {
     }
 
     #[test]
+    fn specialists_add_skill_by_level_and_take_it_with_them() {
+        let mut game = game();
+        game.team.push(member("Ana", Role::Senior, 0, 8_000));
+        game.team[0].specialty = Some(Area::Identity);
+        assert_eq!(game.level(Area::Identity), JUNIOR_SKILL);
+        game.team[3].specialty = Some(Area::Identity);
+        assert_eq!(game.level(Area::Identity), JUNIOR_SKILL + SENIOR_SKILL);
+        assert_eq!(
+            game.defenders(Area::Identity),
+            ["Maya's specialty", "Ana's specialty"]
+        );
+
+        game.fire(0);
+
+        assert_eq!(game.level(Area::Identity), SENIOR_SKILL);
+        assert!(
+            game.log
+                .last()
+                .unwrap()
+                .ends_with(" Their Identity specialty went with them.")
+        );
+    }
+
+    #[test]
+    fn event_wear_hits_only_its_areas_and_stays_in_range() {
+        let mut game = GameState {
+            deployed: worn_tools(),
+            ..game()
+        };
+        game.deployed[3].condition = 95;
+        let wear = |game: &mut GameState, wear: &'static [(Area, i32)]| {
+            let effect = Effect {
+                wear,
+                ..crate::events::NOTHING
+            };
+            game.apply(&effect, usize::MAX);
+            game.deployed
+                .iter()
+                .map(|t| t.condition)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            wear(&mut game, &[(Area::Perimeter, 20)]),
+            [50, 50, 50, 100, 50, 50]
+        );
+        assert_eq!(
+            wear(&mut game, &[(Area::Perimeter, -200)]),
+            [50, 50, 50, 0, 50, 50]
+        );
+    }
+
+    /// The pen test grade for one area with `items` deployed at 88% condition and an
+    /// optional specialist.
+    fn grade(area: Area, items: &[Item], specialist: Option<Role>) -> char {
+        let mut game = game();
+        game.deployed = items
+            .iter()
+            .map(|&item| Tool {
+                item,
+                condition: 88,
+            })
+            .collect();
+        if let Some(role) = specialist {
+            game.team.push(TeamMember {
+                specialty: Some(area),
+                ..member("Spec", role, 0, 0)
+            });
+        }
+        game.report_card()[area as usize].1
+    }
+
+    #[test]
+    fn a_strong_build_earns_good_grades() {
+        assert_eq!(grade(Area::Identity, &[], None), 'F');
+        assert_eq!(
+            grade(Area::Identity, &[Item::MfaTokens], Some(Role::Junior)),
+            'C'
+        );
+        assert_eq!(
+            grade(
+                Area::Identity,
+                &[Item::MfaTokens, Item::Pam],
+                Some(Role::Senior)
+            ),
+            'B'
+        );
+        for area in Area::ALL {
+            let tools: Vec<Item> = Item::ALL
+                .into_iter()
+                .filter(|i| i.category() == Some(area))
+                .collect();
+            assert_eq!(grade(area, &tools, Some(Role::Senior)), 'A', "{area}");
+        }
+    }
+
+    #[test]
+    fn pricier_tools_never_give_less() {
+        for area in Area::ALL {
+            let tiers: Vec<Item> = Item::ALL
+                .into_iter()
+                .filter(|i| i.category() == Some(area))
+                .collect();
+            let own = |item: Item| {
+                item.boosts()
+                    .iter()
+                    .filter(|&&(a, _)| a == area)
+                    .map(|&(_, b)| b)
+                    .sum::<i32>()
+            };
+            let total = |item: Item| item.boosts().iter().map(|&(_, b)| b).sum::<i32>();
+            for pair in tiers.windows(2) {
+                assert!(pair[0].price() < pair[1].price());
+                assert!(own(pair[0]) <= own(pair[1]), "{:?}", pair[1]);
+                assert!(total(pair[0]) < total(pair[1]), "{:?}", pair[1]);
+            }
+        }
+    }
+
+    #[test]
     fn tools_wear_each_monday_and_count_by_their_condition() {
         let mut game = game();
-        let base = game.level(Area::Perimeter);
         game.deployed.push(Tool::new(Item::Waf));
-        assert_eq!(game.level(Area::Perimeter), base + 30);
+        assert_eq!(game.level(Area::Perimeter), 30);
 
         game.day = 7;
         game.advance();
         assert_eq!(game.deployed[0].condition, 100 - TOOL_WEAR);
-        assert_eq!(
-            game.level(Area::Perimeter),
-            base - POSTURE_DECAY + 30 * (100 - TOOL_WEAR) / 100
-        );
+        assert_eq!(game.level(Area::Perimeter), 30 * (100 - TOOL_WEAR) / 100);
 
         game.deployed[0].condition = 50;
-        assert_eq!(game.level(Area::Perimeter), base - POSTURE_DECAY + 15);
+        assert_eq!(game.level(Area::Perimeter), 15);
         game.deployed[0].condition = 0;
-        assert_eq!(game.level(Area::Perimeter), base - POSTURE_DECAY);
+        assert_eq!(game.level(Area::Perimeter), 0);
     }
 
     #[test]
     fn pen_test_grades_count_a_tools_condition() {
         let mut game = game();
-        game.posture = [50; 6];
+        game.bonus = [50; 6];
         game.deployed.push(Tool::new(Item::Waf));
         assert_eq!(game.report_card()[3], (Area::Perimeter, 'A'));
 
@@ -3792,6 +3956,7 @@ mod tests {
     #[test]
     fn resting_lowers_the_watch() {
         let mut game = game();
+        game.bonus = [60; 6];
         let normal = game.watch();
 
         game.start(Action::Offsite);
@@ -3807,7 +3972,7 @@ mod tests {
     fn resilience_and_insurance_soften_incidents() {
         let damage = |resilience: i32, insured: bool| {
             let mut game = game();
-            game.posture[Area::Resilience as usize] = resilience;
+            game.bonus[Area::Resilience as usize] = resilience;
             if insured {
                 game.owned.push(Item::Insurance);
             }
@@ -3852,6 +4017,23 @@ mod tests {
         assert_eq!(game.after_action().len(), 1);
     }
 
+    /// One cheap tool per area at half condition, for events to wear.
+    fn worn_tools() -> Vec<Tool> {
+        [
+            Item::PasswordManager,
+            Item::Antivirus,
+            Item::Posters,
+            Item::VulnScanner,
+            Item::Runbooks,
+            Item::LogCollection,
+        ]
+        .map(|item| Tool {
+            item,
+            condition: 50,
+        })
+        .to_vec()
+    }
+
     /// Checks that `after` is `before` with `effect` applied, naming `patient`.
     fn assert_effect(before: &GameState, after: &GameState, effect: &Effect, patient: usize) {
         assert_eq!(after.trust, (before.trust + effect.trust).clamp(0, 100));
@@ -3869,11 +4051,15 @@ mod tests {
             }
             assert_eq!(new.burnout, burnout, "{}", old.name);
         }
-        let mut posture = before.posture;
-        for &(area, change) in effect.posture {
-            posture[area as usize] = (posture[area as usize] + change).clamp(0, 100);
+        for (old, new) in before.deployed.iter().zip(&after.deployed) {
+            let change: i32 = effect
+                .wear
+                .iter()
+                .filter(|&&(area, _)| old.item.category() == Some(area))
+                .map(|&(_, change)| change)
+                .sum();
+            assert_eq!(new.condition, (old.condition + change).clamp(0, 100));
         }
-        assert_eq!(after.posture, posture);
         assert_eq!(
             after.coffee,
             (before.coffee + effect.coffee).clamp(0, COFFEE_CAPACITY)
@@ -3930,7 +4116,10 @@ mod tests {
             if !event.choices.is_empty() {
                 continue;
             }
-            let before = game();
+            let before = GameState {
+                deployed: worn_tools(),
+                ..game()
+            };
             let mut after = before.clone();
 
             after.trigger(i);
@@ -3945,7 +4134,10 @@ mod tests {
     fn every_event_choice_applies_its_effects() {
         for (i, event) in EVENTS.iter().enumerate() {
             for (j, choice) in event.choices.iter().enumerate() {
-                let mut before = game();
+                let mut before = GameState {
+                    deployed: worn_tools(),
+                    ..game()
+                };
                 before.trigger(i);
                 let pending = before.event.clone().expect("waiting for a choice");
                 assert_eq!(before.event_choices(), event.choices);
@@ -3988,6 +4180,7 @@ mod tests {
     #[test]
     fn publicity_holidays_and_breached_vendors_help_the_attackers() {
         let mut game = game();
+        game.bonus = [60; 6];
         let (odds, watch) = (game.spawn_odds(), game.watch());
 
         game.apply(
@@ -4014,7 +4207,7 @@ mod tests {
         let mut arrivals = Vec::new();
         while game.outcome.is_none() {
             game.coffee = COFFEE_CAPACITY;
-            game.posture = [100; 6];
+            game.bonus = [100; 6];
             game.team.iter_mut().for_each(|m| m.burnout = 0);
             game.advance();
             game.alert = None;
@@ -4174,7 +4367,7 @@ mod tests {
     #[test]
     fn the_pen_test_grades_hidden_posture() {
         let mut game = game();
-        game.posture = [85, 65, 45, 25, 5, 100];
+        game.bonus = [85, 65, 45, 25, 5, 100];
 
         let grades: Vec<char> = game.report_card().iter().map(|(_, g)| *g).collect();
 
@@ -4185,8 +4378,8 @@ mod tests {
     #[test]
     fn weak_areas_on_the_pen_test_cost_valuation() {
         let mut game = at(Landmark::PenTest, 1, 50);
-        game.posture[0] = 10;
-        game.posture[1] = 39;
+        game.bonus[0] = 10;
+        game.bonus[1] = 39;
         let mut softened = game.clone();
 
         game.cross(0);
@@ -4412,20 +4605,14 @@ mod tests {
     #[test]
     fn expertise_lasts_while_the_analyst_stays() {
         let mut game = game();
-        let base = game.level(Area::Perimeter);
-
         game.team[0].expertise = Some(Area::Perimeter);
-        assert_eq!(game.level(Area::Perimeter), base + EXPERTISE_BONUS);
+        assert_eq!(game.level(Area::Perimeter), EXPERTISE_BONUS);
         advance_to(&mut game, 9);
-        assert_eq!(
-            game.level(Area::Perimeter),
-            base - POSTURE_DECAY + EXPERTISE_BONUS,
-            "only the raw posture decays"
-        );
+        assert_eq!(game.level(Area::Perimeter), EXPERTISE_BONUS, "no decay");
 
         game.team[0].burnout = 99;
         game.advance();
-        assert_eq!(game.level(Area::Perimeter), base - POSTURE_DECAY);
+        assert_eq!(game.level(Area::Perimeter), 0);
         assert!(
             game.log.iter().any(|e| e.contains("Maya")
                 && e.ends_with("They took their Perimeter expertise with them."))
@@ -4542,6 +4729,10 @@ mod tests {
     #[test]
     fn result_cards_describe_what_visibly_changed() {
         let mut tabletop = game();
+        tabletop.deployed.push(Tool {
+            item: Item::Backups,
+            condition: 50,
+        });
         run(&mut tabletop, Action::Tabletop);
         let card = tabletop.cards.last().unwrap();
         assert_eq!(card.title, "TABLETOP EXERCISE");
@@ -4572,8 +4763,8 @@ mod tests {
     fn hidden_posture_only_reads_as_better_or_worse() {
         let mut game = game();
         let before = game.glance();
-        game.posture[Area::Identity as usize] += 7;
-        game.posture[Area::Perimeter as usize] -= 3;
+        game.bonus[Area::Identity as usize] += 7;
+        game.bonus[Area::Perimeter as usize] -= 3;
 
         assert_eq!(
             game.changes(&before),
@@ -4657,12 +4848,12 @@ mod tests {
     #[test]
     fn the_pen_test_grades_are_kept_from_that_day() {
         let mut game = game();
-        game.posture = [85, 65, 45, 25, 5, 100];
+        game.bonus = [85, 65, 45, 25, 5, 100];
         game.day = Landmark::PenTest.day() - 1;
         game.next_landmark = 4;
 
         game.advance();
-        game.posture = [0; 6];
+        game.bonus = [0; 6];
 
         let (day, grades) = game.pen_test.unwrap();
         assert_eq!(day, Landmark::PenTest.day());

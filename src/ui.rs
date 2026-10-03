@@ -1325,7 +1325,6 @@ mod tests {
         let card = &game(&screen).cards[0];
         assert_eq!(card.title, "TABLETOP EXERCISE");
         assert!(card.effect.contains("Trust +2"));
-        assert!(card.effect.contains("Resilience improved"));
         assert_eq!(
             screen.clone().update(Input::Char('1')),
             screen,
