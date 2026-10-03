@@ -439,14 +439,37 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     };
     font.text(&note, MARGIN, exit_y + 32.0, 1.0, CYAN);
 
-    let analysts: Vec<String> = game
-        .team
-        .iter()
-        .map(|m| format!("{} ({})", m.name, short_role(m.role)))
-        .collect();
-    let roster = format!("Analysts: {}", analysts.join(", "));
-    for (i, line) in wrap(&roster, 76).iter().take(4).enumerate() {
-        font.text(line, MARGIN, exit_y + 56.0 + i as f32 * 12.0, 1.0, INK);
+    // The team so far, one per line, so their skills can guide what to buy.
+    let y = exit_y + 56.0;
+    if game.team.is_empty() {
+        font.text("No analysts yet.", MARGIN, y, 1.0, DIM);
+    } else {
+        font.text(
+            &format!(
+                "{:<8}{:<7}{:<33}SPECIALTY",
+                "ANALYST", "LEVEL", "PROFICIENCIES"
+            ),
+            MARGIN,
+            y,
+            1.0,
+            CYAN,
+        );
+    }
+    for (i, member) in game.team.iter().enumerate() {
+        let name: String = member.name.chars().take(7).collect();
+        let areas: Vec<String> = member.proficiencies.iter().map(|a| a.to_string()).collect();
+        let specialty = member.specialty.map_or("-", |tool| tool.label());
+        font.text(
+            &format!(
+                "{name:<8}{:<7}{:<33}{specialty}",
+                short_role(member.role),
+                areas.join(", ")
+            ),
+            MARGIN,
+            y + 12.0 * (i + 1) as f32,
+            1.0,
+            INK,
+        );
     }
     improves_strip(font, shop.item().map_or(&[], |i| i.boosts()), 432.0);
     font.text(
@@ -552,12 +575,13 @@ fn resume_card(font: &Font, viewer: &Viewer) {
         1.0,
         INK,
     );
-    let skill: Vec<(Area, i32)> = resume
-        .proficiencies
+    font.text("ABOUT", x + 16.0, y + 236.0, 1.0, AMBER);
+    for (i, line) in wrap(&format!("\"{}\"", resume.quote), 74)
         .iter()
-        .map(|&a| (a, resume.role.skill()))
-        .collect();
-    improves_strip(font, &skill, y + 244.0);
+        .enumerate()
+    {
+        font.text(line, x + 16.0, y + 250.0 + i as f32 * 12.0, 1.0, CYAN);
+    }
     let (hint, color) = if game.can_hire() {
         (
             "LEFT/RIGHT for more resumes, ENTER to hire, B to go back.",

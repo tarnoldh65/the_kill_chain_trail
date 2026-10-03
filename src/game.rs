@@ -118,6 +118,38 @@ const CANDIDATE_NAMES: [&str; 40] = [
     "Tess", "Uma", "Vik", "Wren", "Yara", "Zane",
 ];
 
+/// What candidates say about themselves at the bottom of their resumes. Just for fun.
+const CANDIDATE_QUOTES: [&str; 28] = [
+    "Passionate about zero trust. I trust zero people, including HR.",
+    "Thrilled to announce I passed my 14th certification. Still looking for my first job.",
+    "I once stopped a ransomware attack by unplugging the coffee machine.",
+    "Hustle culture taught me to triage alerts in my sleep. My spouse has concerns.",
+    "Proud to say I have never clicked a phishing link. Except that one. And the gift card one.",
+    "Open to work. Open ports, too, if the price is right. Kidding. Mostly.",
+    "Grateful for the journey. The journey was 40,000 false positives.",
+    "My last SOC burned out. I am the only one who survived. Let's connect!",
+    "10x analyst. 1x coffee pot, which I will finish.",
+    "I don't have weaknesses. I have unpatched features.",
+    "Thought leader in AI-driven blockchain firewalls.",
+    "Humbled to be named \"Most Likely to Reply-All\" three years running.",
+    "I treat every alert like it's real. My therapist says that's the problem.",
+    "Endorsed for Excel by 300 people I have never met.",
+    "Ask me about the crypto miner I found in the CEO's smart fridge.",
+    "Let's synergize your threat landscape.",
+    "Former intern. Survived the coffee run 52 times. Undefeated.",
+    "Looking for a role where I can hit the ground running. I have strong legs.",
+    "My password is 32 characters long. I keep it on a sticky note for safety.",
+    "Excited to disrupt the kill chain. And meetings. Mostly meetings.",
+    "I read every log. Every single one. Please hire me, I need to talk to someone.",
+    "Certified in seven frameworks and fluent in none of their acronyms.",
+    "Here to make your SIEM quiet again. Results may vary.",
+    "I bring a growth mindset and my own stapler.",
+    "Ask me what my kid's lemonade stand taught me about incident response.",
+    "Recruiters, please stop calling. Unless it's this job. Then call twice.",
+    "Three years in cybersecurity. I have aged fifteen.",
+    "Please. I paid so much for that bootcamp."
+];
+
 /// How a fired analyst takes the news; `{name}` is the analyst.
 const LETTING_GO: [&str; 8] = [
     "{name} says \"You can't fire me, I quit!\" and storms out. HR is still deciding which happened.",
@@ -744,6 +776,8 @@ pub struct Resume {
     /// A tool whose deployment, maintenance, and operation they finish in half the time.
     pub specialty: Option<Item>,
     pub salary: i64,
+    /// What they say about themselves; it changes nothing.
+    pub quote: &'static str,
 }
 
 /// Which slate of resumes a hire comes from.
@@ -1366,12 +1400,24 @@ impl GameState {
         }
         let salary = role.base_salary()
             + SKILL_PAY * (proficiencies.len() as i64 - 1 + specialty.is_some() as i64);
+        let said: Vec<&str> = self
+            .slate
+            .iter()
+            .chain(&self.job_fair)
+            .chain(others)
+            .map(|r| r.quote)
+            .collect();
+        let mut quote = CANDIDATE_QUOTES[self.draw() as usize % CANDIDATE_QUOTES.len()];
+        while said.contains(&quote) {
+            quote = CANDIDATE_QUOTES[self.draw() as usize % CANDIDATE_QUOTES.len()];
+        }
         Resume {
             name: name.to_string(),
             role,
             proficiencies,
             specialty,
             salary,
+            quote,
         }
     }
 
@@ -2962,7 +3008,7 @@ mod tests {
     }
 
     #[test]
-    fn salaries_follow_skills_and_specialties_match_proficiencies() {
+    fn resumes_follow_the_salary_rules_and_never_repeat_a_name_or_quote() {
         for seed in 0..50 {
             let game = GameState::new("Acme", "Alex", Profile::Fintech, seed);
             for r in &game.slate {
@@ -2982,6 +3028,12 @@ mod tests {
                 names
                     .iter()
                     .all(|n| names.iter().filter(|m| m == &n).count() == 1)
+            );
+            let quotes: Vec<&str> = game.slate.iter().map(|r| r.quote).collect();
+            assert!(
+                quotes
+                    .iter()
+                    .all(|q| quotes.iter().filter(|p| p == &q).count() == 1)
             );
         }
     }
