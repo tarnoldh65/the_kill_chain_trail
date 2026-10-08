@@ -1041,21 +1041,53 @@ fn track_picker(font: &Font, game: &GameState, name: &str) {
     font.text("Press 1-4.", MARGIN, 460.0, 1.0, DIM);
 }
 
+/// Draws `text` word-wrapped to fit `width` pixels and returns the y just below it.
+fn paragraph(font: &Font, text: &str, x: f32, y: f32, width: f32, scale: f32, color: Color) -> f32 {
+    let line_height = GLYPH * scale + 4.0;
+    let lines = wrap(text, (width / (GLYPH * scale)) as usize);
+    for (i, line) in lines.iter().enumerate() {
+        font.text(line, x, y + i as f32 * line_height, scale, color);
+    }
+    y + lines.len() as f32 * line_height
+}
+
+/// Like `paragraph`, but each line is centered on `center_x`.
+fn centered_paragraph(
+    font: &Font,
+    text: &str,
+    center_x: f32,
+    y: f32,
+    width: f32,
+    scale: f32,
+    color: Color,
+) -> f32 {
+    let line_height = GLYPH * scale + 4.0;
+    let lines = wrap(text, (width / (GLYPH * scale)) as usize);
+    for (i, line) in lines.iter().enumerate() {
+        font.centered(line, center_x, y + i as f32 * line_height, scale, color);
+    }
+    y + lines.len() as f32 * line_height
+}
+
 fn card_popup(font: &Font, game: &GameState) {
     let card = &game.cards[0];
-    let (x, y, w, h) = (40.0, 96.0, WIDTH - 80.0, 240.0);
+    let (x, y, w, h) = (40.0, 72.0, WIDTH - 80.0, 312.0);
     draw_rectangle(x, y, w, h, NAVY);
     draw_rectangle_lines(x, y, w, h, 2.0, GREEN);
-    font.centered(&card.title, WIDTH / 2.0, y + 12.0, 2.0, AMBER);
-    let width = ((w - 32.0) / GLYPH) as usize;
-    let mut line_y = y + 48.0;
-    for line in wrap(&card.text, width) {
-        font.text(&line, x + 16.0, line_y, 1.0, INK);
-        line_y += 12.0;
-    }
-    font.text(&card.effect, x + 16.0, line_y + 12.0, 1.0, GREEN);
+    let width = w - 32.0;
+    let line_y = centered_paragraph(font, &card.title, WIDTH / 2.0, y + 12.0, width, 2.0, AMBER);
+    let line_y = paragraph(font, &card.text, x + 16.0, line_y + 12.0, width, 1.0, INK);
+    let line_y = paragraph(
+        font,
+        &card.effect,
+        x + 16.0,
+        line_y + 12.0,
+        width,
+        1.0,
+        GREEN,
+    );
     if let Some(track) = card.track {
-        centered_sprite(art::track(track), WIDTH / 2.0, y + 124.0, 4.0);
+        centered_sprite(art::track(track), WIDTH / 2.0, line_y + 12.0, 4.0);
     }
     let more = match game.cards.len() - 1 {
         0 => "Press ENTER to finish the report".to_string(),
@@ -1150,7 +1182,15 @@ fn incident_popup(font: &Font, game: &GameState) {
         1.0,
         CYAN,
     );
-    font.text(condition.effect(), x + 16.0, y + h - 40.0, 1.0, CYAN);
+    paragraph(
+        font,
+        condition.effect(),
+        x + 16.0,
+        y + h - 40.0,
+        w - 32.0,
+        1.0,
+        CYAN,
+    );
     font.text(
         &format!(
             "Press 1-{}. Grey choices are unavailable.",
