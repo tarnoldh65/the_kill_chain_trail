@@ -147,7 +147,7 @@ const CANDIDATE_QUOTES: [&str; 28] = [
     "Ask me what my kid's lemonade stand taught me about incident response.",
     "Recruiters, please stop calling. Unless it's this job. Then call twice.",
     "Three years in cybersecurity. I have aged fifteen.",
-    "Please. I paid so much for that bootcamp."
+    "Please. I paid so much for that bootcamp.",
 ];
 
 /// How a fired analyst takes the news; `{name}` is the analyst.
