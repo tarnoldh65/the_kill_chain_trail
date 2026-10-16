@@ -393,6 +393,32 @@ Success criteria:
 - [x] Sensible pen test grade floors are re-measured and raised to 2.7 for Fintech, 2.2 for Healthtech, and 1.15 for Gaming (unit tested).
 - [ ] In a playtest, the resume viewer is readable at 640x480, and hiring, posting job openings, and the conference slate all work.
 
+## Phase 30: Song arrangements
+
+The three music tracks grow from 4-bar loops into 48-bar songs (90 seconds at 128 BPM) of five sections that loop back to the intro:
+- Intro (bars 1-8): the original 4-bar loop, played twice.
+- Melody (bars 9-16): an 8-bar square-wave main melody through a low-pass filter that opens over the section.
+- Full groove (bars 17-24): the filter is fully open, with a sub-bass and denser drums.
+- Breakdown (bars 25-40): the kick, bass, and sub-bass drop out. The melody and backing modulate up a half step after 8 bars while the filter closes and sweeps open again, with a noise riser and an accelerating snare roll over the last 4 bars.
+- Final (bars 41-48): the full groove slams back in the home key, so the loop back to the intro is seamless.
+The last bar of every other section is a snare fill.
+
+Tasks:
+- Add a one-pole low-pass filter with a cutoff that changes over time.
+- Describe the arrangement as a table of sections, and render a song from it given its 8-bar melody (with rests) and per-bar pattern.
+- Packet Storm (A minor) keeps its kick, off-beat hats, octave bass, and arpeggio, with a flowing main melody; the groove adds sixteenth hats, a backbeat snare, and a sub-bass.
+- Zero Day Drive (D minor) keeps its rolling sixteenth bass, snare, and triangle lead, with a staccato call-and-response main melody ending in a chromatic slide; the groove adds sixteenth hats and a sub-bass.
+- Neon Firewall (E minor) keeps its broken-beat kicks, triangle pad, and pentatonic lead, with a main melody of long ringing notes; the groove adds a kick and a sub-bass.
+- Rush Hour stays unchanged.
+
+Success criteria:
+- [x] Every music track is 48 bars, 90 seconds (unit tested).
+- [x] Per bar, each breakdown has far less low end than the groove (unit tested).
+- [x] The low-pass filter passes a steady signal and attenuates a square wave more at a lower cutoff (unit tested).
+- [x] No music track clips, and every section is audible (unit tested).
+- [x] Rush Hour is still four bars and never clips (unit tested).
+- [ ] In a playtest, the sections are audible in order, the loop back to the intro is seamless, and the game still starts promptly on desktop and web.
+
 ## Current status
 
 - [x] MVP (Phases 1-11)
@@ -414,3 +440,4 @@ Success criteria:
 - [ ] Phase 27: Actions screen, balance, and docs
 - [x] Phase 28: Resumes and candidate searches
 - [ ] Phase 29: Resume screens, balance, and docs
+- [ ] Phase 30: Song arrangements
