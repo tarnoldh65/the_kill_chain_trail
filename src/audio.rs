@@ -1,9 +1,10 @@
 use macroquad::audio::{
-    PlaySoundParams, Sound, load_sound_from_bytes, play_sound, play_sound_once, stop_sound,
+    PlaySoundParams, Sound, load_sound_from_bytes, play_sound, set_sound_volume, stop_sound,
 };
 
 use std::f32::consts::TAU;
 
+use crate::options::Options;
 use crate::ui::{Cue, Music};
 
 /// Names of the music tracks, in the order `tracks` builds them.
@@ -12,7 +13,8 @@ pub const TRACKS: [&str; 3] = ["Packet Storm", "Zero Day Drive", "Neon Firewall"
 const RATE: u32 = 44_100;
 /// Samples per sixteenth note, about 128 BPM.
 const STEP: usize = 5_168;
-const MUSIC_VOLUME: f32 = 0.4;
+/// Music gain per volume step, so the default of 8 plays at 0.4.
+const MUSIC_STEP: f32 = 0.05;
 
 #[derive(Debug, Clone, Copy)]
 enum Wave {
@@ -502,6 +504,8 @@ pub struct Audio {
     effects: Vec<Sound>,
     music: Vec<Sound>,
     rush_hour: Sound,
+    music_volume: f32,
+    sound_volume: f32,
 }
 
 async fn load(samples: Vec<f32>) -> Sound {
@@ -526,6 +530,17 @@ impl Audio {
                 music
             },
             rush_hour: load(rush_hour()).await,
+            music_volume: 0.0,
+            sound_volume: 0.0,
+        }
+    }
+
+    /// Sets both volumes, including the music already playing.
+    pub fn set_volumes(&mut self, options: Options) {
+        self.music_volume = options.music_volume as f32 * MUSIC_STEP;
+        self.sound_volume = options.sound_volume as f32 / 10.0;
+        for track in self.music.iter().chain([&self.rush_hour]) {
+            set_sound_volume(track, self.music_volume);
         }
     }
 
@@ -541,7 +556,7 @@ impl Audio {
             sound,
             PlaySoundParams {
                 looped: true,
-                volume: MUSIC_VOLUME,
+                volume: self.music_volume,
             },
         );
     }
@@ -561,7 +576,13 @@ impl Audio {
     }
 
     pub fn play(&self, cue: Cue) {
-        play_sound_once(&self.effects[cue as usize]);
+        play_sound(
+            &self.effects[cue as usize],
+            PlaySoundParams {
+                looped: false,
+                volume: self.sound_volume,
+            },
+        );
     }
 }
 

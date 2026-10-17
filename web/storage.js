@@ -1,17 +1,20 @@
-// Keeps the top-ten scoreboard string in the browser's localStorage.
+// Keeps small text values, like the top ten and the options, in the browser's localStorage.
 miniquad_add_plugin({
-    name: "top_ten",
+    name: "storage",
     version: 1,
     register_plugin: function (importObject) {
-        importObject.env.top_ten_read = function (ptr, capacity) {
-            var bytes = new TextEncoder().encode(localStorage.getItem("top_ten") || "");
+        function key(ptr, length) {
+            return new TextDecoder().decode(new Uint8Array(wasm_memory.buffer, ptr, length));
+        }
+        importObject.env.storage_read = function (keyPtr, keyLength, ptr, capacity) {
+            var bytes = new TextEncoder().encode(localStorage.getItem(key(keyPtr, keyLength)) || "");
             var length = Math.min(bytes.length, capacity);
             new Uint8Array(wasm_memory.buffer, ptr, length).set(bytes.subarray(0, length));
             return length;
         };
-        importObject.env.top_ten_write = function (ptr, length) {
+        importObject.env.storage_write = function (keyPtr, keyLength, ptr, length) {
             var bytes = new Uint8Array(wasm_memory.buffer, ptr, length);
-            localStorage.setItem("top_ten", new TextDecoder().decode(bytes));
+            localStorage.setItem(key(keyPtr, keyLength), new TextDecoder().decode(bytes));
         };
     }
 });

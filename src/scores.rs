@@ -1,4 +1,4 @@
-//! The top-ten scoreboard of IPOs, kept in a file natively and in localStorage in the browser.
+//! The top-ten scoreboard of IPOs, saved through `storage`.
 
 use crate::game::GameState;
 
@@ -48,52 +48,11 @@ fn decode(text: &str) -> Vec<Score> {
 }
 
 pub fn load() -> Vec<Score> {
-    decode(&read())
+    decode(&crate::storage::read("top_ten"))
 }
 
 pub fn save(scores: &[Score]) {
-    write(&encode(scores));
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-const FILE: &str = "top_ten.txt";
-
-#[cfg(not(target_arch = "wasm32"))]
-fn read() -> String {
-    std::fs::read_to_string(FILE).unwrap_or_default()
-}
-
-/// A scoreboard that cannot be saved is not worth crashing over.
-#[cfg(not(target_arch = "wasm32"))]
-fn write(text: &str) {
-    std::fs::write(FILE, text).ok();
-}
-
-// Provided by web/top-ten.js.
-#[cfg(target_arch = "wasm32")]
-unsafe extern "C" {
-    fn top_ten_read(buffer: *mut u8, capacity: u32) -> u32;
-    fn top_ten_write(text: *const u8, length: u32);
-}
-
-/// Lets the JS bundle check that web/top-ten.js matches this build.
-#[cfg(target_arch = "wasm32")]
-#[unsafe(no_mangle)]
-extern "C" fn top_ten_crate_version() -> u32 {
-    1
-}
-
-#[cfg(target_arch = "wasm32")]
-fn read() -> String {
-    let mut buffer = vec![0; 4096];
-    let length = unsafe { top_ten_read(buffer.as_mut_ptr(), buffer.len() as u32) };
-    buffer.truncate(length as usize);
-    String::from_utf8(buffer).unwrap_or_default()
-}
-
-#[cfg(target_arch = "wasm32")]
-fn write(text: &str) {
-    unsafe { top_ten_write(text.as_ptr(), text.len() as u32) }
+    crate::storage::write("top_ten", &encode(scores));
 }
 
 #[cfg(test)]

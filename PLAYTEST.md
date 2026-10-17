@@ -3,7 +3,7 @@
 Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 
 ## Flow
-- [x] The title shows "The Kill Chain Trail", the music picker works (1-3 tracks, 4 off), and the top ten appears once an IPO is scored.
+- [x] The title shows "The Kill Chain Trail", O opens the options popup (music 1-3, 4 off, music volume 1-10, game play sounds 0-10, B returns) and options persist between runs, and the top ten appears once an IPO is scored.
 - [x] Company and lead names accept typing and Backspace; empty names are refused.
 - [x] Each profile shows its budget, valuation, and multiplier, and starts with them.
 - [x] Procurement hires and names analysts, buys tools and services once, stops coffee at 36 pots, and needs an analyst before opening.

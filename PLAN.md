@@ -7,7 +7,7 @@ Plan for the redesign in [REDESIGN.md](REDESIGN.md), based on [AGENTS.md](AGENTS
 - Rust 2024 edition, latest stable toolchain.
 - [macroquad](https://crates.io/crates/macroquad) for window, scaling, 2D drawing, input, and audio.
 - [font8x8](https://crates.io/crates/font8x8) for a public domain 8x8 pixel font.
-- The top-ten scoreboard is saved without a library: a plain file natively, and a small `web/top-ten.js` plugin for localStorage in the browser. (quad-storage was planned, but its JavaScript depends on sapp_jsutils helpers that the current macroquad bundle keeps private.)
+- The top-ten scoreboard is saved without a library: a plain file natively, and a small `web/storage.js` plugin for localStorage in the browser. (quad-storage was planned, but its JavaScript depends on sapp_jsutils helpers that the current macroquad bundle keeps private.)
 - Sound effects and music are synthesized in code, so no external audio assets are required.
 
 ## Approach
@@ -163,7 +163,7 @@ Tasks:
 - Final 640x480 layout from REDESIGN.md section 13: timeline, status panel with status tags and roster, log, numbered options.
 - Sprites in the existing palette: timeline marker (an analyst pushing a server rack), landmark icons, one illustration per incident type, one per conference track, the IPO bell.
 - New sound cues: day tick, payday, alert klaxon, incident sting, landmark fanfare, IPO bell.
-- Top-ten scoreboard of IPO scores on the title screen, saved to `top_ten.txt` natively and to localStorage through `web/top-ten.js` in the browser.
+- Top-ten scoreboard of IPO scores on the title screen, saved to `top_ten.txt` natively and to localStorage through `web/storage.js` in the browser.
 
 Success criteria:
 - [x] Every new sprite fits its size and uses only the game palette (unit tested).
