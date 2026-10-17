@@ -26,5 +26,6 @@ web/*.wasm
 # Playwright MCP screenshots and logs from browser playtests
 .playwright-mcp/
 
-# Native top-ten scoreboard
+# Native top-ten scoreboard and options
 top_ten.txt
+options.txt

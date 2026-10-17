@@ -1,8 +1,8 @@
-use crate::audio::TRACKS;
 use crate::conference::Track;
 use crate::game::{
     Action, Area, Entry, GameState, Item, Kind, Outcome, Pool, Profile, Reply, Resume, Role,
 };
+use crate::options::{self, Options};
 use crate::street::{Hop, Street};
 
 const NAME_LIMIT: usize = 20;
@@ -53,17 +53,13 @@ pub enum Music {
     Off,
 }
 
-/// Music picked by a number key on the title screen: a track, or off after the last track.
-pub fn music_choice(screen: &Screen, input: Input) -> Option<Music> {
-    let Input::Char(c @ '1'..='9') = input else {
+/// New options when a key on the options screen changes them.
+pub fn options_change(screen: &Screen, input: Input, options: Options) -> Option<Options> {
+    let Screen::Options(row) = screen else {
         return None;
     };
-    let i = c as usize - '1' as usize;
-    match screen {
-        Screen::Title if i < TRACKS.len() => Some(Music::Track(i)),
-        Screen::Title if i == TRACKS.len() => Some(Music::Off),
-        _ => None,
-    }
+    let changed = options.adjust(*row, input);
+    (changed != options).then_some(changed)
 }
 
 /// Sound to play for a screen transition, if anything changed.
@@ -128,6 +124,8 @@ pub enum Input {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     Title,
+    /// Music and volume settings over the title screen, with the selected row.
+    Options(usize),
     Company(String),
     Lead {
         company: String,
@@ -455,6 +453,12 @@ impl Screen {
         }
         match (self, input) {
             (Self::Title, Input::Enter) => Self::Company(String::new()),
+            (Self::Title, Input::Char('o' | 'O')) => Self::Options(0),
+            (Self::Options(row), Input::Arrow(Hop::Up)) => Self::Options(row.saturating_sub(1)),
+            (Self::Options(row), Input::Arrow(Hop::Down)) => {
+                Self::Options((row + 1).min(options::ROWS - 1))
+            }
+            (Self::Options(_), Input::Char('b' | 'B')) => Self::Title,
             (Self::Company(company), Input::Enter) if !company.trim().is_empty() => Self::Lead {
                 company,
                 lead: String::new(),
@@ -1744,22 +1748,38 @@ mod tests {
     }
 
     #[test]
-    fn number_keys_pick_music_only_on_the_title() {
+    fn options_open_from_the_title_and_b_returns() {
+        let screen = Screen::Title.update(Input::Char('o'));
+        assert_eq!(screen, Screen::Options(0));
+        let screen = screen
+            .update(Input::Arrow(Hop::Down))
+            .update(Input::Arrow(Hop::Down))
+            .update(Input::Arrow(Hop::Down));
+        assert_eq!(screen, Screen::Options(options::ROWS - 1));
+        assert_eq!(screen.update(Input::Char('B')), Screen::Title);
+    }
+
+    #[test]
+    fn options_change_only_on_the_options_screen() {
+        let options = Options::default();
         assert_eq!(
-            music_choice(&Screen::Title, Input::Char('1')),
-            Some(Music::Track(0))
-        );
-        assert_eq!(
-            music_choice(&Screen::Title, Input::Char('3')),
-            Some(Music::Track(2))
-        );
-        assert_eq!(
-            music_choice(&Screen::Title, Input::Char('4')),
+            options_change(&Screen::Options(0), Input::Char('4'), options).map(|o| o.music),
             Some(Music::Off)
         );
-        assert_eq!(music_choice(&Screen::Title, Input::Char('5')), None);
-        assert_eq!(music_choice(&Screen::Title, Input::Enter), None);
-        assert_eq!(music_choice(&new_game(), Input::Char('1')), None);
+        assert_eq!(
+            options_change(&Screen::Options(1), Input::Arrow(Hop::Right), options)
+                .map(|o| o.music_volume),
+            Some(options.music_volume + 1)
+        );
+        assert_eq!(
+            options_change(&Screen::Options(0), Input::Char('1'), options),
+            None
+        );
+        assert_eq!(
+            options_change(&Screen::Title, Input::Char('4'), options),
+            None
+        );
+        assert_eq!(options_change(&new_game(), Input::Char('1'), options), None);
     }
 
     #[test]

@@ -105,7 +105,7 @@ pub fn pages() -> Vec<Page> {
                 "F on the team screen lets an analyst go; Y confirms.",
                 "",
                 "# ON THE TITLE SCREEN",
-                "1 to 3 pick a music track, 4 turns music off, M opens this manual, and ENTER begins.",
+                "O opens game options for music and volume, M opens this manual, and ENTER begins.",
                 "",
                 "# THE COFFEE RUN",
                 "ARROW KEYS guide the intern across four lanes of traffic and back. Look both ways.",

@@ -10,7 +10,9 @@ mod game;
 mod landmarks;
 mod manual;
 mod operations;
+mod options;
 mod scores;
+mod storage;
 mod street;
 mod ui;
 
@@ -89,30 +91,35 @@ async fn main() {
     let mut camera = Camera2D::from_display_rect(Rect::new(0.0, 0.0, WIDTH, HEIGHT));
     camera.render_target = Some(target.clone());
     macroquad::rand::srand(miniquad::date::now() as u64);
-    let audio = Audio::load().await;
-    let mut music = Music::Track(0);
-    audio.play_music(music);
+    let mut audio = Audio::load().await;
+    let mut options = options::load();
+    audio.set_volumes(options);
+    audio.play_music(options.music);
     let mut screen = Screen::Title;
     let mut scores = scores::load();
 
     loop {
         for input in inputs() {
-            if let Some(choice) = ui::music_choice(&screen, input) {
-                music = choice;
-                audio.play_music(music);
+            if let Some(changed) = ui::options_change(&screen, input, options) {
+                if changed.music != options.music {
+                    audio.play_music(changed.music);
+                }
+                options = changed;
+                audio.set_volumes(options);
+                options::save(options);
                 audio.play(Cue::Select);
             }
             let next = screen.clone().update(input);
-            transition(&audio, music, &mut scores, &screen, &next);
+            transition(&audio, options.music, &mut scores, &screen, &next);
             screen = next;
         }
         // Cap the step so a slow frame cannot carry a car straight through the intern.
         let next = screen.clone().tick(get_frame_time().min(0.05));
-        transition(&audio, music, &mut scores, &screen, &next);
+        transition(&audio, options.music, &mut scores, &screen, &next);
         screen = next;
 
         set_camera(&camera);
-        draw::screen(&screen, &font, music, &scores);
+        draw::screen(&screen, &font, options, &scores);
 
         // Scale the 640x480 frame to the window in whole steps when it fits, letterboxed.
         set_default_camera();

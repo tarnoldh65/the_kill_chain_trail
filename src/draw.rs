@@ -9,6 +9,7 @@ use crate::game::{
     Outcome, Pool, Profile, Reply, Role, SECOND_THOUGHTS, TeamMember, money, strength,
 };
 use crate::landmarks::Landmark;
+use crate::options::Options;
 use crate::scores::Score;
 use crate::street::{self, Leg, Street};
 use crate::ui::{
@@ -82,10 +83,14 @@ impl Font {
     }
 }
 
-pub fn screen(screen: &Screen, font: &Font, music: Music, scores: &[Score]) {
+pub fn screen(screen: &Screen, font: &Font, options: Options, scores: &[Score]) {
     clear_background(BG);
     match screen {
-        Screen::Title => title(font, music, scores),
+        Screen::Title => title(font, scores),
+        Screen::Options(row) => {
+            title(font, scores);
+            options_popup(font, options, *row);
+        }
         Screen::Company(company) => {
             name_entry(font, "Name the company you are protecting:", company)
         }
@@ -179,7 +184,7 @@ fn server_racks(y: f32) {
     }
 }
 
-fn title(font: &Font, music: Music, scores: &[Score]) {
+fn title(font: &Font, scores: &[Score]) {
     binary_band(font, 16.0);
     font.centered("THE KILL CHAIN", WIDTH / 2.0, 96.0, 4.0, GREEN);
     font.centered("TRAIL", WIDTH / 2.0, 136.0, 4.0, GREEN);
@@ -195,7 +200,13 @@ fn title(font: &Font, music: Music, scores: &[Score]) {
     } else {
         top_ten(font, scores);
     }
-    music_menu(font, music);
+    font.centered(
+        "Press O for game options including music and volume",
+        WIDTH / 2.0,
+        360.0,
+        1.0,
+        DIM,
+    );
     if blink() {
         font.centered("PRESS ENTER TO BEGIN", WIDTH / 2.0, 400.0, 2.0, AMBER);
     }
@@ -253,8 +264,61 @@ fn centered_sprite(art: Sprite, center_x: f32, y: f32, scale: f32) {
     sprite(art, (center_x - width / 2.0).floor(), y, scale);
 }
 
-fn music_menu(font: &Font, music: Music) {
-    font.centered("Choose music with 1-4", WIDTH / 2.0, 344.0, 1.0, DIM);
+fn options_popup(font: &Font, options: Options, row: usize) {
+    let (x, y, w, h) = (48.0, 112.0, WIDTH - 96.0, 256.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, CYAN);
+    font.centered("GAME OPTIONS", WIDTH / 2.0, y + 16.0, 2.0, AMBER);
+    let label = |text: &str, i: usize, label_y: f32| {
+        let (text, color) = if i == row {
+            (format!("> {text} <"), CYAN)
+        } else {
+            (text.to_string(), INK)
+        };
+        font.centered(&text, WIDTH / 2.0, label_y, 1.0, color);
+    };
+    label(
+        &format!("Choose music with 1-{}", TRACKS.len() + 1),
+        0,
+        y + 52.0,
+    );
+    music_menu(font, options.music, y + 68.0);
+    label("Music Volume 1-10", 1, y + 100.0);
+    volume_bar(font, options.music_volume, y + 116.0);
+    label("Game Play Sounds 0-10", 2, y + 148.0);
+    volume_bar(font, options.sound_volume, y + 164.0);
+    font.centered(
+        "UP/DOWN to pick, LEFT/RIGHT to adjust",
+        WIDTH / 2.0,
+        y + 200.0,
+        1.0,
+        DIM,
+    );
+    font.centered("Press B to return", WIDTH / 2.0, y + 224.0, 1.0, INK);
+}
+
+/// Ten cells, filled up to `level`, with the number after them.
+fn volume_bar(font: &Font, level: u8, y: f32) {
+    let (cell, gap) = (16.0, 4.0);
+    let x = (WIDTH - 10.0 * (cell + gap)) / 2.0;
+    for i in 0..10 {
+        let cell_x = x + i as f32 * (cell + gap);
+        if i < level {
+            draw_rectangle(cell_x, y, cell, 8.0, GREEN);
+        } else {
+            draw_rectangle_lines(cell_x, y, cell, 8.0, 1.0, DIM);
+        }
+    }
+    font.text(
+        &level.to_string(),
+        x + 10.0 * (cell + gap) + 4.0,
+        y,
+        1.0,
+        AMBER,
+    );
+}
+
+fn music_menu(font: &Font, music: Music, y: f32) {
     let options: Vec<(String, Music)> = TRACKS
         .iter()
         .enumerate()
@@ -270,7 +334,7 @@ fn music_menu(font: &Font, music: Music) {
     let mut x = ((WIDTH - len as f32 * GLYPH) / 2.0).floor();
     for (label, option) in options {
         let color = if option == music { AMBER } else { INK };
-        font.text(&label, x, 360.0, 1.0, color);
+        font.text(&label, x, y, 1.0, color);
         x += (label.len() + gap) as f32 * GLYPH;
     }
 }
