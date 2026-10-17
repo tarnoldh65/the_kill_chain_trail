@@ -4,6 +4,7 @@ use macroquad::prelude::*;
 use crate::art::{self, Sprite};
 use crate::audio::TRACKS;
 use crate::conference::Track;
+use crate::fight::{self, Fight, Fighter, Strike};
 use crate::game::{
     Action, Area, COFFEE_CAPACITY, COFFEE_RUN_COST, GameState, IR_FEE, Item, Kind, MAX_ANALYSTS,
     Outcome, Pool, Profile, Reply, Role, SECOND_THOUGHTS, TeamMember, money, strength,
@@ -33,6 +34,7 @@ const LIGHT: Color = Color::from_hex(0xc2c3c7);
 const BROWN: Color = Color::from_hex(0xab5236);
 const YELLOW: Color = Color::from_hex(0xffec27);
 const PEACH: Color = Color::from_hex(0xffccaa);
+const PURPLE: Color = Color::from_hex(0x7e2553);
 
 const GLYPH: f32 = 8.0;
 const MARGIN: f32 = 16.0;
@@ -112,6 +114,11 @@ pub fn screen(screen: &Screen, font: &Font, options: Options, scores: &[Score]) 
             name_popup(font, &format!("Name your new {title}:"), name);
         }
         Screen::Actions(menu) => action_menu(font, menu),
+        Screen::Stake(menu) => {
+            action_menu(font, menu);
+            stake_popup(font);
+        }
+        Screen::Fight(brawl) => fight_screen(font, &brawl.game.lead, &brawl.fight),
         Screen::Play(game) => play(font, game, false),
         Screen::Travel(travel) => play(font, &travel.game, true),
         Screen::Team {
@@ -1839,6 +1846,257 @@ fn intern(street: &Street) {
     if street.leg == Leg::ToOffice {
         draw_rectangle(x + 13.0, y + 9.0, 5.0, 7.0, INK);
         draw_rectangle(x + 13.0, y + 9.0, 5.0, 2.0, BROWN);
+    }
+}
+
+/// The stake as the player picks it, like $40,000.
+fn stake_label(amount: i64) -> String {
+    format!("${},000", amount / 1_000)
+}
+
+fn stake_popup(font: &Font) {
+    let (x, y, w, h) = (96.0, 128.0, WIDTH - 192.0, 208.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, RED);
+    font.centered("FIGHT FOR BUDGET", WIDTH / 2.0, y + 16.0, 2.0, RED);
+    font.centered(
+        "How much will you fight for?",
+        WIDTH / 2.0,
+        y + 44.0,
+        1.0,
+        INK,
+    );
+    for (i, (amount, tier)) in fight::STAKES.iter().zip(fight::TIERS).enumerate() {
+        let line = format!("{}  {:<10}vs {}", i + 1, stake_label(*amount), tier.title);
+        font.text(&line, x + 64.0, y + 68.0 + i as f32 * 16.0, 1.0, INK);
+    }
+    font.centered(
+        "Win: the stake, brand +10%",
+        WIDTH / 2.0,
+        y + 140.0,
+        1.0,
+        GREEN,
+    );
+    font.centered(
+        "Lose: trust -30%, budget -10%",
+        WIDTH / 2.0,
+        y + 154.0,
+        1.0,
+        RED,
+    );
+    font.centered("B to back out", WIDTH / 2.0, y + 182.0, 1.0, LIGHT);
+}
+
+/// Where the fighters stand.
+const FLOOR: f32 = 440.0;
+/// Pixels per block of fighter art.
+const BLOCK: f32 = 4.0;
+const BOSS_TIES: [Color; 4] = [AMBER, GREEN, CYAN, RED];
+
+fn fight_screen(font: &Font, lead: &str, fight: &Fight) {
+    office();
+    fighter(&fight.player, 1.0, LIGHT, RED);
+    fighter(&fight.boss, -1.0, PURPLE, BOSS_TIES[fight.stake]);
+
+    // Names, health, and the clock.
+    font.text(&lead.to_uppercase(), MARGIN, 8.0, 1.0, INK);
+    right(font, fight.tier().title, 8.0, INK);
+    let bar = 240.0;
+    let player = fight.player.health.max(0) as f32 / fight::PLAYER_HEALTH as f32;
+    let boss = fight.boss_percent() as f32 / 100.0;
+    draw_rectangle(MARGIN, 22.0, bar, 12.0, RED);
+    draw_rectangle(
+        MARGIN + bar * (1.0 - player),
+        22.0,
+        bar * player,
+        12.0,
+        YELLOW,
+    );
+    draw_rectangle(WIDTH - MARGIN - bar, 22.0, bar, 12.0, RED);
+    draw_rectangle(WIDTH - MARGIN - bar, 22.0, bar * boss, 12.0, YELLOW);
+    for x in [MARGIN, WIDTH - MARGIN - bar] {
+        draw_rectangle_lines(x, 22.0, bar, 12.0, 2.0, INK);
+    }
+    font.centered(
+        &format!("{}", fight.time_left.ceil()),
+        WIDTH / 2.0,
+        12.0,
+        3.0,
+        AMBER,
+    );
+    font.centered(
+        &format!("FIGHTING FOR {}", stake_label(fight.amount())),
+        WIDTH / 2.0,
+        44.0,
+        1.0,
+        INK,
+    );
+
+    match fight.won {
+        None if fight.time_left > fight::ROUND_SECONDS - 1.0 => {
+            font.centered("FIGHT!", WIDTH / 2.0, 176.0, 4.0, RED);
+        }
+        None => {}
+        Some(won) => {
+            let (x, y, w, h) = (128.0, 152.0, WIDTH - 256.0, 112.0);
+            draw_rectangle(x, y, w, h, BG);
+            let (banner, color, effect) = if won {
+                (
+                    "YOU WIN!",
+                    GREEN,
+                    format!("+{} and brand up", stake_label(fight.amount())),
+                )
+            } else {
+                ("K.O.", RED, "Trust and budget take a hit".to_string())
+            };
+            draw_rectangle_lines(x, y, w, h, 2.0, color);
+            font.centered(banner, WIDTH / 2.0, y + 16.0, 4.0, color);
+            font.centered(&effect, WIDTH / 2.0, y + 60.0, 1.0, INK);
+            font.centered("ENTER to continue", WIDTH / 2.0, y + 84.0, 1.0, DIM);
+        }
+    }
+    font.centered(
+        "UP stand  DOWN crouch  LEFT/RIGHT move  Q punch  E kick",
+        WIDTH / 2.0,
+        462.0,
+        1.0,
+        INK,
+    );
+}
+
+/// An office floor at night: tall windows over the city, desks, and a water cooler.
+fn office() {
+    draw_rectangle(0.0, 0.0, WIDTH, FLOOR, NAVY);
+    let (top, bottom) = (64.0, 320.0);
+    let (window, gap) = (128.0, 24.0);
+    let left = (WIDTH - 4.0 * window - 3.0 * gap) / 2.0;
+    draw_rectangle(left, top, WIDTH - 2.0 * left, bottom - top, BG);
+    draw_circle(536.0, 96.0, 10.0, INK);
+    // The skyline: buildings of varied height, with a scatter of lit windows.
+    let mut x = left;
+    let mut n = 0;
+    while x < WIDTH - left {
+        let width = 24.0 + (n * 7 % 4) as f32 * 8.0;
+        let height = 72.0 + (n * 37 % 7) as f32 * 20.0;
+        let color = if n % 2 == 0 { DIM } else { BROWN };
+        draw_rectangle(x, bottom - height, width, height, color);
+        for row in 0..(height / 12.0) as usize {
+            for col in 0..(width / 8.0) as usize {
+                if noise(n * 131 + row * 17 + col) {
+                    let wx = x + 2.0 + col as f32 * 8.0;
+                    let wy = bottom - height + 4.0 + row as f32 * 12.0;
+                    draw_rectangle(wx, wy, 3.0, 4.0, YELLOW);
+                }
+            }
+        }
+        x += width + 2.0;
+        n += 1;
+    }
+    // Wall between and beside the glass turns it into four framed windows.
+    draw_rectangle(0.0, 0.0, left, FLOOR, NAVY);
+    draw_rectangle(WIDTH - left, 0.0, left, FLOOR, NAVY);
+    for i in 0..4 {
+        let wx = left + i as f32 * (window + gap);
+        if i > 0 {
+            draw_rectangle(wx - gap, top, gap, bottom - top, NAVY);
+        }
+        draw_rectangle_lines(wx, top, window, bottom - top, 4.0, LIGHT);
+        draw_rectangle(wx, (top + bottom) / 2.0, window, 3.0, LIGHT);
+    }
+
+    // Desks with monitors, and a water cooler.
+    for desk in [24.0, 456.0] {
+        draw_rectangle(desk, 384.0, 160.0, 8.0, BROWN);
+        draw_rectangle(desk + 8.0, 392.0, 8.0, 48.0, BROWN);
+        draw_rectangle(desk + 144.0, 392.0, 8.0, 48.0, BROWN);
+        draw_rectangle(desk + 56.0, 348.0, 48.0, 32.0, BG);
+        draw_rectangle(desk + 60.0, 352.0, 40.0, 24.0, DARK_GREEN);
+        draw_rectangle(desk + 76.0, 380.0, 8.0, 4.0, BG);
+    }
+    draw_rectangle(304.0, 376.0, 32.0, 40.0, LIGHT);
+    draw_rectangle(308.0, 348.0, 24.0, 28.0, CYAN);
+    draw_rectangle(312.0, 416.0, 16.0, 24.0, DIM);
+
+    draw_rectangle(0.0, FLOOR, WIDTH, HEIGHT - FLOOR, DIM);
+    draw_rectangle(0.0, FLOOR, WIDTH, 2.0, LIGHT);
+}
+
+/// A muscle-bound fighter in a suit with a tie around the head, drawn from blocks. Block
+/// positions run forward from the fighter's center and up from the floor, mirrored when
+/// `facing` is -1.
+fn fighter(f: &Fighter, facing: f32, suit: Color, tie: Color) {
+    let block = |x: i32, y: i32, w: i32, h: i32, color: Color| {
+        let left = if facing > 0.0 { x } else { -(x + w) };
+        draw_rectangle(
+            f.x + left as f32 * BLOCK,
+            FLOOR - (y + h) as f32 * BLOCK,
+            w as f32 * BLOCK,
+            h as f32 * BLOCK,
+            color,
+        );
+    };
+    let out = f.attack.filter(|a| a.extended()).map(|a| a.strike);
+
+    // Legs, with black shoes.
+    match (f.crouching, out) {
+        (false, Some(Strike::Kick)) => {
+            block(-3, 2, 4, 12, suit);
+            block(-4, 0, 6, 2, BG);
+            block(1, 10, 21, 4, suit);
+            block(22, 9, 5, 6, BG);
+        }
+        (false, _) => {
+            block(-6, 2, 4, 12, suit);
+            block(-7, 0, 5, 2, BG);
+            block(2, 2, 4, 12, suit);
+            block(2, 0, 6, 2, BG);
+        }
+        (true, Some(Strike::Kick)) => {
+            block(-8, 0, 4, 6, suit);
+            block(-9, 0, 5, 2, BG);
+            block(-8, 5, 9, 4, suit);
+            block(0, 0, 24, 4, suit);
+            block(24, 0, 4, 5, BG);
+        }
+        (true, _) => {
+            block(-8, 0, 4, 6, suit);
+            block(-9, 0, 5, 2, BG);
+            block(-8, 5, 8, 4, suit);
+            block(-1, 5, 8, 4, suit);
+            block(4, 0, 4, 6, suit);
+            block(4, 0, 6, 2, BG);
+        }
+    }
+
+    // The upper body sits lower in a crouch and reels back from a hit.
+    let base = if f.crouching { 6 } else { 12 };
+    let lean = if f.stun > 0.0 { -2 } else { 0 };
+    let upper =
+        |x: i32, y: i32, w: i32, h: i32, color: Color| block(x + lean, base + y, w, h, color);
+    upper(-6, 0, 12, 3, suit);
+    upper(-6, 3, 12, 1, BG);
+    upper(-7, 4, 14, 10, suit);
+    upper(-1, 9, 3, 5, INK);
+    // Broad shoulders.
+    upper(-9, 10, 18, 5, suit);
+    upper(-1, 14, 3, 2, PEACH);
+    upper(-3, 15, 7, 7, if f.stun > 0.0 { RED } else { PEACH });
+    upper(-3, 21, 7, 2, BG);
+    upper(2, 19, 1, 1, BG);
+    // The tie around the head, its ends flying out behind.
+    upper(-4, 18, 9, 2, tie);
+    upper(-8, 18, 4, 2, tie);
+    upper(-7, 16, 3, 2, tie);
+    // Back fist guarding the chin.
+    upper(2, 13, 3, 3, PEACH);
+    if out == Some(Strike::Punch) {
+        upper(6, 10, 11, 4, suit);
+        upper(17, 9, 4, 5, PEACH);
+    } else {
+        // A bulging bicep and a raised fist.
+        upper(6, 7, 4, 7, suit);
+        upper(8, 12, 3, 5, suit);
+        upper(8, 16, 4, 3, PEACH);
     }
 }
 

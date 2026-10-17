@@ -419,6 +419,39 @@ Success criteria:
 - [x] Rush Hour is still four bars and never clips (unit tested).
 - [ ] In a playtest, the sections are audible in order, the loop back to the intro is seamless, and the game still starts promptly on desktop and web.
 
+## Phase 31: Fight for budget
+
+A Street Fighter-style mini game against the boss, offered as an action when money runs low.
+
+Rules:
+- "Fight for budget" appears on the Management tab of Take an action only while the budget is below 50% of the profile's starting budget (Fintech $300K, Healthtech $225K, Gaming $150K), and at most once per week, like the coffee run. It takes no days and costs nothing to start.
+- Picking it opens a stake popup: 1 $10,000, 2 $40,000, 3 $75,000, 4 $100,000, B backs out.
+- One round, 60 seconds. Each fighter has a health bar. Knocking the boss to zero wins; running out of health loses; at time up, the higher health wins and a tie goes to the boss.
+- Win: the stake is added to the budget and brand rises 10% (brand * 1.1, capped at 100). Lose: trust drops 30% (trust * 0.7) and the budget loses 10% of its current amount. A result card shows the change, and a log line records it with a humorous message. Losing can end the game through trust like any other trust loss.
+- Controls: UP stands, DOWN crouches, LEFT/RIGHT walk backward/forward while held (anywhere across the 640px screen, but fighters cannot pass through each other), Q punches, E kicks.
+- Standing attacks are high and miss a crouching target. Crouching attacks are low and hit either stance. Punches are quick with short reach and light damage; kicks are slower with longer reach and heavier damage. Each attack has a wind-up, an active frame window, and a recovery, so it cannot be spammed.
+- The boss is driven by a simple timer-based AI: it walks into range, attacks, sometimes crouches under high attacks, and backs off after taking a hit. Higher stakes give the boss more health, more damage, faster walking, and quicker reactions, in four fixed tiers.
+
+Tasks:
+- `src/fight.rs`: fighter state (x, stance, attack and its phase, health, hit stun), the boss AI, hit detection, the round timer, and the result. Pure logic driven by `tick(dt, held)` and key presses, with its own seeded random rolls so fights do not disturb the shared generator.
+- Input: `Screen::tick` takes the held LEFT/RIGHT direction from `main.rs` (held keys are needed for walking; everything else stays press-based).
+- `GameState`: `can_fight()`, `fight_settled(stake, won)` applying the rewards or penalties, with a once-per-week flag reset on Monday alongside the coffee run's.
+- `ui.rs`: `Action::FightForBudget` (or a dedicated Management row) leading to `Screen::Stake`, then `Screen::Fight`, then the result card back on the day screen. Cues for swing, kick, hit landed, pain, and win/lose.
+- Art: 8-bit sprites for a muscular fighter in a suit with a tie tied around the head, in six poses (stand, crouch, stand punch, stand kick, crouch punch, crouch kick) plus a hit pose. The player faces right on the left; the boss is the same art mirrored, with a different suit and tie color. Background: an office floor with desks and a row of tall windows showing a night city skyline. Health bars, names, and the timer across the top.
+- Audio: a new fight track ("Boardroom Brawl"), faster and harder than the others (about 150 BPM, minor key, driving bass, pounding kicks), swapped in and out like Rush Hour and following the music volume and Off setting. Synthesized effects for a punch swing, a kick swing, a landed strike, and a pain grunt, following the game play sounds volume.
+- Update the manual, README, and PLAYTEST.md.
+
+Success criteria:
+- [x] Fight for budget is offered only below 50% of the starting budget and once per week (unit tested).
+- [x] Each stake starts a fight with the matching boss tier, and B on the stake popup returns to the action list (unit tested).
+- [x] Holding LEFT/RIGHT walks within the screen, and the fighters never pass through each other (unit tested).
+- [x] Standing attacks miss a crouching target, crouching attacks hit both stances, and an attack only lands during its active frames (unit tested).
+- [x] Winning adds the stake and raises brand 10%; losing cuts trust 30% and the budget 10% (unit tested).
+- [x] Time up awards the fight to the higher health, with a tie going to the boss (unit tested).
+- [x] With scripted idle input the boss wins at every tier, and tougher tiers win faster (unit tested).
+- [x] The fight track is a whole number of bars and never clips, and the new effects never clip (unit tested).
+- [ ] In a playtest, the fight is readable at 640x480, the controls feel responsive, the $10,000 boss is beatable by a new player, and the $100,000 boss is hard but fair.
+
 ## Current status
 
 - [x] MVP (Phases 1-11)
@@ -441,3 +474,4 @@ Success criteria:
 - [x] Phase 28: Resumes and candidate searches
 - [ ] Phase 29: Resume screens, balance, and docs
 - [ ] Phase 30: Song arrangements
+- [ ] Phase 31: Fight for budget

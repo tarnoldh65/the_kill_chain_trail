@@ -91,6 +91,18 @@ const INTERN_FATES: [&str; 4] = [
     "The intern crossed on \"Don't Walk\". Traffic did not stop. HR is already posting the job ad.",
 ];
 
+const FIGHT_WINS: [&str; 3] = [
+    "You suplexed the boss through a whiteboard. The budget request was approved on the spot.",
+    "A flying kick over the conference table. Finance calls it a \"dynamic reallocation\".",
+    "The boss tapped out and signed the purchase order with a trembling hand.",
+];
+
+const FIGHT_LOSSES: [&str; 3] = [
+    "The boss won by knockout and a 40-slide deck. HR has opened a file on you.",
+    "You were roundhoused into the supply closet. The budget cut came with the ice pack.",
+    "The boss pinned you with a spreadsheet and quoted the ROI. Leadership is disappointed.",
+];
+
 /// Ways a burned out team member leaves, rotated so departures read differently.
 const BURNOUT_EXITS: [&str; 5] = [
     "burned out and quit to open a llama sanctuary.",
@@ -101,7 +113,7 @@ const BURNOUT_EXITS: [&str; 5] = [
 ];
 
 /// A well-mixed pseudo-random number from a seed and a salt (the murmur3 finalizer).
-fn roll(seed: u32, salt: u32) -> u32 {
+pub fn roll(seed: u32, salt: u32) -> u32 {
     let mut x = seed ^ salt.wrapping_mul(0x9E37_79B9);
     x ^= x >> 16;
     x = x.wrapping_mul(0x85EB_CA6B);
@@ -625,6 +637,8 @@ pub enum Action {
     Maintain(Area),
     /// Ends a lingering condition left by an incident.
     Clear(Condition),
+    /// Takes on the boss in a street fight for more budget.
+    FightForBudget,
 }
 
 impl Action {
@@ -647,6 +661,7 @@ impl Action {
             }
             .to_string(),
             Self::Clear(condition) => condition.cure().to_string(),
+            Self::FightForBudget => "Fight for budget".to_string(),
         }
     }
 
@@ -661,6 +676,7 @@ impl Action {
             Self::PostJobs => "Start a two-week candidate search. Then a week to hire.",
             Self::Maintain(_) => "Brings this area's tools back to full strength.",
             Self::Clear(condition) => condition.effect(),
+            Self::FightForBudget => "Win cash and brand. Lose trust and budget.",
         }
     }
 
@@ -681,9 +697,11 @@ impl Action {
             Self::Deploy(_) => Kind::Implementation,
             Self::Maintain(_) => Kind::Maintenance,
             Self::Operate(_) => Kind::Operations,
-            Self::DayOff | Self::Offsite | Self::BriefLeadership | Self::PostJobs => {
-                Kind::Management
-            }
+            Self::DayOff
+            | Self::Offsite
+            | Self::BriefLeadership
+            | Self::PostJobs
+            | Self::FightForBudget => Kind::Management,
         }
     }
 
@@ -710,6 +728,8 @@ impl Action {
             Self::Clear(Condition::LeakyRoadmap | Condition::Paranoia) => 4,
             Self::Clear(Condition::Downtime) => 2,
             Self::Clear(Condition::PersistentAccess) => 10,
+            // Settled on the spot.
+            Self::FightForBudget => 0,
         }
     }
 
@@ -717,7 +737,11 @@ impl Action {
     fn fixed(self) -> bool {
         matches!(
             self,
-            Self::DayOff | Self::Offsite | Self::BriefLeadership | Self::PostJobs
+            Self::DayOff
+                | Self::Offsite
+                | Self::BriefLeadership
+                | Self::PostJobs
+                | Self::FightForBudget
         )
     }
 
@@ -1153,6 +1177,8 @@ pub struct GameState {
     pub outcome: Option<Outcome>,
     /// Whether the intern has already been sent for coffee this week.
     pub coffee_run_made: bool,
+    /// Whether the boss has already been fought this week.
+    fight_made: bool,
     /// Drives every random outcome, so a seed always plays out the same way.
     pub seed: u32,
     /// How many random numbers this game has drawn.
@@ -1216,6 +1242,7 @@ impl GameState {
             }],
             outcome: None,
             coffee_run_made: false,
+            fight_made: false,
             seed,
             rolls: 0,
         };
@@ -1538,6 +1565,7 @@ impl GameState {
             .chain(operations)
             .chain([Action::DayOff, Action::Offsite, Action::BriefLeadership])
             .chain((self.search_days == 0 && self.can_hire()).then_some(Action::PostJobs))
+            .chain(self.can_fight().then_some(Action::FightForBudget))
             .filter(|action| self.affords(action.cost()))
             .collect()
     }
@@ -1723,6 +1751,7 @@ impl GameState {
                 self.conditions.retain(|&c| c != condition);
                 format!("{} is done. Things are back to normal.", condition.cure())
             }
+            Action::FightForBudget => unreachable!("fights are settled in the ring"),
         };
         self.trust = self.trust.clamp(0, 100);
         self.note(message.clone());
@@ -2667,6 +2696,35 @@ impl GameState {
         self.card("Coffee run", &message, &before);
     }
 
+    /// Fighting for budget is offered once a week while the budget is under half the start.
+    pub fn can_fight(&self) -> bool {
+        self.outcome.is_none() && !self.fight_made && self.budget * 2 < self.profile.budget()
+    }
+
+    /// Steps into the ring, using up this week's fight.
+    pub fn start_fight(&mut self) {
+        self.fight_made = true;
+    }
+
+    /// The fight's payoff: the stake and a brand lift for a win, or a hit to trust and
+    /// the budget for a loss.
+    pub fn fight_settled(&mut self, stake: i64, won: bool) {
+        let before = self.glance();
+        let pick = self.day as usize;
+        let message = if won {
+            self.budget += stake;
+            self.brand = (self.brand * 11 / 10).min(100);
+            FIGHT_WINS[pick % FIGHT_WINS.len()]
+        } else {
+            self.trust = self.trust * 7 / 10;
+            self.budget -= self.budget.max(0) / 10;
+            FIGHT_LOSSES[pick % FIGHT_LOSSES.len()]
+        };
+        self.note(message);
+        self.card("Fight for budget", message, &before);
+        self.check_outcome();
+    }
+
     /// Advances one day and returns whether something happened that should stop the clock.
     pub fn advance(&mut self) -> bool {
         self.day += 1;
@@ -2696,6 +2754,7 @@ impl GameState {
     /// Weekly upkeep: tool wear, brand drag, and payroll.
     fn monday(&mut self) -> bool {
         self.coffee_run_made = false;
+        self.fight_made = false;
         if (self.day - 1).is_multiple_of(FUNDING_INTERVAL) {
             self.fund();
         }
@@ -5565,5 +5624,47 @@ mod tests {
         assert_eq!(money(1_500_000), "$1.5M");
         assert_eq!(money(600_000_000), "$600M");
         assert_eq!(money(1_200_000_000), "$1.20B");
+    }
+
+    #[test]
+    fn fighting_for_budget_is_offered_below_half_the_start_once_a_week() {
+        let mut game = GameState::new("Acme", "Alex", Profile::Gaming, 1);
+        game.budget = Profile::Gaming.budget() / 2;
+        assert!(!game.can_fight());
+        assert!(!game.actions().contains(&Action::FightForBudget));
+
+        game.budget -= 1;
+        assert!(game.can_fight());
+        assert!(game.actions().contains(&Action::FightForBudget));
+        assert_eq!(Action::FightForBudget.kind(), Kind::Management);
+
+        game.start_fight();
+        assert!(!game.can_fight());
+        game.monday();
+        assert!(!game.fight_made);
+    }
+
+    #[test]
+    fn a_won_fight_pays_the_stake_and_lifts_brand_and_a_lost_one_costs_trust_and_budget() {
+        let mut game = GameState::new("Acme", "Alex", Profile::Gaming, 1);
+        game.budget = 100_000;
+        let (trust, brand) = (game.trust, game.brand);
+
+        let mut won = game.clone();
+        won.fight_settled(40_000, true);
+        assert_eq!(won.budget, 140_000);
+        assert_eq!(won.brand, brand * 11 / 10);
+        assert_eq!(won.trust, trust);
+        assert_eq!(won.cards.len(), 1);
+
+        let mut lost = game.clone();
+        lost.fight_settled(40_000, false);
+        assert_eq!(lost.budget, 90_000);
+        assert_eq!(lost.trust, trust * 7 / 10);
+        assert_eq!(lost.brand, brand);
+
+        game.brand = 95;
+        game.fight_settled(10_000, true);
+        assert_eq!(game.brand, 100);
     }
 }

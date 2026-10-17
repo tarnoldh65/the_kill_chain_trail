@@ -6,6 +6,7 @@ mod balance;
 mod conference;
 mod draw;
 mod events;
+mod fight;
 mod game;
 mod landmarks;
 mod manual;
@@ -55,8 +56,8 @@ fn inputs() -> Vec<Input> {
     inputs
 }
 
-/// Plays the sound for a screen change, swaps music when entering or leaving the street,
-/// and records the score when a game ends.
+/// Plays the sounds for a screen change, swaps music when entering or leaving the street or
+/// a fight, and records the score when a game ends.
 fn transition(
     audio: &Audio,
     music: Music,
@@ -64,7 +65,7 @@ fn transition(
     before: &Screen,
     after: &Screen,
 ) {
-    if let Some(cue) = ui::cue(before, after) {
+    for cue in ui::cues(before, after) {
         audio.play(cue);
     }
     if let (Some(old), Some(new)) = (before.game(), after.game())
@@ -76,8 +77,14 @@ fn transition(
         scores::save(scores);
     }
     let in_traffic = |screen: &Screen| matches!(screen, Screen::Coffee(_));
+    let in_fight = |screen: &Screen| matches!(screen, Screen::Fight(_));
     match (in_traffic(before), in_traffic(after)) {
         (false, true) => audio.play_rush_hour(music),
+        (true, false) => audio.play_music(music),
+        _ => {}
+    }
+    match (in_fight(before), in_fight(after)) {
+        (false, true) => audio.play_fight(music),
         (true, false) => audio.play_music(music),
         _ => {}
     }
@@ -114,7 +121,14 @@ async fn main() {
             screen = next;
         }
         // Cap the step so a slow frame cannot carry a car straight through the intern.
-        let next = screen.clone().tick(get_frame_time().min(0.05));
+        let held = if is_key_down(KeyCode::Left) {
+            Some(Hop::Left)
+        } else if is_key_down(KeyCode::Right) {
+            Some(Hop::Right)
+        } else {
+            None
+        };
+        let next = screen.clone().tick(get_frame_time().min(0.05), held);
         transition(&audio, options.music, &mut scores, &screen, &next);
         screen = next;
 

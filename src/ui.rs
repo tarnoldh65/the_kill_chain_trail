@@ -1,4 +1,5 @@
 use crate::conference::Track;
+use crate::fight::{self, Fight};
 use crate::game::{
     Action, Area, Entry, GameState, Item, Kind, Outcome, Pool, Profile, Reply, Resume, Role,
 };
@@ -30,10 +31,14 @@ pub enum Cue {
     Sting,
     Fanfare,
     Bell,
+    Swing,
+    KickSwing,
+    Smack,
+    Grunt,
 }
 
 impl Cue {
-    pub const ALL: [Cue; 10] = [
+    pub const ALL: [Cue; 14] = [
         Self::Select,
         Self::Alarm,
         Self::Win,
@@ -44,6 +49,10 @@ impl Cue {
         Self::Sting,
         Self::Fanfare,
         Self::Bell,
+        Self::Swing,
+        Self::KickSwing,
+        Self::Smack,
+        Self::Grunt,
     ];
 }
 
@@ -60,6 +69,36 @@ pub fn options_change(screen: &Screen, input: Input, options: Options) -> Option
     };
     let changed = options.adjust(*row, input);
     (changed != options).then_some(changed)
+}
+
+/// Sounds to play for a screen transition: a fight's swings and hits, or one cue.
+pub fn cues(before: &Screen, after: &Screen) -> Vec<Cue> {
+    let (Screen::Fight(old), Screen::Fight(new)) = (before, after) else {
+        return cue(before, after).into_iter().collect();
+    };
+    let (old, new) = (&old.fight, &new.fight);
+    let mut cues = Vec::new();
+    for (old, new) in [(&old.player, &new.player), (&old.boss, &new.boss)] {
+        if let Some(attack) = new.attack
+            && old.attack.is_none_or(|a| a.elapsed > attack.elapsed)
+        {
+            cues.push(match attack.strike {
+                fight::Strike::Punch => Cue::Swing,
+                fight::Strike::Kick => Cue::KickSwing,
+            });
+        }
+        if new.health < old.health {
+            cues.extend([Cue::Smack, Cue::Grunt]);
+        }
+    }
+    if old.won.is_none() {
+        match new.won {
+            Some(true) => cues.push(Cue::Win),
+            Some(false) => cues.push(Cue::Lose),
+            None => {}
+        }
+    }
+    cues
 }
 
 /// Sound to play for a screen transition, if anything changed.
@@ -126,6 +165,9 @@ pub enum Screen {
     Title,
     /// Music and volume settings over the title screen, with the selected row.
     Options(usize),
+    /// Picking how much budget to fight for, over the action list.
+    Stake(ActionMenu),
+    Fight(Brawl),
     Company(String),
     Lead {
         company: String,
@@ -362,6 +404,13 @@ impl ActionMenu {
     }
 }
 
+/// A fight with the boss, with the game waiting on the result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Brawl {
+    pub game: GameState,
+    pub fight: Fight,
+}
+
 /// The intern's trip across the street, with the game waiting on the result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoffeeRun {
@@ -382,6 +431,8 @@ impl Screen {
             | Self::Tracks { game, .. }
             | Self::Shop(Shop { game, .. })
             | Self::Actions(ActionMenu { game, .. })
+            | Self::Stake(ActionMenu { game, .. })
+            | Self::Fight(Brawl { game, .. })
             | Self::Resumes(Viewer {
                 shop: Shop { game, .. },
                 ..
@@ -400,9 +451,14 @@ impl Screen {
         }
     }
 
-    /// Advances anything that moves on its own, like traffic and the calendar.
-    pub fn tick(self, dt: f32) -> Self {
+    /// Advances anything that moves on its own, like traffic and the calendar. `held` is
+    /// the LEFT or RIGHT arrow being held down, for walking in a fight.
+    pub fn tick(self, dt: f32, held: Option<Hop>) -> Self {
         match self {
+            Self::Fight(mut brawl) => {
+                brawl.fight.tick(dt, held);
+                Self::Fight(brawl)
+            }
             Self::Coffee(mut run) => {
                 run.street.tick(dt);
                 Self::Coffee(run)
@@ -703,6 +759,38 @@ impl Screen {
             (Self::Actions(mut menu), Input::Arrow(hop @ (Hop::Left | Hop::Right))) => {
                 menu.turn(hop);
                 Self::Actions(menu)
+            }
+            (Self::Actions(menu), Input::Enter)
+                if menu.action() == Some(Action::FightForBudget) =>
+            {
+                Self::Stake(menu)
+            }
+            (Self::Stake(menu), Input::Char('b' | 'B')) => Self::Actions(menu),
+            (Self::Stake(mut menu), Input::Char(c @ '1'..='4')) => {
+                menu.game.start_fight();
+                let seed = menu.game.seed.wrapping_add(menu.game.day);
+                Self::Fight(Brawl {
+                    game: menu.game,
+                    fight: Fight::new(c as usize - '1' as usize, seed),
+                })
+            }
+            (Self::Fight(mut brawl), Input::Enter) if brawl.fight.won.is_some() => {
+                let won = brawl.fight.won == Some(true);
+                brawl.game.fight_settled(brawl.fight.amount(), won);
+                Self::Play(brawl.game)
+            }
+            (Self::Fight(mut brawl), input) => {
+                let press = match input {
+                    Input::Arrow(Hop::Up) => Some(fight::Input::Stand),
+                    Input::Arrow(Hop::Down) => Some(fight::Input::Crouch),
+                    Input::Char('q' | 'Q') => Some(fight::Input::Punch),
+                    Input::Char('e' | 'E') => Some(fight::Input::Kick),
+                    _ => None,
+                };
+                if let Some(press) = press {
+                    brawl.fight.press(press);
+                }
+                Self::Fight(brawl)
             }
             (Self::Actions(mut menu), Input::Enter) => match menu.action() {
                 None => Self::Play(menu.game),
@@ -1246,7 +1334,7 @@ mod tests {
 
     /// Starts the clock and runs it for `seconds`.
     fn travel(screen: Screen, seconds: f32) -> Screen {
-        screen.update(Input::Char('1')).tick(seconds)
+        screen.update(Input::Char('1')).tick(seconds, None)
     }
 
     #[test]
@@ -1255,11 +1343,11 @@ mod tests {
         assert!(matches!(screen, Screen::Travel(_)));
         assert_eq!(game(&screen).day, 1);
 
-        let screen = screen.tick(DAY_SECONDS / 2.0);
+        let screen = screen.tick(DAY_SECONDS / 2.0, None);
         assert_eq!(game(&screen).day, 1);
-        let screen = screen.tick(DAY_SECONDS / 2.0);
+        let screen = screen.tick(DAY_SECONDS / 2.0, None);
         assert_eq!(game(&screen).day, 2);
-        let screen = screen.tick(DAY_SECONDS * 3.0);
+        let screen = screen.tick(DAY_SECONDS * 3.0, None);
         assert_eq!(game(&screen).day, 5);
         assert!(matches!(screen, Screen::Travel(_)));
     }
@@ -1421,7 +1509,7 @@ mod tests {
         };
         assert_eq!(travel.game.task.as_ref().unwrap().action, PATCH);
 
-        let screen = screen.tick(DAY_SECONDS * 10.0);
+        let screen = screen.tick(DAY_SECONDS * 10.0, None);
         assert!(
             matches!(screen, Screen::Play(_)),
             "finishing stops the clock"
@@ -1627,7 +1715,7 @@ mod tests {
     #[test]
     fn finished_actions_show_a_result_card() {
         let screen = choose(new_game(), Action::Operate(Item::Runbooks)).update(Input::Enter);
-        let screen = screen.tick(DAY_SECONDS * 2.0);
+        let screen = screen.tick(DAY_SECONDS * 2.0, None);
 
         let card = &game(&screen).cards[0];
         assert_eq!(card.title, "TABLETOP EXERCISE");
@@ -1720,13 +1808,13 @@ mod tests {
 
     #[test]
     fn ticks_only_move_the_street_and_the_clock() {
-        assert_eq!(Screen::Title.tick(1.0), Screen::Title);
+        assert_eq!(Screen::Title.tick(1.0, None), Screen::Title);
         let start = new_game();
-        assert_eq!(start.clone().tick(1.0), start);
+        assert_eq!(start.clone().tick(1.0, None), start);
 
         let mut screen = new_game().update(Input::Char('5'));
         let before = street(&mut screen).lanes.clone();
-        let mut screen = screen.tick(0.1);
+        let mut screen = screen.tick(0.1, None);
         assert_ne!(street(&mut screen).lanes, before);
     }
 
@@ -1741,7 +1829,7 @@ mod tests {
         let mut home = before.clone();
         street(&mut home).survived = Some(true);
 
-        assert_eq!(cue(&before, &before.clone().tick(0.1)), None);
+        assert_eq!(cue(&before, &before.clone().tick(0.1, None)), None);
         assert_eq!(cue(&before, &hopped), Some(Cue::Select));
         assert_eq!(cue(&before, &crashed), Some(Cue::Lose));
         assert_eq!(cue(&before, &home), Some(Cue::Win));
@@ -1780,6 +1868,74 @@ mod tests {
             None
         );
         assert_eq!(options_change(&new_game(), Input::Char('1'), options), None);
+    }
+
+    /// The action list on the Management tab with the fight offered.
+    fn fight_offered() -> Screen {
+        let screen = with_game(new_game(), |game| game.budget = 1_000);
+        let mut screen = screen.update(Input::Char('2'));
+        while action_menu(&screen).tab != Kind::Management {
+            screen = screen.update(Input::Arrow(Hop::Right));
+        }
+        while action_menu(&screen).action() != Some(Action::FightForBudget) {
+            screen = screen.update(Input::Arrow(Hop::Down));
+        }
+        screen
+    }
+
+    #[test]
+    fn the_stake_picks_the_boss_and_b_backs_out() {
+        let menu = fight_offered();
+        let stake = menu.clone().update(Input::Enter);
+        assert!(matches!(stake, Screen::Stake(_)));
+        assert_eq!(stake.clone().update(Input::Char('b')), menu);
+
+        for (key, i) in ['1', '2', '3', '4'].into_iter().zip(0..) {
+            match stake.clone().update(Input::Char(key)) {
+                Screen::Fight(brawl) => {
+                    assert_eq!(brawl.fight.amount(), fight::STAKES[i]);
+                    assert_eq!(brawl.fight.tier(), fight::TIERS[i]);
+                    assert!(!brawl.game.can_fight());
+                }
+                other => panic!("expected Fight, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_finished_fight_settles_on_enter() {
+        let mut screen = fight_offered()
+            .update(Input::Enter)
+            .update(Input::Char('2'));
+        assert_eq!(
+            screen.clone().update(Input::Enter),
+            screen,
+            "still fighting"
+        );
+
+        let Screen::Fight(brawl) = &mut screen else {
+            panic!("expected Fight");
+        };
+        brawl.fight.won = Some(true);
+        let budget = brawl.game.budget;
+        let screen = screen.update(Input::Enter);
+        assert!(matches!(screen, Screen::Play(_)));
+        assert_eq!(game(&screen).budget, budget + 40_000);
+    }
+
+    #[test]
+    fn fight_keys_reach_the_fighter() {
+        let screen = fight_offered()
+            .update(Input::Enter)
+            .update(Input::Char('1'))
+            .update(Input::Arrow(Hop::Down))
+            .update(Input::Char('q'));
+        let Screen::Fight(brawl) = &screen else {
+            panic!("expected Fight");
+        };
+        assert!(brawl.fight.player.crouching);
+        assert!(brawl.fight.player.attack.is_some_and(|a| a.low));
+        assert_eq!(cues(&screen, &screen.clone().update(Input::Char('e'))), []);
     }
 
     #[test]
@@ -1983,7 +2139,7 @@ mod tests {
     #[test]
     fn conference_cards_are_revealed_with_enter() {
         let screen = conference().update(Input::Char('1')).update(Input::Enter);
-        let screen = screen.tick(DAY_SECONDS * 3.0);
+        let screen = screen.tick(DAY_SECONDS * 3.0, None);
         assert!(matches!(screen, Screen::Play(_)));
         assert_eq!(game(&screen).cards.len(), 1, "the lead's card");
         assert_eq!(screen.clone().update(Input::Char('1')), screen);
@@ -2030,7 +2186,7 @@ mod tests {
             game.day = crate::landmarks::Landmark::BoardBriefing.day() - 1;
         })
         .update(Input::Char('1'));
-        let arrived = traveling.clone().tick(DAY_SECONDS);
+        let arrived = traveling.clone().tick(DAY_SECONDS, None);
         assert!(game(&arrived).stop.is_some());
         assert_eq!(cue(&traveling, &arrived), Some(Cue::Fanfare));
     }
@@ -2053,19 +2209,19 @@ mod tests {
         assert_eq!(cue(&before, &after), None);
 
         let before = new_game().update(Input::Char('1'));
-        let after = before.clone().tick(DAY_SECONDS / 2.0);
+        let after = before.clone().tick(DAY_SECONDS / 2.0, None);
         assert_eq!(cue(&before, &after), None);
     }
 
     #[test]
     fn days_tick_and_mondays_pay() {
         let before = new_game().update(Input::Char('1'));
-        let after = before.clone().tick(DAY_SECONDS);
+        let after = before.clone().tick(DAY_SECONDS, None);
         assert_eq!(game(&after).day, 2);
         assert_eq!(cue(&before, &after), Some(Cue::Tick));
 
         let sunday = with_game(new_game(), |game| game.day = 7).update(Input::Char('1'));
-        let monday = sunday.clone().tick(DAY_SECONDS);
+        let monday = sunday.clone().tick(DAY_SECONDS, None);
         assert_eq!(cue(&sunday, &monday), Some(Cue::Payday));
     }
 
@@ -2073,7 +2229,7 @@ mod tests {
     fn losing_a_team_member_cues_the_alarm() {
         let before =
             with_game(new_game(), |game| game.team[0].burnout = 99).update(Input::Char('1'));
-        let after = before.clone().tick(DAY_SECONDS);
+        let after = before.clone().tick(DAY_SECONDS, None);
 
         assert_eq!(cue(&before, &after), Some(Cue::Alarm));
     }
@@ -2089,8 +2245,14 @@ mod tests {
         };
         let (won, lost) = (last_day(60), last_day(0));
 
-        assert_eq!(cue(&won, &won.clone().tick(DAY_SECONDS)), Some(Cue::Bell));
-        assert_eq!(cue(&lost, &lost.clone().tick(DAY_SECONDS)), Some(Cue::Lose));
+        assert_eq!(
+            cue(&won, &won.clone().tick(DAY_SECONDS, None)),
+            Some(Cue::Bell)
+        );
+        assert_eq!(
+            cue(&lost, &lost.clone().tick(DAY_SECONDS, None)),
+            Some(Cue::Lose)
+        );
     }
 
     #[test]

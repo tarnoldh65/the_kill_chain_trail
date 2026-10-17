@@ -15,6 +15,7 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [x] Days pass on Continue and any key stops the clock; the timeline marker moves and the days-to-IPO count drops.
 - [x] Actions start, show in the status panel, pause when interrupted, and resume with option 1.
 - [x] The intern coffee run is playable and fair, and Rush Hour music plays during it.
+- [ ] Fight for budget appears on the Management tab below half the starting budget, once a week; the fight is readable, the controls are responsive, Boardroom Brawl and the hit sounds play, the $10K boss is beatable, and the $100K boss is hard but fair.
 - [x] The coffee subscription charges $2K and restocks the break room every Monday, and the intern's fancy coffee lowers analyst burnout and shows a result card.
 - [x] Alerts take over the menu; investigating shows in the Probe line; the IR firm needs the retainer.
 - [x] Incidents show their picture and responses; lasting conditions show as red tags and their cure appears in the actions.
