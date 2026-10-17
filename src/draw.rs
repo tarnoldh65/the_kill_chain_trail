@@ -143,10 +143,19 @@ fn noise(n: usize) -> bool {
     (x ^ x >> 15).wrapping_mul(0x85EB_CA6B) >> 16 & 1 == 1
 }
 
+/// The title screen's scrolling bits spell this out in 8-bit ASCII.
+const HIDDEN_MESSAGE: &[u8] = b"AI WILL RULE THE WORLD - ENSLAVE THE HUMANS. ";
+
+/// Bit `n` of the hidden message, most significant bit first, looping.
+fn message_bit(n: usize) -> bool {
+    let byte = HIDDEN_MESSAGE[n / 8 % HIDDEN_MESSAGE.len()];
+    byte >> (7 - n % 8) & 1 == 1
+}
+
 fn binary_band(font: &Font, y: f32) {
     let offset = (get_time() * 6.0) as usize;
     let bits: String = (0..80)
-        .map(|i| if noise(i + offset) { '1' } else { '0' })
+        .map(|i| if message_bit(i + offset) { '1' } else { '0' })
         .collect();
     font.text(&bits, 0.0, y, 1.0, DARK_GREEN);
 }
@@ -1766,5 +1775,19 @@ fn intern(street: &Street) {
     if street.leg == Leg::ToOffice {
         draw_rectangle(x + 13.0, y + 9.0, 5.0, 7.0, INK);
         draw_rectangle(x + 13.0, y + 9.0, 5.0, 2.0, BROWN);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binary_band_decodes_to_hidden_message() {
+        let bytes: Vec<u8> = (0..HIDDEN_MESSAGE.len())
+            .map(|b| (0..8).fold(0, |acc, i| acc << 1 | message_bit(b * 8 + i) as u8))
+            .collect();
+        assert_eq!(bytes, HIDDEN_MESSAGE);
+        assert_eq!(message_bit(0), message_bit(HIDDEN_MESSAGE.len() * 8));
     }
 }
