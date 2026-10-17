@@ -4,6 +4,7 @@ use std::mem::discriminant;
 
 use crate::conference::Track;
 use crate::events::PET_PROJECT;
+use crate::fight::STAKES;
 use crate::game::{
     Action, FUNDING_INTERVAL, GameState, IR_FEE, Item, Outcome, Pool, Profile, Reply, Resume, Role,
     Tempo,
@@ -356,7 +357,12 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
             let actions = game.actions();
             if !actions.is_empty() && rng.chance(10) {
                 let action = actions[rng.below(actions.len())];
-                game.start(action);
+                if action == Action::FightForBudget {
+                    game.start_fight();
+                    game.fight_settled(STAKES[rng.below(STAKES.len())], rng.chance(30));
+                } else {
+                    game.start(action);
+                }
             }
             // An impulse buy through Procurement now and then.
             let item = Item::ALL[rng.below(Item::ALL.len())];
@@ -404,7 +410,7 @@ fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action>
     let actions: Vec<Action> = game
         .actions()
         .into_iter()
-        .filter(|&a| allowed(style, a))
+        .filter(|&a| a != Action::FightForBudget && allowed(style, a))
         .collect();
     let offered = |wanted: Action| actions.contains(&wanted).then_some(wanted);
     let first = |pick: fn(&Action) -> bool| actions.iter().copied().find(pick);

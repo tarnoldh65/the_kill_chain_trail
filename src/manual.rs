@@ -109,6 +109,9 @@ pub fn pages() -> Vec<Page> {
                 "",
                 "# THE COFFEE RUN",
                 "ARROW KEYS guide the intern across four lanes of traffic and back. Look both ways.",
+                "",
+                "# FIGHT FOR BUDGET",
+                "UP stands, DOWN crouches, hold LEFT/RIGHT to walk, Q punches, and E kicks.",
             ],
         ),
         page(
@@ -155,6 +158,9 @@ pub fn pages() -> Vec<Page> {
             &[
                 "# THE BUDGET",
                 "Salaries and the coffee subscription come out every Monday. If payroll comes up short, the most expensive analyst is laid off. If even one analyst cannot be paid, the SOC is bankrupt.",
+                "",
+                "# FIGHT FOR BUDGET",
+                "Below half your starting budget, the Management tab offers a street fight with leadership once a week, for $10K up to $100K; bigger money means a tougher boss. Win: the money and 10% more brand. Lose: 30% of your trust and 10% of the budget. Standing attacks go over a crouch; crouching attacks hit low.",
                 "",
                 "# BOARD FUNDING",
                 "Every sixth Monday (days 43, 85, 127, and 169) the board releases more money. How much depends on corporate trust: at trust 60 you get the full grant (Fintech $180K, Healthtech $160K, Gaming startup $120K), at 30 half, at 90 one and a half. SOC STATUS shows the next funding day.",

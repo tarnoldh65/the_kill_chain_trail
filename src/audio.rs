@@ -13,6 +13,8 @@ pub const TRACKS: [&str; 3] = ["Packet Storm", "Zero Day Drive", "Neon Firewall"
 const RATE: u32 = 44_100;
 /// Samples per sixteenth note, about 128 BPM.
 const STEP: usize = 5_168;
+/// Samples per sixteenth note in the fight music, 150 BPM.
+const FIGHT_STEP: usize = 4_410;
 /// Music gain per volume step, so the default of 8 plays at 0.4.
 const MUSIC_STEP: f32 = 0.05;
 
@@ -439,6 +441,56 @@ fn rush_hour() -> Vec<f32> {
 }
 
 /// The synthesized sound for each cue.
+/// Boardroom Brawl, the fight music: eight bars at 150 BPM in E minor, with four on
+/// the floor, galloping octave bass, and a stabbing square riff over Em, C, D, and B.
+fn boardroom_brawl() -> Vec<f32> {
+    let step = FIGHT_STEP;
+    let roots = [40, 40, 36, 36, 38, 38, 35, 35];
+    let riff = [64, 0, 64, 67, 0, 64, 71, 0, 69, 0, 67, 0, 66, 67, 64, 0];
+    let mut buffer = vec![0.0; roots.len() * 16 * step];
+    let kick = kick(0.35);
+    let snare = note(Wave::Noise, 0, 2 * step, 0.22);
+    let hat = note(Wave::Noise, 0, step / 4, 0.07);
+
+    for (bar, &root) in roots.iter().enumerate() {
+        let bar_start = bar * 16 * step;
+        // The riff follows the chord, a step down for C and up a third for B.
+        let shift = root - 40;
+        for (s, &lead) in riff.iter().enumerate() {
+            let start = bar_start + s * step;
+            if s % 4 == 0 || bar % 2 == 1 && s == 14 {
+                mix(&mut buffer, &kick, start);
+            }
+            if s % 8 == 4 || bar == roots.len() - 1 && s >= 12 {
+                mix(&mut buffer, &snare, start);
+            }
+            mix(&mut buffer, &hat, start);
+            let octave = if s % 2 == 0 { 0 } else { 12 };
+            mix(
+                &mut buffer,
+                &note(Wave::Square, root + octave, step, 0.12),
+                start,
+            );
+            if lead != 0 {
+                mix(
+                    &mut buffer,
+                    &note(Wave::Square, lead + shift, step, 0.1),
+                    start,
+                );
+            }
+        }
+    }
+    buffer
+}
+
+/// Filtered noise rushing past, `steps` long, brighter as `cutoff` rises.
+fn whoosh(steps: usize, cutoff: f32, volume: f32) -> Vec<f32> {
+    let length = steps * FIGHT_STEP;
+    let mut sound = note(Wave::Noise, 0, length, volume);
+    low_pass(&mut sound, |i| cutoff * (0.3 + i as f32 / length as f32));
+    sound
+}
+
 fn effect(cue: Cue) -> Vec<f32> {
     match cue {
         Cue::Select => note(Wave::Square, 81, STEP / 2, 0.25),
@@ -473,6 +525,20 @@ fn effect(cue: Cue) -> Vec<f32> {
             mix(&mut bell, &note(Wave::Square, 96, STEP * 2, 0.1), 0);
             bell
         }
+        Cue::Swing => whoosh(1, 6000.0, 0.9),
+        Cue::KickSwing => whoosh(2, 2500.0, 1.0),
+        // A thump with a slap on top.
+        Cue::Smack => {
+            let mut smack = kick(0.7);
+            mix(&mut smack, &note(Wave::Noise, 0, STEP / 3, 0.3), 0);
+            smack
+        }
+        // A low voice that drops: "oof".
+        Cue::Grunt => {
+            let mut grunt = melody(Wave::Square, &[(50, 1), (45, 2)], 0.5);
+            low_pass(&mut grunt, |_| 900.0);
+            grunt
+        }
     }
 }
 
@@ -504,6 +570,7 @@ pub struct Audio {
     effects: Vec<Sound>,
     music: Vec<Sound>,
     rush_hour: Sound,
+    fight: Sound,
     music_volume: f32,
     sound_volume: f32,
 }
@@ -530,6 +597,7 @@ impl Audio {
                 music
             },
             rush_hour: load(rush_hour()).await,
+            fight: load(boardroom_brawl()).await,
             music_volume: 0.0,
             sound_volume: 0.0,
         }
@@ -539,13 +607,13 @@ impl Audio {
     pub fn set_volumes(&mut self, options: Options) {
         self.music_volume = options.music_volume as f32 * MUSIC_STEP;
         self.sound_volume = options.sound_volume as f32 / 10.0;
-        for track in self.music.iter().chain([&self.rush_hour]) {
+        for track in self.music.iter().chain([&self.rush_hour, &self.fight]) {
             set_sound_volume(track, self.music_volume);
         }
     }
 
     fn stop_music(&self) {
-        for track in self.music.iter().chain([&self.rush_hour]) {
+        for track in self.music.iter().chain([&self.rush_hour, &self.fight]) {
             stop_sound(track);
         }
     }
@@ -572,6 +640,13 @@ impl Audio {
     pub fn play_rush_hour(&self, music: Music) {
         if music != Music::Off {
             self.loop_music(&self.rush_hour);
+        }
+    }
+
+    /// Swaps in the fight music, unless music is off.
+    pub fn play_fight(&self, music: Music) {
+        if music != Music::Off {
+            self.loop_music(&self.fight);
         }
     }
 
@@ -669,6 +744,14 @@ mod tests {
         let music = rush_hour();
 
         assert_eq!(music.len(), 4 * 16 * (STEP * 3 / 4));
+        assert!(peak(&music) > 0.3 && peak(&music) <= 1.0);
+    }
+
+    #[test]
+    fn boardroom_brawl_is_eight_fast_bars_and_never_clips() {
+        let music = boardroom_brawl();
+
+        assert_eq!(music.len(), 8 * 16 * FIGHT_STEP);
         assert!(peak(&music) > 0.3 && peak(&music) <= 1.0);
     }
 
