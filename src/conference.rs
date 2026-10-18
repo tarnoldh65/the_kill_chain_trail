@@ -59,7 +59,7 @@ pub struct Card {
     pub relief: i32,
 }
 
-const TALKS: [Card; 4] = [
+const TALKS: [Card; 5] = [
     Card {
         text: "{name} sat through a three-hour talk on passwordless login and will not stop saying \"FIDO2\".",
         expertise: Some(Area::Identity),
@@ -80,9 +80,14 @@ const TALKS: [Card; 4] = [
         expertise: Some(Area::Perimeter),
         relief: 5,
     },
+    Card {
+        text: "{name} saw a talk attributing an attack to a nation-state from one emoji. They now attribute everything.",
+        expertise: Some(Area::Intelligence),
+        relief: 5,
+    },
 ];
 
-const VILLAGES: [Card; 4] = [
+const VILLAGES: [Card; 5] = [
     Card {
         text: "{name} spent the whole time at the Lockpick Village. They learned nothing useful but have never been happier.",
         expertise: None,
@@ -101,6 +106,11 @@ const VILLAGES: [Card; 4] = [
     Card {
         text: "{name} lost a capture-the-flag to a 14-year-old and learned a lot about humility and log files.",
         expertise: Some(Area::Detection),
+        relief: 15,
+    },
+    Card {
+        text: "{name} spent two days in the OSINT Village and found the hotel manager's home address from a single selfie.",
+        expertise: Some(Area::Intelligence),
         relief: 15,
     },
 ];

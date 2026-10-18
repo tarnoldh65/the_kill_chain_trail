@@ -235,7 +235,7 @@ pub struct Travel {
 }
 
 /// Procurement tabs: staff, one per defense area, then services.
-pub const TABS: usize = 8;
+pub const TABS: usize = 9;
 
 /// The tab an item is listed under.
 fn tab_of(item: Item) -> usize {
@@ -257,7 +257,7 @@ pub fn tab_name(tab: usize) -> String {
     match tab {
         0 => "Staff".to_string(),
         t if t == TABS - 1 => "Services".to_string(),
-        t => Area::ALL[t - 1].to_string(),
+        t => Area::ALL[t - 1].short(),
     }
 }
 

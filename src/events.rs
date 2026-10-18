@@ -150,6 +150,7 @@ pub const EVENTS: [Event; 11] = [
                         (Area::Perimeter, -10),
                         (Area::Resilience, -10),
                         (Area::Detection, -10),
+                        (Area::Intelligence, -10),
                     ],
                     ..NOTHING
                 },

@@ -68,6 +68,7 @@ A shop screen where the player spends the starting budget. A leftover balance ca
 | Perimeter | Vulnerability scanner $15K | DDoS protection and WAF $40K | Attack surface management $60K |
 | Resilience | Incident runbooks $8K | Immutable backups $30K | Disaster recovery site $80K |
 | Detection | Log collection $15K | SIEM $80K | Managed detection service $100K |
+| Intelligence | OSINT process $5K | Threat intel feeds $30K | Threat intel platform $80K |
 
 Procurement has a tab for staff, one for each area, and one for services. The Staff tab lists the open slates of resumes. The IMPROVES row shows how much the selected tool helps each area.
 
@@ -145,6 +146,7 @@ The week 7 landmark is a small minigame. You always attend; the question is who 
 | Villages | "{name} spent the whole time at the Lockpick Village. They learned nothing useful but have never been happier." | Large burnout relief |
 | Villages | "{name} won the Social Engineering Village by talking the hotel into giving them the keynote speaker's room key." | People expertise |
 | Villages | "{name} took apart a laptop at the Hardware Village and only had two screws left over." | Endpoint expertise |
+| Villages | "{name} spent two days in the OSINT Village and found the hotel manager's home address from a single selfie." | Intelligence expertise |
 | Expo floor | "{name} attended one vendor session on WAFs and is now the company's self-declared WAF expert." | Perimeter expertise |
 | Expo floor | "{name} collected 47 vendor t-shirts and will not need to do laundry until the IPO." | Medium burnout relief |
 | Expo floor | "{name} got a free SIEM tote bag and, somehow, also learned to write detection rules." | Detection expertise |
@@ -193,7 +195,7 @@ The action screen has one tab per kind (Recovery, Implementation, Maintenance, O
 | Action | Days | Cost | Effect |
 | --- | --- | --- | --- |
 | Deploy a purchased tool | 1-10 | None | Turns a tool on; raises its posture areas. MFA also dips trust from annoyed employees |
-| Maintain an area's tools | 2 | None (needs a deployed tool below 80) | Restores that area's tools to full strength: an access review, endpoint policy update, email filter refresh, firewall and WAF rule update, disaster recovery rehearsal, or detection tuning |
+| Maintain an area's tools | 2 | None (needs a deployed tool below 80) | Restores that area's tools to full strength: an access review, endpoint policy update, email filter refresh, firewall and WAF rule update, disaster recovery rehearsal, detection tuning, or threat feed tuning |
 | Give everyone the day off | 1 | None | Large burnout recovery; nobody watching for a day |
 | Team offsite | 5 | Medium | Very large burnout recovery; reduced watch for the week |
 | Brief leadership | 1 | None | Trust boost; the CIO may assign a pet project |
@@ -216,12 +218,15 @@ Some deployed tools unlock an operation: a longer job with a payoff at the end. 
 | DR site | Failover test | 5 | Braces for every attacker; 1 in 4 chance the website blips (brand dip) |
 | Log collection | Log review | 3 | Weak eviction roll for insiders; Detection boost |
 | SIEM | Threat hunt | 6 | Eviction roll for every attacker |
+| OSINT process | Check the dark web | 3 | Braces for ransomware and data thieves; Intelligence boost; 1 in 5 chance of burnout |
+| Threat intel feeds | Consult industry ISAC | 2 ($2K) | Intelligence and Detection boost; small trust boost |
+| Threat intel platform | Update indicators of compromise | 3 | Weak eviction roll for nation-states and espionage; Detection, Endpoint, and Perimeter boost |
 
 Posters, MFA, antivirus, allowlisting, the email gateway, the WAF, and MDR work on their own and have no operation.
 
 ## 8. Hidden security posture
 
-Posture is hidden: no numbers or meters on screen, and the only grades are the pen test's, kept on the defenses screen once given. Six hidden values, each 0-100:
+Posture is hidden: no numbers or meters on screen, and the only grades are the pen test's, kept on the defenses screen once given. Seven hidden values, each 0-100:
 
 - **Identity**: MFA, password hygiene, privileged access.
 - **Endpoint**: EDR, patching.
@@ -229,6 +234,7 @@ Posture is hidden: no numbers or meters on screen, and the only grades are the p
 - **Perimeter**: DDoS protection, WAF, exposed services.
 - **Resilience**: backups, tabletop exercises, IR retainer. Reduces the damage of a successful attack instead of preventing it.
 - **Detection**: SIEM, tuning, threat hunting, analyst skill. Controls how early you notice an attacker and how many false alarms you see.
+- **Intelligence**: OSINT, threat feeds, the ISAC, indicators of compromise. Knowing who is targeting you slows the attackers who pick their targets, and intel tools feed Endpoint, Perimeter, and Detection.
 
 Posture is not stored. Each area's level is calculated from what the player controls, capped at 100:
 
@@ -247,6 +253,7 @@ Every area is 0 on day 1, so the opening purchases set the starting posture. The
 | Perimeter | Vulnerability scanner 12, Endpoint 5 | WAF 30 | ASM 30, Detection 10 |
 | Resilience | Runbooks 10 | Backups 25 | DR site 35 |
 | Detection | Log collection 12 | SIEM 30 | MDR 35 |
+| Intelligence | OSINT 12, Perimeter 5 | Intel feeds 25, Detection 10 | Intel platform 30, Detection 10, Endpoint 5, Perimeter 5 |
 
 The pen test grades A/B/C/D/F at 80/60/40/20. With tools at about 88% condition, MFA plus a proficient junior grades a C, two tools plus a proficient senior a B, and all three tools plus a proficient senior an A in any area.
 
@@ -264,9 +271,9 @@ Behind the scenes, threat actors start **campaigns** at random, more often as th
 | --- | --- | --- | --- |
 | Ransomware gang | Phishing, unpatched VPN | Encrypt and extort | People, Endpoint, Resilience |
 | Data thief | Stolen credentials | PII leak | Identity, Detection |
-| Competitor espionage | Spear phishing an engineer | Steal IP and roadmap | People, Identity |
-| Hacktivists | Exposed services | DDoS and defacement | Perimeter |
-| Nation-state APT | Supply chain, zero-day | Quiet long-term access | Detection |
+| Competitor espionage | Spear phishing an engineer | Steal IP and roadmap | People, Identity, Intelligence |
+| Hacktivists | Exposed services | DDoS and defacement | Perimeter, Intelligence |
+| Nation-state APT | Supply chain, zero-day | Quiet long-term access | Detection, Intelligence |
 | Malicious insider | Already inside | Leak S-1 details | Identity, Detection |
 
 Each day, every active campaign rolls to advance one step against the posture areas that defend it. Better posture means slower or failed advances; a failed advance can end the campaign.

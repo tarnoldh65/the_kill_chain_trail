@@ -30,9 +30,9 @@ impl Actor {
         match self {
             Self::Ransomware => &[Area::People, Area::Endpoint, Area::Resilience],
             Self::DataThief => &[Area::Identity, Area::Detection],
-            Self::Espionage => &[Area::People, Area::Identity],
-            Self::Hacktivists => &[Area::Perimeter],
-            Self::Apt => &[Area::Detection],
+            Self::Espionage => &[Area::People, Area::Identity, Area::Intelligence],
+            Self::Hacktivists => &[Area::Perimeter, Area::Intelligence],
+            Self::Apt => &[Area::Detection, Area::Intelligence],
             Self::Insider => &[Area::Identity, Area::Detection],
         }
     }
