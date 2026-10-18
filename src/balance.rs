@@ -2,6 +2,7 @@
 
 use std::mem::discriminant;
 
+use crate::casino;
 use crate::conference::Track;
 use crate::events::PET_PROJECT;
 use crate::fight::STAKES;
@@ -363,6 +364,8 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
                 if action == Action::FightForBudget {
                     game.start_fight();
                     game.fight_settled(STAKES[rng.below(STAKES.len())], rng.chance(30));
+                } else if action == Action::CasinoNight {
+                    gamble(game, rng);
                 } else {
                     game.start(action);
                 }
@@ -409,11 +412,39 @@ fn plan(game: &mut GameState, style: Style, rng: &mut Rng) {
     }
 }
 
+/// A night at the slots: a random affordable stake and prize, random bets, and now and
+/// then walking out early.
+fn gamble(game: &mut GameState, rng: &mut Rng) {
+    let stakes: Vec<i64> = casino::STAKES
+        .into_iter()
+        .filter(|&s| s <= game.budget)
+        .collect();
+    let prizes = game.prizes();
+    let prize = prizes[rng.below(prizes.len())];
+    let mut night = game.start_casino(prize, stakes[rng.below(stakes.len())]);
+    let bets = [casino::Bet::Center, casino::Bet::Middle, casino::Bet::All];
+    while night.end.is_none() {
+        if rng.chance(2) {
+            night.leave();
+        }
+        let bet = bets[rng.below(bets.len())];
+        night.spin(if night.can_spin(bet) {
+            bet
+        } else {
+            casino::Bet::Center
+        });
+        night.tick(10.0);
+    }
+    game.casino_settled(&night);
+}
+
 fn sensible_action(game: &GameState, style: Style, tired: i32) -> Option<Action> {
     let actions: Vec<Action> = game
         .actions()
         .into_iter()
-        .filter(|&a| a != Action::FightForBudget && allowed(style, a))
+        .filter(|&a| {
+            !matches!(a, Action::FightForBudget | Action::CasinoNight) && allowed(style, a)
+        })
         .collect();
     let offered = |wanted: Action| actions.contains(&wanted).then_some(wanted);
     let first = |pick: fn(&Action) -> bool| actions.iter().copied().find(pick);

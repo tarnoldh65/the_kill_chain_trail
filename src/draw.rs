@@ -3,6 +3,7 @@ use macroquad::prelude::*;
 
 use crate::art::{self, Sprite};
 use crate::audio::TRACKS;
+use crate::casino::{self, Casino};
 use crate::conference::Track;
 use crate::fight::{self, Fight, Fighter, Strike};
 use crate::game::{
@@ -15,7 +16,7 @@ use crate::scores::Score;
 use crate::street::{self, Leg, Street};
 use crate::ui::{
     ActionMenu, CoffeeRun, LOG_LINE, LineKind, LogLine, Music, PAGE_HEIGHT, Screen, Shop, TABS,
-    Viewer, WEEKDAYS, log_lines, log_pages, tab_items, tab_name, wrap,
+    Table, Viewer, WEEKDAYS, log_lines, log_pages, tab_items, tab_name, wrap,
 };
 
 pub const WIDTH: f32 = 640.0;
@@ -119,6 +120,15 @@ pub fn screen(screen: &Screen, font: &Font, options: Options, scores: &[Score]) 
             stake_popup(font);
         }
         Screen::Fight(brawl) => fight_screen(font, &brawl.game.lead, &brawl.fight),
+        Screen::Chips(menu) => {
+            action_menu(font, menu);
+            chips_popup(font, menu.game.budget);
+        }
+        Screen::Prize { menu, stake } => {
+            action_menu(font, menu);
+            prize_popup(font, &menu.game.prizes(), *stake);
+        }
+        Screen::Slots(table) => slots(font, table),
         Screen::Play(game) => play(font, game, false),
         Screen::Travel(travel) => play(font, &travel.game, true),
         Screen::Team {
@@ -1885,6 +1895,237 @@ fn stake_popup(font: &Font) {
         RED,
     );
     font.centered("B to back out", WIDTH / 2.0, y + 182.0, 1.0, LIGHT);
+}
+
+/// Dollars with thousands separators, like $1,975.
+fn dollars(amount: i64) -> String {
+    let digits = amount.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    format!("${out}")
+}
+
+/// Jackpot odds as the casino prints them, like "1 in 5,000".
+fn odds_label(prize: Item) -> String {
+    format!("{} in 100", casino::odds(prize))
+}
+
+fn chips_popup(font: &Font, budget: i64) {
+    let (x, y, w, h) = (96.0, 128.0, WIDTH - 192.0, 208.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, YELLOW);
+    font.centered("VENDOR CASINO NIGHT", WIDTH / 2.0, y + 16.0, 2.0, YELLOW);
+    font.centered(
+        "How many chips will you buy?",
+        WIDTH / 2.0,
+        y + 44.0,
+        1.0,
+        INK,
+    );
+    for (i, &stake) in casino::STAKES.iter().enumerate() {
+        let color = if stake <= budget { INK } else { DIM };
+        let line = format!("{}  {}", i + 1, dollars(stake));
+        font.text(&line, x + 176.0, y + 68.0 + i as f32 * 16.0, 1.0, color);
+    }
+    font.centered(
+        "Each line costs $100 a spin.",
+        WIDTH / 2.0,
+        y + 124.0,
+        1.0,
+        INK,
+    );
+    font.centered(
+        "Four of a kind pays $125.",
+        WIDTH / 2.0,
+        y + 138.0,
+        1.0,
+        GREEN,
+    );
+    font.centered(
+        "Five of a kind wins a tool.",
+        WIDTH / 2.0,
+        y + 152.0,
+        1.0,
+        GREEN,
+    );
+    font.centered("B to back out", WIDTH / 2.0, y + 182.0, 1.0, LIGHT);
+}
+
+fn prize_popup(font: &Font, prizes: &[Item], stake: i64) {
+    let (x, y, w, h) = (48.0, 128.0, WIDTH - 96.0, 208.0);
+    draw_rectangle(x, y, w, h, NAVY);
+    draw_rectangle_lines(x, y, w, h, 2.0, YELLOW);
+    font.centered("PICK YOUR JACKPOT", WIDTH / 2.0, y + 16.0, 2.0, YELLOW);
+    font.centered(
+        &format!(
+            "{} in chips. Which prize will you play for?",
+            dollars(stake)
+        ),
+        WIDTH / 2.0,
+        y + 44.0,
+        1.0,
+        INK,
+    );
+    for (i, &prize) in prizes.iter().enumerate() {
+        let line = format!("{}  {:<32}{:>13}", i + 1, prize.label(), odds_label(prize));
+        font.text(&line, x + 24.0, y + 72.0 + i as f32 * 20.0, 1.0, INK);
+    }
+    font.centered(
+        "Pricier prizes have longer odds.",
+        WIDTH / 2.0,
+        y + 148.0,
+        1.0,
+        LIGHT,
+    );
+    font.centered("B to back out", WIDTH / 2.0, y + 182.0, 1.0, LIGHT);
+}
+
+/// The slot machine: five reels of sprites, the bet lines marked, and winners flashing.
+fn slots(font: &Font, table: &Table) {
+    let casino = &table.casino;
+    draw_rectangle(0.0, 0.0, WIDTH, HEIGHT, PURPLE);
+    font.centered("VENDOR CASINO NIGHT", WIDTH / 2.0, 8.0, 2.0, YELLOW);
+    font.centered(
+        &format!(
+            "Jackpot: {} ({} per line)",
+            casino.prize.label(),
+            odds_label(casino.prize)
+        ),
+        WIDTH / 2.0,
+        30.0,
+        1.0,
+        INK,
+    );
+
+    // The cabinet, with a marquee of chasing bulbs.
+    let (cx, cy, cw, ch) = (128.0, 48.0, WIDTH - 256.0, 272.0);
+    draw_rectangle(cx, cy, cw, ch, RED);
+    let lit = (get_time() * 4.0) as usize;
+    for i in 0..24 {
+        let color = if (i + lit).is_multiple_of(2) {
+            YELLOW
+        } else {
+            AMBER
+        };
+        let bx = cx + 8.0 + i as f32 * 16.0;
+        draw_rectangle(bx, cy + 4.0, 6.0, 6.0, color);
+        draw_rectangle(bx, cy + ch - 10.0, 6.0, 6.0, color);
+    }
+    let (cell_w, cell_h) = (64.0, 48.0);
+    let (gx, gy) = (WIDTH / 2.0 - 2.5 * cell_w, cy + 16.0);
+    let lines = casino.bet.map_or(&[][..], |b| b.lines());
+    let flash = get_time().fract() < 0.5;
+    let spun = casino.spin_ms.unwrap_or(0) as usize / 60;
+    for row in 0..5 {
+        let y = gy + row as f32 * cell_h;
+        for reel in 0..casino::REELS {
+            let x = gx + reel as f32 * cell_w;
+            draw_rectangle(x + 2.0, y + 2.0, cell_w - 4.0, cell_h - 4.0, BG);
+            let symbol = if casino.stopped(reel) {
+                casino.grid[row][reel]
+            } else {
+                (row * 3 + reel * 7 + spun) % casino::SYMBOLS
+            };
+            sprite(art::SYMBOLS[symbol], x + 8.0, y + 8.0, 2.0);
+        }
+        if lines.contains(&row) {
+            font.text(">", gx - 12.0, y + 20.0, 1.0, YELLOW);
+            font.text("<", gx + 5.0 * cell_w + 4.0, y + 20.0, 1.0, YELLOW);
+        }
+        if casino.spin_ms.is_none() && casino.wins.contains(&row) && flash {
+            draw_rectangle_lines(gx, y, 5.0 * cell_w, cell_h, 4.0, YELLOW);
+        }
+    }
+
+    font.centered(
+        &format!("CHIPS {}", dollars(casino.chips)),
+        WIDTH / 2.0,
+        336.0,
+        2.0,
+        YELLOW,
+    );
+    font.centered(&slots_message(casino), WIDTH / 2.0, 362.0, 1.0, INK);
+    font.centered(
+        "1 center line $100   3 three lines $300   5 all lines $500",
+        WIDTH / 2.0,
+        440.0,
+        1.0,
+        INK,
+    );
+    font.centered(
+        "L leave early (the house keeps 50% as a gaming surcharge)",
+        WIDTH / 2.0,
+        456.0,
+        1.0,
+        LIGHT,
+    );
+
+    let Some(end) = casino.end else {
+        return;
+    };
+    let (x, y, w, h) = (64.0, 152.0, WIDTH - 128.0, 120.0);
+    draw_rectangle(x, y, w, h, BG);
+    let (banner, color, effect) = match end {
+        casino::End::Jackpot => (
+            "JACKPOT!",
+            YELLOW,
+            format!(
+                "The {} is yours, plus {} back",
+                casino.prize.label(),
+                dollars(casino.returned())
+            ),
+        ),
+        casino::End::Busted => (
+            "BUSTED",
+            RED,
+            format!("The house keeps the {} change", dollars(casino.chips)),
+        ),
+        casino::End::Left => (
+            "CASHED OUT",
+            AMBER,
+            format!(
+                "{} back to the budget, {} surcharge",
+                dollars(casino.returned()),
+                dollars(casino.chips - casino.returned())
+            ),
+        ),
+    };
+    draw_rectangle_lines(x, y, w, h, 2.0, color);
+    font.centered(banner, WIDTH / 2.0, y + 16.0, 4.0, color);
+    font.centered(&effect, WIDTH / 2.0, y + 64.0, 1.0, INK);
+    font.centered("ENTER to continue", WIDTH / 2.0, y + 92.0, 1.0, DIM);
+}
+
+/// What the last spin did, for the line under the chips.
+fn slots_message(casino: &Casino) -> String {
+    let Some(bet) = casino.bet else {
+        return "Place your bet.".to_string();
+    };
+    if casino.spin_ms.is_some() {
+        return "Spinning...".to_string();
+    }
+    if casino.end == Some(casino::End::Jackpot) {
+        return "FIVE OF A KIND!".to_string();
+    }
+    if !casino.wins.is_empty() {
+        let paid = casino::CASH_BACK * casino.wins.len() as i64;
+        return format!("Four of a kind pays {}!", dollars(paid));
+    }
+    let near = (0..5).any(|row| {
+        !bet.lines().contains(&row)
+            && (0..casino::SYMBOLS)
+                .any(|s| casino.grid[row].iter().filter(|&&x| x == s).count() >= 4)
+    });
+    if near {
+        "So close! That line was not in your bet.".to_string()
+    } else {
+        "No luck. The house thanks you.".to_string()
+    }
 }
 
 /// Where the fighters stand.

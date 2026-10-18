@@ -1,3 +1,4 @@
+use crate::casino::{self, Bet, Casino};
 use crate::conference::Track;
 use crate::fight::{self, Fight};
 use crate::game::{
@@ -35,10 +36,14 @@ pub enum Cue {
     KickSwing,
     Smack,
     Grunt,
+    ReelClick,
+    ReelStop,
+    Coins,
+    Jackpot,
 }
 
 impl Cue {
-    pub const ALL: [Cue; 14] = [
+    pub const ALL: [Cue; 18] = [
         Self::Select,
         Self::Alarm,
         Self::Win,
@@ -53,6 +58,10 @@ impl Cue {
         Self::KickSwing,
         Self::Smack,
         Self::Grunt,
+        Self::ReelClick,
+        Self::ReelStop,
+        Self::Coins,
+        Self::Jackpot,
     ];
 }
 
@@ -71,8 +80,12 @@ pub fn options_change(screen: &Screen, input: Input, options: Options) -> Option
     (changed != options).then_some(changed)
 }
 
-/// Sounds to play for a screen transition: a fight's swings and hits, or one cue.
+/// Sounds to play for a screen transition: a fight's swings and hits, the slot machine's
+/// reels, or one cue.
 pub fn cues(before: &Screen, after: &Screen) -> Vec<Cue> {
+    if let (Screen::Slots(old), Screen::Slots(new)) = (before, after) {
+        return slot_cues(&old.casino, &new.casino);
+    }
     let (Screen::Fight(old), Screen::Fight(new)) = (before, after) else {
         return cue(before, after).into_iter().collect();
     };
@@ -100,6 +113,34 @@ pub fn cues(before: &Screen, after: &Screen) -> Vec<Cue> {
     }
     cues
 }
+
+/// Clicks while the reels spin, a clunk as each one stops, then coins, a jackpot, or a bust.
+fn slot_cues(old: &Casino, new: &Casino) -> Vec<Cue> {
+    let mut cues = Vec::new();
+    if let Some(ms) = new.spin_ms
+        && old
+            .spin_ms
+            .is_none_or(|old_ms| old_ms / CLICK_MS != ms / CLICK_MS)
+    {
+        cues.push(Cue::ReelClick);
+    }
+    if (0..casino::REELS).any(|r| new.stopped(r) && !old.stopped(r)) {
+        cues.push(Cue::ReelStop);
+    }
+    if old.end.is_none() {
+        match new.end {
+            Some(casino::End::Jackpot) => cues.push(Cue::Jackpot),
+            Some(casino::End::Busted) => cues.push(Cue::Lose),
+            Some(casino::End::Left) => cues.push(Cue::Select),
+            None if new.chips > old.chips => cues.push(Cue::Coins),
+            None => {}
+        }
+    }
+    cues
+}
+
+/// Milliseconds between reel clicks.
+const CLICK_MS: u32 = 80;
 
 /// Sound to play for a screen transition, if anything changed.
 pub fn cue(before: &Screen, after: &Screen) -> Option<Cue> {
@@ -168,6 +209,14 @@ pub enum Screen {
     /// Picking how much budget to fight for, over the action list.
     Stake(ActionMenu),
     Fight(Brawl),
+    /// Picking how many chips to buy for casino night, over the action list.
+    Chips(ActionMenu),
+    /// Picking the prize to play for, with the chips bought.
+    Prize {
+        menu: ActionMenu,
+        stake: i64,
+    },
+    Slots(Table),
     Company(String),
     Lead {
         company: String,
@@ -411,6 +460,13 @@ pub struct Brawl {
     pub fight: Fight,
 }
 
+/// The vendor's slot machine, with the game waiting on the night's result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Table {
+    pub game: GameState,
+    pub casino: Casino,
+}
+
 /// The intern's trip across the street, with the game waiting on the result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoffeeRun {
@@ -433,6 +489,12 @@ impl Screen {
             | Self::Actions(ActionMenu { game, .. })
             | Self::Stake(ActionMenu { game, .. })
             | Self::Fight(Brawl { game, .. })
+            | Self::Chips(ActionMenu { game, .. })
+            | Self::Prize {
+                menu: ActionMenu { game, .. },
+                ..
+            }
+            | Self::Slots(Table { game, .. })
             | Self::Resumes(Viewer {
                 shop: Shop { game, .. },
                 ..
@@ -458,6 +520,10 @@ impl Screen {
             Self::Fight(mut brawl) => {
                 brawl.fight.tick(dt, held);
                 Self::Fight(brawl)
+            }
+            Self::Slots(mut table) => {
+                table.casino.tick(dt);
+                Self::Slots(table)
             }
             Self::Coffee(mut run) => {
                 run.street.tick(dt);
@@ -764,6 +830,44 @@ impl Screen {
                 if menu.action() == Some(Action::FightForBudget) =>
             {
                 Self::Stake(menu)
+            }
+            (Self::Actions(menu), Input::Enter) if menu.action() == Some(Action::CasinoNight) => {
+                Self::Chips(menu)
+            }
+            (Self::Chips(menu) | Self::Prize { menu, .. }, Input::Char('b' | 'B')) => {
+                Self::Actions(menu)
+            }
+            (Self::Chips(menu), Input::Char(c @ '1'..='3'))
+                if casino::STAKES[c as usize - '1' as usize] <= menu.game.budget =>
+            {
+                Self::Prize {
+                    menu,
+                    stake: casino::STAKES[c as usize - '1' as usize],
+                }
+            }
+            (Self::Prize { mut menu, stake }, Input::Char(c @ '1'..='3'))
+                if (c as usize - '1' as usize) < menu.game.prizes().len() =>
+            {
+                let prize = menu.game.prizes()[c as usize - '1' as usize];
+                let casino = menu.game.start_casino(prize, stake);
+                Self::Slots(Table {
+                    game: menu.game,
+                    casino,
+                })
+            }
+            (Self::Slots(mut table), Input::Enter) if table.casino.end.is_some() => {
+                table.game.casino_settled(&table.casino);
+                Self::Play(table.game)
+            }
+            (Self::Slots(mut table), Input::Char(c)) => {
+                match c {
+                    '1' => table.casino.spin(Bet::Center),
+                    '3' => table.casino.spin(Bet::Middle),
+                    '5' => table.casino.spin(Bet::All),
+                    'l' | 'L' => table.casino.leave(),
+                    _ => {}
+                }
+                Self::Slots(table)
             }
             (Self::Stake(menu), Input::Char('b' | 'B')) => Self::Actions(menu),
             (Self::Stake(mut menu), Input::Char(c @ '1'..='4')) => {
@@ -2259,5 +2363,93 @@ mod tests {
     fn wrap_breaks_on_word_boundaries() {
         assert_eq!(wrap("the quick brown fox", 10), ["the quick", "brown fox"]);
         assert_eq!(wrap("short", 10), ["short"]);
+    }
+
+    /// The action list on the Management tab with casino night under the cursor.
+    fn casino_offered() -> Screen {
+        casino_with(new_game())
+    }
+
+    fn casino_with(screen: Screen) -> Screen {
+        let mut screen = screen.update(Input::Char('2'));
+        while action_menu(&screen).tab != Kind::Management {
+            screen = screen.update(Input::Arrow(Hop::Right));
+        }
+        while action_menu(&screen).action() != Some(Action::CasinoNight) {
+            screen = screen.update(Input::Arrow(Hop::Down));
+        }
+        screen
+    }
+
+    fn table(screen: &Screen) -> &Table {
+        match screen {
+            Screen::Slots(table) => table,
+            other => panic!("expected Slots, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn casino_night_takes_chips_and_a_prize_and_b_backs_out() {
+        let menu = casino_offered();
+        let chips = menu.clone().update(Input::Enter);
+        assert!(matches!(chips, Screen::Chips(_)));
+        assert_eq!(chips.clone().update(Input::Char('b')), menu);
+        let short =
+            casino_with(with_game(new_game(), |game| game.budget = 5_000)).update(Input::Enter);
+        assert_eq!(
+            short.clone().update(Input::Char('3')),
+            short,
+            "unaffordable"
+        );
+
+        let prize = chips.clone().update(Input::Char('2'));
+        assert!(matches!(prize, Screen::Prize { stake: 4_000, .. }));
+        assert_eq!(prize.clone().update(Input::Char('b')), menu);
+
+        let budget = game(&menu).budget;
+        let expected = game(&menu).prizes()[2];
+        let slots = prize.update(Input::Char('3'));
+        let table = table(&slots);
+        assert_eq!(table.casino.prize, expected);
+        assert_eq!(table.casino.chips, 4_000);
+        assert_eq!(table.game.budget, budget - 4_000);
+        assert!(!table.game.can_gamble());
+    }
+
+    #[test]
+    fn slot_keys_spin_and_leave_and_enter_settles() {
+        let slots = casino_offered()
+            .update(Input::Enter)
+            .update(Input::Char('1'))
+            .update(Input::Char('1'));
+        let budget = game(&slots).budget;
+
+        let spun = slots.clone().update(Input::Char('5'));
+        assert_eq!(table(&spun).casino.chips, 1_500);
+        let ticked = spun.clone().tick(0.1, None);
+        assert!(cues(&spun, &ticked).contains(&Cue::ReelClick));
+        let stopped = ticked.clone().tick(5.0, None);
+        assert!(cues(&ticked, &stopped).contains(&Cue::ReelStop));
+
+        let left = stopped.update(Input::Char('l'));
+        let chips = table(&left).casino.chips;
+        assert_eq!(table(&left).casino.end, Some(casino::End::Left));
+        let done = left.update(Input::Enter);
+        assert!(matches!(done, Screen::Play(_)));
+        assert_eq!(game(&done).budget, budget + chips / 2);
+    }
+
+    #[test]
+    fn a_jackpot_rings_the_bell() {
+        let slots = casino_offered()
+            .update(Input::Enter)
+            .update(Input::Char('1'))
+            .update(Input::Char('1'));
+        let mut won = slots.clone();
+        let Screen::Slots(table) = &mut won else {
+            panic!("expected Slots");
+        };
+        table.casino.end = Some(casino::End::Jackpot);
+        assert_eq!(cues(&slots, &won), [Cue::Jackpot]);
     }
 }
