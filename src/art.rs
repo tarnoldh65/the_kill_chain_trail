@@ -233,6 +233,11 @@ pub const MARKER: Sprite = &[
     ".d..d.d...d.",
 ];
 
+/// The slot machine's symbols: every incident and conference sprite.
+pub const SYMBOLS: [Sprite; 10] = [
+    RANSOM, LEAK, SPY, FLOOD, LURKER, ENVELOPE, PODIUM, LOCK, BOOTH, PARTY,
+];
+
 pub fn incident(actor: Actor) -> Sprite {
     match actor {
         Actor::Ransomware => RANSOM,

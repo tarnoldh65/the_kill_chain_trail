@@ -539,6 +539,37 @@ fn effect(cue: Cue) -> Vec<f32> {
             low_pass(&mut grunt, |_| 900.0);
             grunt
         }
+        // The ratchet of a reel spinning past each symbol.
+        Cue::ReelClick => {
+            let mut click = note(Wave::Square, 100, STEP / 16, 0.08);
+            mix(&mut click, &note(Wave::Noise, 0, STEP / 16, 0.1), 0);
+            click
+        }
+        // A reel slamming to a stop.
+        Cue::ReelStop => {
+            let mut clunk = note(Wave::Noise, 0, STEP / 3, 0.4);
+            low_pass(&mut clunk, |_| 1200.0);
+            mix(&mut clunk, &kick(0.4), 0);
+            clunk
+        }
+        // Coins dropping into the tray.
+        Cue::Coins => melody(
+            Wave::Square,
+            &[(83, 1), (88, 1), (83, 1), (88, 1), (83, 1), (88, 3)],
+            0.2,
+        ),
+        // The jackpot bell ringing over a rising run.
+        Cue::Jackpot => {
+            let ringing: Vec<(i32, usize)> = (0..12).map(|i| (84 + i % 2 * 7, 1)).collect();
+            let mut jackpot = melody(Wave::Square, &ringing, 0.2);
+            jackpot.extend(melody(
+                Wave::Square,
+                &[(72, 1), (76, 1), (79, 1), (84, 1), (88, 1), (91, 6)],
+                0.3,
+            ));
+            mix(&mut jackpot, &note(Wave::Triangle, 96, STEP * 12, 0.3), 0);
+            jackpot
+        }
     }
 }
 

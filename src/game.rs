@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::attack::{Actor, Alert, Campaign, Condition, End, Response, Stage};
+use crate::casino::{self, Casino};
 use crate::conference::{CONFERENCE_DAYS, Card, LEAD_CARDS, TICKET, Track};
 use crate::events::{Choice, EVENTS, Effect, PET_PROJECT};
 use crate::landmarks::{Landmark, Odds};
@@ -95,6 +96,25 @@ const FIGHT_WINS: [&str; 3] = [
     "You suplexed the boss through a whiteboard. The budget request was approved on the spot.",
     "A flying kick over the conference table. Finance calls it a \"dynamic reallocation\".",
     "The boss tapped out and signed the purchase order with a trembling hand.",
+];
+
+/// How the house explains a jackpot, a bust, and walking out early.
+const CASINO_JACKPOTS: [&str; 3] = [
+    "JACKPOT! The vendor's sales rep hands over the {prize} with a smile that does not reach their eyes.",
+    "JACKPOT! Bells ring, lights flash, and the {prize} is yours. Legal wants to know what you signed.",
+    "JACKPOT! The {prize} is yours. The vendor is already scheduling a quarterly business review.",
+];
+
+const CASINO_BUSTS: [&str; 3] = [
+    "Busted. The house keeps the change as a \"chip recycling fee\". It is in the fine print.",
+    "Busted. The change goes to the vendor's \"customer success fund\". You are the customer. It was not a success.",
+    "Busted. The pit boss pockets the last chips for \"table maintenance\". The table is a laptop.",
+];
+
+const CASINO_EXITS: [&str; 3] = [
+    "You walk out early. The house keeps half as a gaming surcharge for casino services not used.",
+    "You leave early. Half your chips cover the open bar you did not drink, per the terms of service.",
+    "You cash out early. The house takes half for \"early termination\". You still get a branded stress ball.",
 ];
 
 const FIGHT_LOSSES: [&str; 3] = [
@@ -680,6 +700,8 @@ pub enum Action {
     Clear(Condition),
     /// Takes on the boss in a street fight for more budget.
     FightForBudget,
+    /// Gambles part of the budget on a tool at the vendor's slot machine.
+    CasinoNight,
 }
 
 impl Action {
@@ -704,6 +726,7 @@ impl Action {
             .to_string(),
             Self::Clear(condition) => condition.cure().to_string(),
             Self::FightForBudget => "Fight for budget".to_string(),
+            Self::CasinoNight => "Vendor casino night".to_string(),
         }
     }
 
@@ -719,6 +742,7 @@ impl Action {
             Self::Maintain(_) => "Brings this area's tools back to full strength.",
             Self::Clear(condition) => condition.effect(),
             Self::FightForBudget => "Win cash and brand. Lose trust and budget.",
+            Self::CasinoNight => "Gamble chips on a tool. The house usually wins.",
         }
     }
 
@@ -743,7 +767,8 @@ impl Action {
             | Self::Offsite
             | Self::BriefLeadership
             | Self::PostJobs
-            | Self::FightForBudget => Kind::Management,
+            | Self::FightForBudget
+            | Self::CasinoNight => Kind::Management,
         }
     }
 
@@ -775,7 +800,7 @@ impl Action {
             Self::Clear(Condition::Downtime) => 2,
             Self::Clear(Condition::PersistentAccess) => 10,
             // Settled on the spot.
-            Self::FightForBudget => 0,
+            Self::FightForBudget | Self::CasinoNight => 0,
         }
     }
 
@@ -788,6 +813,7 @@ impl Action {
                 | Self::BriefLeadership
                 | Self::PostJobs
                 | Self::FightForBudget
+                | Self::CasinoNight
         )
     }
 
@@ -1241,6 +1267,8 @@ pub struct GameState {
     pub coffee_run_made: bool,
     /// Whether the boss has already been fought this week.
     fight_made: bool,
+    /// Whether this week's vendor casino night has already been played.
+    casino_made: bool,
     /// Drives every random outcome, so a seed always plays out the same way.
     pub seed: u32,
     /// How many random numbers this game has drawn.
@@ -1305,6 +1333,7 @@ impl GameState {
             outcome: None,
             coffee_run_made: false,
             fight_made: false,
+            casino_made: false,
             seed,
             rolls: 0,
         };
@@ -1628,6 +1657,7 @@ impl GameState {
             .chain([Action::DayOff, Action::Offsite, Action::BriefLeadership])
             .chain((self.search_days == 0 && self.can_hire()).then_some(Action::PostJobs))
             .chain(self.can_fight().then_some(Action::FightForBudget))
+            .chain(self.can_gamble().then_some(Action::CasinoNight))
             .filter(|action| self.affords(action.cost()))
             .collect()
     }
@@ -1813,7 +1843,9 @@ impl GameState {
                 self.conditions.retain(|&c| c != condition);
                 format!("{} is done. Things are back to normal.", condition.cure())
             }
-            Action::FightForBudget => unreachable!("fights are settled in the ring"),
+            Action::FightForBudget | Action::CasinoNight => {
+                unreachable!("mini games are settled on their own screens")
+            }
         };
         self.trust = self.trust.clamp(0, 100);
         self.note(message.clone());
@@ -2788,6 +2820,45 @@ impl GameState {
         self.check_outcome();
     }
 
+    /// Casino night is offered once a week while the budget covers the smallest stake and
+    /// the house has a prize left.
+    pub fn can_gamble(&self) -> bool {
+        self.outcome.is_none()
+            && !self.casino_made
+            && self.budget >= casino::STAKES[0]
+            && !self.prizes().is_empty()
+    }
+
+    /// The prizes on tonight's machine, the same all day.
+    pub fn prizes(&self) -> Vec<Item> {
+        casino::prizes(&self.owned, self.seed.wrapping_add(self.day))
+    }
+
+    /// Buys chips for this week's casino night.
+    pub fn start_casino(&mut self, prize: Item, stake: i64) -> Casino {
+        self.casino_made = true;
+        self.budget -= stake;
+        Casino::new(prize, stake, self.seed.wrapping_add(self.day))
+    }
+
+    /// The night's payoff: the prize for a jackpot, and whatever chips the house gives back.
+    pub fn casino_settled(&mut self, casino: &Casino) {
+        let before = self.glance();
+        let pick = self.day as usize;
+        let message = match casino.end {
+            Some(casino::End::Jackpot) => {
+                self.owned.push(casino.prize);
+                CASINO_JACKPOTS[pick % CASINO_JACKPOTS.len()]
+                    .replace("{prize}", casino.prize.label())
+            }
+            Some(casino::End::Left) => CASINO_EXITS[pick % CASINO_EXITS.len()].to_string(),
+            _ => CASINO_BUSTS[pick % CASINO_BUSTS.len()].to_string(),
+        };
+        self.budget += casino.returned();
+        self.note(message.clone());
+        self.card("Vendor casino night", &message, &before);
+    }
+
     /// Advances one day and returns whether something happened that should stop the clock.
     pub fn advance(&mut self) -> bool {
         self.day += 1;
@@ -2818,6 +2889,7 @@ impl GameState {
     fn monday(&mut self) -> bool {
         self.coffee_run_made = false;
         self.fight_made = false;
+        self.casino_made = false;
         if (self.day - 1).is_multiple_of(FUNDING_INTERVAL) {
             self.fund();
         }
@@ -5818,5 +5890,52 @@ mod tests {
                 .iter()
                 .any(|r| r.specialty.and_then(Item::category) == Some(Area::Intelligence))
         );
+    }
+
+    #[test]
+    fn casino_night_is_offered_once_a_week_while_affordable_with_a_prize_left() {
+        let mut game = game();
+        assert!(game.actions().contains(&Action::CasinoNight), "from day 1");
+        assert_eq!(Action::CasinoNight.kind(), Kind::Management);
+
+        let mut poor = game.clone();
+        poor.budget = casino::STAKES[0] - 1;
+        assert!(!poor.can_gamble());
+        let mut stocked = game.clone();
+        stocked.owned = Item::ALL.to_vec();
+        assert!(!stocked.can_gamble(), "nothing left to win");
+
+        let prize = game.prizes()[0];
+        let night = game.start_casino(prize, 4_000);
+        assert_eq!(night.chips, 4_000);
+        assert_eq!(game.budget, 500_000 - 4_000);
+        assert!(!game.can_gamble());
+        game.monday();
+        assert!(game.can_gamble());
+    }
+
+    #[test]
+    fn casino_night_pays_the_prize_and_chips_or_keeps_them() {
+        let settle = |end: casino::End, chips: i64| {
+            let mut game = game();
+            let mut night = game.start_casino(Item::Siem, 2_000);
+            night.chips = chips;
+            night.end = Some(end);
+            game.casino_settled(&night);
+            game
+        };
+        let won = settle(casino::End::Jackpot, 1_500);
+        assert!(won.owned.contains(&Item::Siem));
+        assert!(!won.is_deployed(Item::Siem), "still needs deploying");
+        assert_eq!(won.budget, 500_000 - 2_000 + 1_500);
+        assert_eq!(won.cards.last().unwrap().title, "VENDOR CASINO NIGHT");
+
+        let left = settle(casino::End::Left, 1_500);
+        assert!(!left.owned.contains(&Item::Siem));
+        assert_eq!(left.budget, 500_000 - 2_000 + 750);
+
+        let busted = settle(casino::End::Busted, 75);
+        assert_eq!(busted.budget, 500_000 - 2_000);
+        assert!(busted.log.last().unwrap().starts_with("Busted."));
     }
 }

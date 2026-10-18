@@ -3,6 +3,7 @@ mod attack;
 mod audio;
 #[cfg(test)]
 mod balance;
+mod casino;
 mod conference;
 mod draw;
 mod events;

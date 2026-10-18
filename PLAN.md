@@ -497,6 +497,50 @@ Success criteria:
 - [x] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile; every ending is still reachable; pen test floors are re-measured and set to 2.65 for Fintech, 2.1 for Healthtech, and 0.95 for Gaming (unit tested).
 - [ ] In a playtest, the Procurement tabs, IMPROVES strip, and defenses screen fit at 640x480 with seven areas.
 
+## Phase 33: Vendor Casino Night
+
+A slot machine mini game where the SOC gambles part of its budget on a tool or service it has not bought yet.
+
+Rules:
+- "Vendor casino night" is on the Management tab of Take an action from day 1, at most once per week (its own flag, reset on Monday with the coffee run's and the fight's). It takes no days. It is offered only while the budget covers the smallest stake and at least one prize is left.
+- A stake popup takes chips from the budget: 1 $2K, 2 $4K, 3 $10K (only affordable stakes), B backs out.
+- A prize popup offers 3 random tools or services not yet owned (never coffee or the coffee subscription), each with its jackpot odds. Pricier prizes have longer odds:
+
+| Prize price | Jackpot odds per line |
+|---|---|
+| Under $30K | 3 in 100 |
+| $30K-$60K | 2 in 100 |
+| Over $60K | 1 in 100 |
+
+- The machine is a 5x5 grid: 5 reels, and the 5 rows are the betting lines. Each line costs $100 per spin. The player bets on the center line (1, $100), the center three (3, $300), or all five (5, $500), and only when the chips cover it.
+- Each bet line is a separate bet, rolled on its own: the jackpot at the prize's odds, otherwise cash back 1 in 10, paying 1.25 times the line's bet ($125). Five matching symbols on a line show a jackpot; four in a row show cash back.
+- The grid is drawn to fit the result. Losing bet lines never show four or five matches but often show three. Lines not bet on sometimes show four or five matches, and often three, for the near miss.
+- Jackpot: the prize is owned (it still needs deploying, like any purchase), the remaining chips go back to the budget, and the night ends.
+- Busted: when the chips cannot cover a one-line bet, the night ends and the house keeps the change, with a funny remark.
+- Leaving early (L): the house keeps 50% of the chips as a "gaming surcharge" for casino services not used, and the rest goes back to the budget.
+- Each ending shows a result card and a log line. Symbols are the existing 8-bit sprites in `art.rs` (the six incident and four conference sprites).
+
+Tasks:
+- `src/casino.rs`: prize tiers and odds, the bankroll, spinning a bet (the outcome is rolled first, then the grid is drawn to match), reel stop timing, and its own seeded random rolls so it does not disturb the shared generator, like the fight. Pure logic driven by `tick(dt)` and key presses.
+- `GameState`: `can_gamble()`, prize choices, and `casino_settled(chips, prize)` adding the prize to owned and the chips to the budget. The Sensible strategy never gambles; Random sometimes does.
+- `ui.rs`: `Action::CasinoNight`, then `Screen::Chips` (stake), `Screen::Prize`, `Screen::Slots`, then the result card. Keys: 1/3/5 spin, L leaves.
+- `draw.rs`: the machine with the 5x5 grid of sprites, bet lines highlighted, winning lines flashing, chips and prize odds on screen, fitting 640x480.
+- Audio: synthesized cues for reels spinning (clicks), each reel stopping (a clunk), coins paying out, and a jackpot bell, following the game play sound volume. The music stays the player's chosen track.
+- Update the manual, README, REDESIGN.md, and PLAYTEST.md.
+
+Success criteria:
+- [x] Casino night is offered from day 1 when affordable, at most once per week, and never without a prize to win (unit tested).
+- [x] The stake comes out of the budget, only affordable stakes are offered, and B backs out (unit tested).
+- [x] Prizes are 3 distinct items not owned, never coffee, with odds of 3, 2, or 1 in 100 by price (unit tested).
+- [x] A spin costs $100 per line, is refused when the chips cannot cover it, and pays $125 per cash-back line (unit tested).
+- [x] Over many spins, jackpot and cash-back rates match their odds within tolerance (unit tested).
+- [x] Bet lines show five matches only for a jackpot and four only for cash back; unbet lines sometimes show four or five, and three matches are common (unit tested).
+- [x] A jackpot owns the prize and returns the chips; busting keeps the change; leaving early returns half; each shows a result card (unit tested).
+- [x] The same seed always plays the same night (unit tested).
+- [x] New sounds never clip (unit tested).
+- [x] Idle, Random, and Sensible win rates still meet their targets, and every ending is still reachable (unit tested).
+- [ ] In a playtest, the machine is readable at 640x480, the reels sound like a slot machine, and near misses show up often.
+
 ## Current status
 
 - [x] MVP (Phases 1-11)
