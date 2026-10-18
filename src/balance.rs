@@ -198,10 +198,12 @@ fn shop(game: &mut GameState, style: Style) {
         Item::VulnScanner,
         Item::Runbooks,
         Item::LogCollection,
+        Item::Osint,
         Item::MfaTokens,
         Item::EmailGateway,
         Item::Backups,
         Item::Waf,
+        Item::IntelFeeds,
         Item::IrRetainer,
         Item::Edr,
         Item::Allowlisting,
@@ -212,6 +214,7 @@ fn shop(game: &mut GameState, style: Style) {
         Item::Pam,
         Item::DrSite,
         Item::Mdr,
+        Item::IntelPlatform,
     ];
     for item in wanted {
         if may_buy(style, item)
@@ -558,9 +561,9 @@ fn sensible_play_earns_passable_pen_test_grades() {
     // Average grade points over every area and seed, in hundredths: A is 400, F is 0.
     // Gaming can only afford the cheap tools, so it leans on its analysts' proficiencies.
     let floors = [
-        (Profile::Fintech, 270),
-        (Profile::Healthtech, 220),
-        (Profile::Gaming, 115),
+        (Profile::Fintech, 265),
+        (Profile::Healthtech, 210),
+        (Profile::Gaming, 95),
     ];
     for (profile, floor) in floors {
         let points: Vec<u32> = (0..SEEDS)

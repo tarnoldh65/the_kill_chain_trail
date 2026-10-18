@@ -24,6 +24,7 @@ Walk through natively (`cargo run --release`) and in Chrome and Firefox.
 - [x] Finished actions, investigations, IR calls, incident responses, event choices, and river crossings show a result card that is also in the log.
 - [x] The team screen lets you choose an analyst and fire them after a Y confirmation, for a week's salary; absent analysts and the last analyst cannot be fired.
 - [ ] Procurement's tabs list three tools per defense area; deployed tools show as DEPLOYED.
+- [ ] The Intelligence tab, the IMPROVES strip, and the defenses screen fit all seven areas at 640x480; the dark web check, ISAC consult, and IoC update appear once their intel tool is deployed.
 - [ ] Deployed tools age week by week (fresh, aging, stale on the defenses screen), and each area's maintenance action appears when needed and restores them.
 - [ ] The board releases funding every sixth Monday, scaled by trust, with a result card; SOC Status shows the next funding day.
 - [ ] The last eight weeks still offer a meaningful choice every week.

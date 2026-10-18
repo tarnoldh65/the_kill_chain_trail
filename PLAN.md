@@ -452,6 +452,51 @@ Success criteria:
 - [x] The fight track is a whole number of bars and never clips, and the new effects never clip (unit tested).
 - [ ] In a playtest, the fight is readable at 640x480, the controls feel responsive, the $10,000 boss is beatable by a new player, and the $100,000 boss is hard but fair.
 
+## Phase 32: Intelligence
+
+A seventh defense area, Intelligence: knowing who is coming before they arrive. It slows the targeted attackers directly, and its tools and operations push what they learn into Endpoint, Detection, and Perimeter.
+
+Rules:
+- `Area::Intelligence` joins the hidden posture (0-100), the pen test report card (seven grades), and the defenses screen. It is built the same way as every other area: deployed tools by condition, analyst proficiencies and conference expertise, and operation boosts.
+- Intelligence slows the attackers who pick their targets: nation-state APTs (Detection, Intelligence), competitor espionage (People, Identity, Intelligence), and hacktivists (Perimeter, Intelligence). Ransomware, data thieves, and insiders are unchanged.
+- Procurement gets an Intelligence tab, between Detection and Services:
+
+| Tool | Price | Days to deploy | Boosts |
+|---|---|---|---|
+| OSINT process | $5K | 2 | Intelligence 12, Perimeter 5 |
+| Threat intel feeds | $30K | 3 | Intelligence 25, Detection 10 |
+| Threat intel platform | $80K | 6 | Intelligence 30, Detection 10, Endpoint 5, Perimeter 5 |
+
+- Activities. The first three are operations unlocked by a deployed tool (four-week boosts, scaled by condition, like Phase 26); the fourth is the area's maintenance action:
+
+| Activity | Unlocked by | Days | Payoff |
+|---|---|---|---|
+| Check the dark web for targeted campaigns | OSINT process | 3 | Intelligence +15; brace against ransomware and data thieves; 1 in 5 chance burnout +5 (it is the dark web) |
+| Consult industry ISAC | Threat intel feeds | 2, $2K | Intelligence +15, Detection +10; trust +1 |
+| Update indicators of compromise | Threat intel platform | 3 | Detection +15, Endpoint +10, Perimeter +10; weak eviction roll (25%) against APTs and espionage |
+| Tune threat feeds | Maintenance | 2 | Restores Intelligence tools to full strength |
+
+- Resumes: proficiencies and tool specialties already draw from every area and its tools, so intel analysts and OSINT, feed, and platform specialists appear automatically. Add two intel-flavored candidate quotes.
+- Everything that lists or loops over areas covers seven: the all-areas event wear, the pen test average, the IMPROVES strip, and the defenses screen. Add one Talks and one Villages conference card with Intelligence expertise.
+- Each new tool gets three rollout messages, each operation three results and a fade message, and Tune threat feeds three upkeep messages, all in the game's humor.
+
+Tasks:
+- `game.rs`: the area, three items (price, label, description, rollout, category, boosts, deploy days), the Tune threat feeds label, quotes, and every `[_; 6]` sized by `Area::ALL.len()`.
+- `attack.rs`: the new defenses. `operations.rs`: the three operations. `events.rs` and `conference.rs`: wear and cards.
+- `ui.rs` and `draw.rs`: a ninth Procurement tab; the IMPROVES strip and defenses screen fit seven areas at 640x480 (shorter label "Intel" on the strip, tighter row spacing on the defenses screen).
+- `balance.rs`: the Sensible strategy buys the OSINT process early, feeds in the mid tier, and the platform with the premiums, and rotates the new operations. Re-measure win rates and pen test floors.
+- Update REDESIGN.md (tools, operations, posture, and attacker tables), the manual (areas and actions pages), README, and PLAYTEST.md.
+
+Success criteria:
+- [x] Intelligence starts at 0 and rises from intel tools by condition, proficiencies, expertise, and operation boosts (unit tested).
+- [x] Each intel tool adds exactly its documented boosts to Intelligence, Endpoint, Detection, and Perimeter (unit tested).
+- [x] Higher Intelligence slows APTs, espionage, and hacktivists, and leaves ransomware, data thieves, and insiders unchanged (unit tested).
+- [x] Each intel operation is offered only while its tool is deployed and applies its boosts, brace, eviction, trust, or cost as documented; Tune threat feeds appears once an intel tool ages and restores it (unit tested).
+- [x] Resumes can carry Intelligence proficiency and intel tool specialties, and every specialty is still a tool in a proficiency area (unit tested).
+- [x] The pen test grades seven areas, and the Intelligence tab lists exactly the three intel tools (unit tested).
+- [x] Idle reaches the IPO under 10%, Random under 25%, and Sensible over 70% on every profile; every ending is still reachable; pen test floors are re-measured and set to 2.65 for Fintech, 2.1 for Healthtech, and 0.95 for Gaming (unit tested).
+- [ ] In a playtest, the Procurement tabs, IMPROVES strip, and defenses screen fit at 640x480 with seven areas.
+
 ## Current status
 
 - [x] MVP (Phases 1-11)

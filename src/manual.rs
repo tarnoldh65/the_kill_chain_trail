@@ -174,7 +174,7 @@ pub fn pages() -> Vec<Page> {
         page(
             "YOUR DEFENSES",
             &[
-                "Your security is measured in six areas. You never see the numbers, but press D to see what each one stops and what is helping it.",
+                "Your security is measured in seven areas. You never see the numbers, but press D to see what each one stops and what is helping it.",
                 "",
                 "IDENTITY slows data thieves, spies, and insiders.",
                 "ENDPOINT slows ransomware gangs.",
@@ -182,6 +182,7 @@ pub fn pages() -> Vec<Page> {
                 "PERIMETER slows hacktivists.",
                 "RESILIENCE slows ransomware and softens every incident.",
                 "DETECTION spots attackers early and slows data thieves, nation-states, and insiders.",
+                "INTELLIGENCE slows spies, hacktivists, and nation-states, and its tools help Endpoint, Perimeter, and Detection.",
                 "",
                 "# TOOLS",
                 "Procurement sells three tools per area, from cheap to premium; + to +++ shows how much each helps. A tool does nothing until an action deploys it. Deployed tools lose strength every week and show as FRESH, AGING, or STALE; maintain them to bring them back.",
@@ -205,7 +206,7 @@ pub fn pages() -> Vec<Page> {
                 "# MAINTENANCE",
                 "Restores an area's tools to full strength once one starts aging.",
                 "# OPERATIONS",
-                "Some deployed tools unlock a longer job: a patch sprint, a threat hunt, a backup drill. They boost an area for four weeks, evict attackers you never saw, or brace you for the next incident. Stale tools give weaker results.",
+                "Some deployed tools unlock a longer job: a patch sprint, a threat hunt, a dark web check. They boost an area for four weeks, evict attackers you never saw, or brace you for the next incident. Stale tools give weaker results.",
                 "# MANAGEMENT",
                 "Days off and offsites for the team, and briefings to keep leadership on your side. Briefings sometimes give the CIO ideas.",
                 "",

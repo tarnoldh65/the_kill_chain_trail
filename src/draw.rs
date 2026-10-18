@@ -416,13 +416,13 @@ fn vendor_hall(font: &Font, shop: &Shop) {
     font.text(&costs, MARGIN, 36.0, 1.0, INK);
     divider(52.0);
 
-    // Tabs: staff, the six defense areas, and services.
+    // Tabs: staff, the seven defense areas, and services.
     let mut x = MARGIN;
     for tab in 0..TABS {
         let name = tab_name(tab).to_uppercase();
         let color = if tab == shop.tab { AMBER } else { DIM };
         font.text(&name, x, 62.0, 1.0, color);
-        x += name.len() as f32 * GLYPH + 12.0;
+        x += name.len() as f32 * GLYPH + 8.0;
     }
 
     let items = tab_items(shop.tab);
@@ -773,7 +773,7 @@ fn action_menu(font: &Font, menu: &ActionMenu) {
     );
 }
 
-/// The six defense areas in a row, with the ones `improved` lit up and plus signs under
+/// The seven defense areas in a row, with the ones `improved` lit up and plus signs under
 /// each for how much it helps.
 fn improves_strip(font: &Font, improved: &[(Area, i32)], y: f32) {
     font.text("IMPROVES", MARGIN, y, 1.0, CYAN);
@@ -784,11 +784,11 @@ fn improves_strip(font: &Font, improved: &[(Area, i32)], y: f32) {
             .filter(|&&(a, _)| a == area)
             .map(|&(_, b)| b)
             .sum();
-        let name = area.to_string();
+        let name = area.short();
         let color = if amount > 0 { GREEN } else { DIM };
         font.text(&name, x, y, 1.0, color);
         font.text(strength(amount), x, y + 10.0, 1.0, GREEN);
-        x += (name.len() + 2) as f32 * GLYPH;
+        x += (name.len() + 1) as f32 * GLYPH;
     }
 }
 
@@ -805,7 +805,7 @@ fn defenses(font: &Font, game: &GameState) {
     right(font, &pen_test, 12.0, INK);
     divider(32.0);
     for (i, area) in Area::ALL.iter().enumerate() {
-        let y = 44.0 + i as f32 * 66.0;
+        let y = 44.0 + i as f32 * 58.0;
         font.text(&area.to_string().to_uppercase(), MARGIN, y, 1.0, CYAN);
         let grade = game
             .pen_test

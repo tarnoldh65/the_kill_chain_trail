@@ -46,7 +46,7 @@ const NONE: Operation = Operation {
     fades: "",
 };
 
-pub const OPERATIONS: [Operation; 11] = [
+pub const OPERATIONS: [Operation; 14] = [
     Operation {
         tool: Item::PasswordManager,
         label: "Sticky note sweep",
@@ -240,6 +240,68 @@ pub const OPERATIONS: [Operation; 11] = [
             "The hunters followed every odd login back to its source.",
             "The threat hunt checked every dark corner of the network.",
         ],
+        ..NONE
+    },
+    Operation {
+        tool: Item::Osint,
+        label: "Check the dark web",
+        description: "Look for campaigns aimed at you. Softens the next ransomware or data theft.",
+        days: 3,
+        boosts: &[(Area::Intelligence, 15)],
+        braces: &[Actor::Ransomware, Actor::DataThief],
+        mishap: Some((
+            200,
+            Effect {
+                burnout: 5,
+                ..NOTHING
+            },
+            "The dark web check found your company's name, and a lot of things nobody can unsee.",
+        )),
+        results: [
+            "The dark web check found a forum selling \"access to a fintech\". You know which one.",
+            "Dark web check done. Someone is selling your VPN logins for $40. You are insulted.",
+            "The dark web check turned up chatter about your IPO. The attackers read the news too.",
+        ],
+        fades: "Nobody has checked the dark web in a while. The chatter goes on without you.",
+        ..NONE
+    },
+    Operation {
+        tool: Item::IntelFeeds,
+        label: "Consult industry ISAC",
+        description: "Compare notes with your peers. Helps Intelligence and Detection a while.",
+        days: 2,
+        cost: 2_000,
+        boosts: &[(Area::Intelligence, 15), (Area::Detection, 10)],
+        effect: Effect {
+            trust: 1,
+            ..NOTHING
+        },
+        results: [
+            "The ISAC call went well. Three other companies have the same attacker and the same printer.",
+            "ISAC briefing done. Everyone shared indicators; nobody admitted to being breached.",
+            "The ISAC meeting had good intel and better donuts. The board likes that you went.",
+        ],
+        fades: "The ISAC's indicators have gone stale. The attackers have new ones.",
+        ..NONE
+    },
+    Operation {
+        tool: Item::IntelPlatform,
+        label: "Update indicators of compromise",
+        description: "Push fresh IoCs to every tool. Helps Detection, Endpoint, and Perimeter.",
+        days: 3,
+        boosts: &[
+            (Area::Detection, 15),
+            (Area::Endpoint, 10),
+            (Area::Perimeter, 10),
+        ],
+        evicts: &[Actor::Apt, Actor::Espionage],
+        odds: 25,
+        results: [
+            "Fresh indicators are in the firewall, the EDR, and the SIEM. One of them was Google.",
+            "IoCs updated. 12,000 bad hashes are blocked, and one good one, the payroll app.",
+            "Indicators pushed everywhere. The EDR now knows what this month's malware looks like.",
+        ],
+        fades: "The indicators of compromise are a month old. The attackers have moved on.",
         ..NONE
     },
 ];

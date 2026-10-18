@@ -131,7 +131,7 @@ const CANDIDATE_NAMES: [&str; 40] = [
 ];
 
 /// What candidates say about themselves at the bottom of their resumes. Just for fun.
-const CANDIDATE_QUOTES: [&str; 28] = [
+const CANDIDATE_QUOTES: [&str; 30] = [
     "Passionate about zero trust. I trust zero people, including HR.",
     "Thrilled to announce I passed my 14th certification. Still looking for my first job.",
     "I once stopped a ransomware attack by unplugging the coffee machine.",
@@ -160,6 +160,8 @@ const CANDIDATE_QUOTES: [&str; 28] = [
     "Recruiters, please stop calling. Unless it's this job. Then call twice.",
     "Three years in cybersecurity. I have aged fifteen.",
     "Please. I paid so much for that bootcamp.",
+    "I lurk on dark web forums professionally. My browser history is a cry for help.",
+    "I can attribute any attack to a nation-state. Even the ones from the intern.",
 ];
 
 /// How a fired analyst takes the news; `{name}` is the analyst.
@@ -290,6 +292,9 @@ pub enum Item {
     LogCollection,
     Siem,
     Mdr,
+    Osint,
+    IntelFeeds,
+    IntelPlatform,
     IrRetainer,
     Insurance,
     Coffee,
@@ -298,7 +303,7 @@ pub enum Item {
 
 impl Item {
     /// Three tools per defense area from cheapest to premium, then services.
-    pub const ALL: [Item; 22] = [
+    pub const ALL: [Item; 25] = [
         Self::PasswordManager,
         Self::MfaTokens,
         Self::Pam,
@@ -317,6 +322,9 @@ impl Item {
         Self::LogCollection,
         Self::Siem,
         Self::Mdr,
+        Self::Osint,
+        Self::IntelFeeds,
+        Self::IntelPlatform,
         Self::IrRetainer,
         Self::Insurance,
         Self::Coffee,
@@ -344,6 +352,9 @@ impl Item {
             Self::LogCollection => 15_000,
             Self::Siem => 80_000,
             Self::Mdr => 100_000,
+            Self::Osint => 5_000,
+            Self::IntelFeeds => 30_000,
+            Self::IntelPlatform => 80_000,
             Self::IrRetainer => 50_000,
             Self::Insurance => 40_000,
             Self::Coffee => 100,
@@ -371,6 +382,9 @@ impl Item {
             Self::LogCollection => "Log collection",
             Self::Siem => "SIEM",
             Self::Mdr => "Managed detection service",
+            Self::Osint => "OSINT process",
+            Self::IntelFeeds => "Threat intel feeds",
+            Self::IntelPlatform => "Threat intel platform",
             Self::IrRetainer => "Incident response retainer",
             Self::Insurance => "Cyber insurance",
             Self::Coffee => "A case of coffee (12 pots)",
@@ -398,6 +412,9 @@ impl Item {
             Self::LogCollection => "Gathers the logs in one place. Must be deployed.",
             Self::Siem => "Detection across the board. Must be deployed.",
             Self::Mdr => "Experts watching your alerts around the clock. Must be deployed.",
+            Self::Osint => "Googling the company like an attacker would. Must be deployed.",
+            Self::IntelFeeds => "Fresh bad IPs and domains every day. Must be deployed.",
+            Self::IntelPlatform => "Pushes what you learn into every tool. Must be deployed.",
             Self::IrRetainer => "Lets you call in an incident response firm.",
             Self::Insurance => "Pays for part of the damage when things go wrong.",
             Self::Coffee => "Fuel. The break room holds 36 pots.",
@@ -498,6 +515,21 @@ impl Item {
                 "MDR is live. They already called at 3 AM about the vending machine.",
                 "MDR is deployed. The experts are watching, and they have opinions.",
             ],
+            Self::Osint => [
+                "The OSINT process is live. The CEO's vacation photos reveal the badge, the laptop, and the Wi-Fi password.",
+                "OSINT is running. Engineering's public GitHub had the production keys. Had.",
+                "The OSINT process is in place. The org chart attackers use is more accurate than HR's.",
+            ],
+            Self::IntelFeeds => [
+                "Threat intel feeds are flowing. 2 million bad IPs a day, one of them the office printer.",
+                "Intel feeds are live. They flagged the CEO's favorite fantasy football site.",
+                "The feeds are on. Every vendor swears theirs is the one with the good indicators.",
+            ],
+            Self::IntelPlatform => [
+                "The threat intel platform is live. It has a graph view nobody can stop staring at.",
+                "Intel platform deployed. It now pushes indicators to the firewall, the EDR, and the SIEM. Mostly the same ones.",
+                "The platform is up. It deduplicated 40,000 indicators down to 39,998.",
+            ],
             _ => unreachable!("only tools are deployed"),
         }
     }
@@ -519,6 +551,7 @@ impl Item {
             Self::VulnScanner | Self::Waf | Self::Asm => Some(Area::Perimeter),
             Self::Runbooks | Self::Backups | Self::DrSite => Some(Area::Resilience),
             Self::LogCollection | Self::Siem | Self::Mdr => Some(Area::Detection),
+            Self::Osint | Self::IntelFeeds | Self::IntelPlatform => Some(Area::Intelligence),
             _ => None,
         }
     }
@@ -544,6 +577,14 @@ impl Item {
             Self::LogCollection => &[(Area::Detection, 12)],
             Self::Siem => &[(Area::Detection, 30)],
             Self::Mdr => &[(Area::Detection, 35)],
+            Self::Osint => &[(Area::Intelligence, 12), (Area::Perimeter, 5)],
+            Self::IntelFeeds => &[(Area::Intelligence, 25), (Area::Detection, 10)],
+            Self::IntelPlatform => &[
+                (Area::Intelligence, 30),
+                (Area::Detection, 10),
+                (Area::Endpoint, 5),
+                (Area::Perimeter, 5),
+            ],
             _ => &[],
         }
     }
@@ -658,6 +699,7 @@ impl Action {
                 Area::Perimeter => "Update firewall and WAF rules",
                 Area::Resilience => "Rehearse disaster recovery",
                 Area::Detection => "Tune detections",
+                Area::Intelligence => "Tune threat feeds",
             }
             .to_string(),
             Self::Clear(condition) => condition.cure().to_string(),
@@ -710,11 +752,15 @@ impl Action {
         match self {
             Self::Deploy(item) => match item {
                 Item::Posters => 1,
-                Item::PasswordManager | Item::Antivirus | Item::VulnScanner | Item::Runbooks => 2,
-                Item::EmailGateway | Item::LogCollection => 3,
+                Item::PasswordManager
+                | Item::Antivirus
+                | Item::VulnScanner
+                | Item::Runbooks
+                | Item::Osint => 2,
+                Item::EmailGateway | Item::LogCollection | Item::IntelFeeds => 3,
                 Item::Waf | Item::Mdr => 4,
                 Item::MfaTokens | Item::TrainingPlatform | Item::Backups => 5,
-                Item::Allowlisting | Item::Asm => 6,
+                Item::Allowlisting | Item::Asm | Item::IntelPlatform => 6,
                 Item::Edr => 7,
                 Item::Pam => 8,
                 _ => 10,
@@ -775,7 +821,7 @@ struct Glance {
     /// Average analyst burnout.
     burnout: i32,
     /// Each area's level, shown only as better or worse.
-    levels: [i32; 6],
+    levels: [i32; Area::ALL.len()],
     ipo_day: u32,
     team: Vec<String>,
     conditions: Vec<Condition>,
@@ -923,6 +969,7 @@ pub enum Area {
     Perimeter,
     Resilience,
     Detection,
+    Intelligence,
 }
 
 impl fmt::Display for Area {
@@ -934,11 +981,20 @@ impl fmt::Display for Area {
             Self::Perimeter => "Perimeter",
             Self::Resilience => "Resilience",
             Self::Detection => "Detection",
+            Self::Intelligence => "Intelligence",
         })
     }
 }
 
 impl Area {
+    /// The name where seven areas share one line.
+    pub fn short(self) -> String {
+        match self {
+            Self::Intelligence => "Intel".to_string(),
+            area => area.to_string(),
+        }
+    }
+
     /// The messages finished maintenance on this area picks from.
     pub fn upkeep(self) -> [&'static str; 3] {
         match self {
@@ -972,6 +1028,11 @@ impl Area {
                 "Detections tuned. 400 alerts a day down to 40. 39 are still the printer.",
                 "Detection rules tuned. The alert for \"user logged in\" has been retired with honors.",
             ],
+            Self::Intelligence => [
+                "Threat feeds tuned. Google's DNS servers are no longer listed as malicious.",
+                "Feeds tuned. Three of them were the same feed with different logos.",
+                "Threat feeds pruned. The indicators from 2019 have been retired to a farm upstate.",
+            ],
         }
     }
 
@@ -983,13 +1044,14 @@ impl Area {
             .collect()
     }
 
-    pub const ALL: [Area; 6] = [
+    pub const ALL: [Area; 7] = [
         Self::Identity,
         Self::Endpoint,
         Self::People,
         Self::Perimeter,
         Self::Resilience,
         Self::Detection,
+        Self::Intelligence,
     ];
 }
 
@@ -1119,7 +1181,7 @@ pub struct GameState {
     /// Incidents left out of the S-1, waiting to surface.
     hidden: u32,
     /// The pen test's grades and the day they were given, kept for the defenses screen.
-    pub pen_test: Option<(u32, [(Area, char); 6])>,
+    pub pen_test: Option<(u32, [(Area, char); Area::ALL.len()])>,
     /// Whether a leak has already forced an amended S-1 (it only happens once).
     amended: bool,
     /// Days left at the conference.
@@ -1897,14 +1959,15 @@ impl GameState {
 
     /// Chance in thousandths of making it across a river.
     pub fn crossing_odds(&self, odds: &Odds) -> u32 {
-        let average = Area::ALL.iter().map(|&a| self.level(a)).sum::<i32>() as u32 / 6;
+        let average =
+            Area::ALL.iter().map(|&a| self.level(a)).sum::<i32>() as u32 / Area::ALL.len() as u32;
         (odds.base + odds.posture * average / 100)
             .saturating_sub(odds.per_incident * self.incidents())
             .min(1000)
     }
 
     /// Letter grades for each posture area, as the pen testers see it.
-    pub fn report_card(&self) -> [(Area, char); 6] {
+    pub fn report_card(&self) -> [(Area, char); Area::ALL.len()] {
         Area::ALL.map(|area| {
             let grade = match self.level(area) {
                 80.. => 'A',
@@ -3113,7 +3176,7 @@ mod tests {
             game.buy(*item);
         }
 
-        assert_eq!(Area::ALL.map(|a| game.level(a)), [0; 6]);
+        assert_eq!(Area::ALL.map(|a| game.level(a)), [0; Area::ALL.len()]);
     }
 
     #[test]
@@ -3258,13 +3321,13 @@ mod tests {
     #[test]
     fn posture_starts_at_zero_and_drifts_only_through_tool_wear() {
         let mut game = game();
-        assert_eq!(Area::ALL.map(|a| game.level(a)), [0; 6]);
+        assert_eq!(Area::ALL.map(|a| game.level(a)), [0; Area::ALL.len()]);
 
         game.team[0].proficiencies = vec![Area::Identity];
         game.team[1].expertise = Some(Area::People);
         game.deployed.push(Tool::new(Item::Waf));
         let levels = Area::ALL.map(|a| game.level(a));
-        assert_eq!(levels, [JUNIOR_SKILL, 0, EXPERTISE_BONUS, 30, 0, 0]);
+        assert_eq!(levels, [JUNIOR_SKILL, 0, EXPERTISE_BONUS, 30, 0, 0, 0]);
 
         advance_to(&mut game, 8);
         assert_eq!(
@@ -3274,6 +3337,7 @@ mod tests {
                 0,
                 EXPERTISE_BONUS,
                 30 * (100 - TOOL_WEAR) / 100,
+                0,
                 0,
                 0
             ],
@@ -3785,7 +3849,7 @@ mod tests {
         let index = Landmark::ALL.iter().position(|&l| l == landmark).unwrap();
         GameState {
             seed,
-            bonus: [posture; 6],
+            bonus: [posture; Area::ALL.len()],
             day: landmark.day(),
             next_landmark: index + 1,
             stop: Some(Stop {
@@ -3800,7 +3864,7 @@ mod tests {
     fn with_posture(seed: u32, value: i32) -> GameState {
         GameState {
             seed,
-            bonus: [value; 6],
+            bonus: [value; Area::ALL.len()],
             ..game()
         }
     }
@@ -4013,7 +4077,7 @@ mod tests {
                 let mut game = GameState {
                     seed,
                     profile,
-                    bonus: [0; 6],
+                    bonus: [0; Area::ALL.len()],
                     ..game()
                 };
                 idle(&mut game, IPO_DAY, &mut incidents);
@@ -4180,6 +4244,9 @@ mod tests {
                 Item::DrSite,
                 Item::LogCollection,
                 Item::Siem,
+                Item::Osint,
+                Item::IntelFeeds,
+                Item::IntelPlatform,
             ]
         );
         for item in tools {
@@ -4500,7 +4567,7 @@ mod tests {
     #[test]
     fn pen_test_grades_count_a_tools_condition() {
         let mut game = game();
-        game.bonus = [50; 6];
+        game.bonus = [50; Area::ALL.len()];
         game.deployed.push(Tool::new(Item::Waf));
         assert_eq!(game.report_card()[3], (Area::Perimeter, 'A'));
 
@@ -4548,7 +4615,7 @@ mod tests {
     #[test]
     fn resting_lowers_the_watch() {
         let mut game = game();
-        game.bonus = [60; 6];
+        game.bonus = [60; Area::ALL.len()];
         let normal = game.watch();
 
         game.start(Action::Offsite);
@@ -4772,7 +4839,7 @@ mod tests {
     #[test]
     fn publicity_holidays_and_breached_vendors_help_the_attackers() {
         let mut game = game();
-        game.bonus = [60; 6];
+        game.bonus = [60; Area::ALL.len()];
         let (odds, watch) = (game.spawn_odds(), game.watch());
 
         game.apply(
@@ -4799,7 +4866,7 @@ mod tests {
         let mut arrivals = Vec::new();
         while game.outcome.is_none() {
             game.coffee = COFFEE_CAPACITY;
-            game.bonus = [100; 6];
+            game.bonus = [100; Area::ALL.len()];
             game.team.iter_mut().for_each(|m| m.burnout = 0);
             game.advance();
             game.alert = None;
@@ -4959,11 +5026,11 @@ mod tests {
     #[test]
     fn the_pen_test_grades_hidden_posture() {
         let mut game = game();
-        game.bonus = [85, 65, 45, 25, 5, 100];
+        game.bonus = [85, 65, 45, 25, 5, 100, 70];
 
         let grades: Vec<char> = game.report_card().iter().map(|(_, g)| *g).collect();
 
-        assert_eq!(grades, ['A', 'B', 'C', 'D', 'F', 'A']);
+        assert_eq!(grades, ['A', 'B', 'C', 'D', 'F', 'A', 'B']);
         assert_eq!(game.report_card()[0].0, Area::Identity);
     }
 
@@ -5462,12 +5529,12 @@ mod tests {
     #[test]
     fn the_pen_test_grades_are_kept_from_that_day() {
         let mut game = game();
-        game.bonus = [85, 65, 45, 25, 5, 100];
+        game.bonus = [85, 65, 45, 25, 5, 100, 70];
         game.day = Landmark::PenTest.day() - 1;
         game.next_landmark = 4;
 
         game.advance();
-        game.bonus = [0; 6];
+        game.bonus = [0; Area::ALL.len()];
 
         let (day, grades) = game.pen_test.unwrap();
         assert_eq!(day, Landmark::PenTest.day());
@@ -5666,5 +5733,90 @@ mod tests {
         game.brand = 95;
         game.fight_settled(10_000, true);
         assert_eq!(game.brand, 100);
+    }
+
+    #[test]
+    fn intel_tools_build_intelligence_and_feed_endpoint_detection_and_perimeter() {
+        let level = |items: &[Item]| {
+            let mut game = GameState::new("Acme", "Alex", Profile::Fintech, 1);
+            game.deployed = items.iter().map(|&i| Tool::new(i)).collect();
+            Area::ALL.map(|a| game.level(a))
+        };
+        // Identity, Endpoint, People, Perimeter, Resilience, Detection, Intelligence.
+        assert_eq!(level(&[Item::Osint]), [0, 0, 0, 5, 0, 0, 12]);
+        assert_eq!(level(&[Item::IntelFeeds]), [0, 0, 0, 0, 0, 10, 25]);
+        assert_eq!(level(&[Item::IntelPlatform]), [0, 5, 0, 5, 0, 10, 30]);
+        for item in [Item::Osint, Item::IntelFeeds, Item::IntelPlatform] {
+            assert_eq!(item.category(), Some(Area::Intelligence));
+        }
+    }
+
+    #[test]
+    fn intelligence_slows_only_the_attackers_who_pick_their_targets() {
+        let mut game = game();
+        let before = Actor::ALL.map(|a| game.defense(a));
+        game.bonus[Area::Intelligence as usize] = 60;
+        for (actor, old) in Actor::ALL.into_iter().zip(before) {
+            let targeted = matches!(actor, Actor::Apt | Actor::Espionage | Actor::Hacktivists);
+            assert_eq!(game.defense(actor) > old, targeted, "{actor}");
+        }
+    }
+
+    #[test]
+    fn intel_operations_brace_cost_and_evict_as_documented() {
+        let mut game = game();
+        game.deployed = vec![
+            Tool::new(Item::Osint),
+            Tool::new(Item::IntelFeeds),
+            Tool::new(Item::IntelPlatform),
+        ];
+        game.operate(Item::Osint);
+        assert_eq!(game.braced, [Actor::Ransomware, Actor::DataThief]);
+
+        assert_eq!(Action::Operate(Item::IntelFeeds).cost(), 2_000);
+        let trust = game.trust;
+        game.operate(Item::IntelFeeds);
+        assert_eq!(game.trust, trust + 1);
+
+        let evicted = |actor: Actor| {
+            (0..60).any(|seed| {
+                let mut game = game.clone();
+                game.seed = seed;
+                let i = plant(&mut game, actor, Stage::Foothold);
+                game.operate(Item::IntelPlatform);
+                game.campaigns[i].end == Some(End::Evicted)
+            })
+        };
+        assert!(evicted(Actor::Apt) && evicted(Actor::Espionage));
+        assert!(!evicted(Actor::Ransomware) && !evicted(Actor::Insider));
+    }
+
+    #[test]
+    fn aging_intel_tools_are_restored_by_tuning_threat_feeds() {
+        let mut game = game();
+        game.deployed.push(Tool {
+            item: Item::IntelFeeds,
+            condition: 50,
+        });
+        let tune = Action::Maintain(Area::Intelligence);
+        assert!(game.actions().contains(&tune));
+        assert_eq!(tune.label(), "Tune threat feeds");
+    }
+
+    #[test]
+    fn resumes_offer_intel_analysts_and_specialists() {
+        let resumes: Vec<Resume> = (0..20)
+            .flat_map(|seed| GameState::new("Acme", "Alex", Profile::Fintech, seed).slate)
+            .collect();
+        assert!(
+            resumes
+                .iter()
+                .any(|r| r.proficiencies.contains(&Area::Intelligence))
+        );
+        assert!(
+            resumes
+                .iter()
+                .any(|r| r.specialty.and_then(Item::category) == Some(Area::Intelligence))
+        );
     }
 }
