@@ -200,7 +200,7 @@ The action screen has one tab per kind (Recovery, Implementation, Maintenance, O
 | Team offsite | 5 | Medium | Very large burnout recovery; reduced watch for the week |
 | Brief leadership | 1 | None | Trust boost; the CIO may assign a pet project |
 | Post job openings | 1 | $10K | Starts a candidate search; resumes arrive 14 days after posting (section 4.3) |
-| Vendor casino night | 0 | $2K, $4K, or $10K in chips | Once a week. A 5x5 slot machine; each of the 1, 3, or 5 bet lines costs $100 a spin. Five of a kind wins the chosen prize, one of 3 unowned tools or services (3 in 100 under $30K, 2 in 100 up to $60K, 1 in 100 above), and returns the chips. Four of a kind pays $125 (1 in 10). Busting forfeits the change; leaving early forfeits half |
+| Vendor casino night | 0 | $2K, $4K, or $10K in chips | Once a week. A 5x5 slot machine; each of the 1, 3, or 5 bet lines costs $100 a spin. Five of a kind wins the chosen prize, one of 3 unowned tools or services (1 in 200 under $30K, 1 in 300 up to $60K, 1 in 400 above), and returns the chips. Four of a kind pays $125 (1 in 10). Busting forfeits the change; leaving early forfeits half |
 
 ### 7.1 Operations
 

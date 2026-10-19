@@ -37,12 +37,12 @@ pub fn prizes(owned: &[Item], seed: u32) -> Vec<Item> {
     picked
 }
 
-/// Jackpot odds per bet line, in 100: longer for pricier prizes.
+/// Jackpot odds per bet line, 1 in this many: longer for pricier prizes.
 pub fn odds(prize: Item) -> u32 {
     match prize.price() {
-        ..30_000 => 3,
-        30_000..=60_000 => 2,
-        _ => 1,
+        ..30_000 => 200,
+        30_000..=60_000 => 300,
+        _ => 400,
     }
 }
 
@@ -143,7 +143,7 @@ impl Casino {
         self.jackpot = false;
         for row in 0..5 {
             let matches = if bet.lines().contains(&row) {
-                if self.below(100) < odds(self.prize) {
+                if self.below(odds(self.prize)) == 0 {
                     self.jackpot = true;
                     5
                 } else if self.below(CASH_ODDS) == 0 {
@@ -259,10 +259,10 @@ mod tests {
 
     #[test]
     fn pricier_prizes_have_longer_odds() {
-        assert_eq!(odds(Item::Posters), 3);
-        assert_eq!(odds(Item::IntelFeeds), 2);
-        assert_eq!(odds(Item::Edr), 2);
-        assert_eq!(odds(Item::Siem), 1);
+        assert_eq!(odds(Item::Posters), 200);
+        assert_eq!(odds(Item::IntelFeeds), 300);
+        assert_eq!(odds(Item::Edr), 300);
+        assert_eq!(odds(Item::Siem), 400);
     }
 
     #[test]
@@ -305,9 +305,9 @@ mod tests {
                 casino.end = None;
             }
         }
-        // 500,000 lines: about 15,000 jackpots at 3 in 100, and cash back 1 in 10 of the rest.
-        assert!((14_000..16_000).contains(&jackpots), "{jackpots}");
-        assert!((47_000..50_000).contains(&cash), "{cash}");
+        // 500,000 lines: about 2,500 jackpots at 1 in 200, and cash back 1 in 10 of the rest.
+        assert!((2_200..2_800).contains(&jackpots), "{jackpots}");
+        assert!((48_500..51_000).contains(&cash), "{cash}");
         assert!(spins == 500_000);
     }
 

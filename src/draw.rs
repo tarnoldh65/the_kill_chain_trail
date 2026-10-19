@@ -1912,7 +1912,7 @@ fn dollars(amount: i64) -> String {
 
 /// Jackpot odds as the casino prints them, like "1 in 5,000".
 fn odds_label(prize: Item) -> String {
-    format!("{} in 100", casino::odds(prize))
+    format!("1 in {}", casino::odds(prize))
 }
 
 fn chips_popup(font: &Font, budget: i64) {
