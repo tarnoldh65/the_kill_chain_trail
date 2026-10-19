@@ -508,9 +508,9 @@ Rules:
 
 | Prize price | Jackpot odds per line |
 |---|---|
-| Under $30K | 3 in 100 |
-| $30K-$60K | 2 in 100 |
-| Over $60K | 1 in 100 |
+| Under $30K | 1 in 200 |
+| $30K-$60K | 1 in 300 |
+| Over $60K | 1 in 400 |
 
 - The machine is a 5x5 grid: 5 reels, and the 5 rows are the betting lines. Each line costs $100 per spin. The player bets on the center line (1, $100), the center three (3, $300), or all five (5, $500), and only when the chips cover it.
 - Each bet line is a separate bet, rolled on its own: the jackpot at the prize's odds, otherwise cash back 1 in 10, paying 1.25 times the line's bet ($125). Five matching symbols on a line show a jackpot; four in a row show cash back.
@@ -531,7 +531,7 @@ Tasks:
 Success criteria:
 - [x] Casino night is offered from day 1 when affordable, at most once per week, and never without a prize to win (unit tested).
 - [x] The stake comes out of the budget, only affordable stakes are offered, and B backs out (unit tested).
-- [x] Prizes are 3 distinct items not owned, never coffee, with odds of 3, 2, or 1 in 100 by price (unit tested).
+- [x] Prizes are 3 distinct items not owned, never coffee, with odds of 1 in 200, 300, or 400 by price (unit tested).
 - [x] A spin costs $100 per line, is refused when the chips cannot cover it, and pays $125 per cash-back line (unit tested).
 - [x] Over many spins, jackpot and cash-back rates match their odds within tolerance (unit tested).
 - [x] Bet lines show five matches only for a jackpot and four only for cash back; unbet lines sometimes show four or five, and three matches are common (unit tested).
