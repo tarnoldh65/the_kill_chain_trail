@@ -21,8 +21,11 @@ mod ui;
 use audio::Audio;
 use draw::{HEIGHT, WIDTH};
 use macroquad::prelude::*;
+use std::time::{Duration, Instant};
 use street::Hop;
 use ui::{Cue, Input, Music, Screen};
+
+const FRAME: Duration = Duration::from_micros(16_667);
 
 fn conf() -> Conf {
     Conf {
@@ -30,6 +33,10 @@ fn conf() -> Conf {
         window_width: WIDTH as i32,
         window_height: HEIGHT as i32,
         window_resizable: true,
+        platform: miniquad::conf::Platform {
+            swap_interval: Some(1),
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -105,6 +112,7 @@ async fn main() {
     audio.play_music(options.music);
     let mut screen = Screen::Title;
     let mut scores = scores::load();
+    let mut last_frame = Instant::now();
 
     loop {
         for input in inputs() {
@@ -154,5 +162,8 @@ async fn main() {
         );
 
         next_frame().await;
+        // Hold to 60 fps when the driver ignores vsync, so the loop never spins a core flat out.
+        std::thread::sleep(FRAME.saturating_sub(last_frame.elapsed()));
+        last_frame = Instant::now();
     }
 }
