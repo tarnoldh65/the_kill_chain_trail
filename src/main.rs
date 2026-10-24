@@ -21,10 +21,12 @@ mod ui;
 use audio::Audio;
 use draw::{HEIGHT, WIDTH};
 use macroquad::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 use street::Hop;
 use ui::{Cue, Input, Music, Screen};
 
+#[cfg(not(target_arch = "wasm32"))]
 const FRAME: Duration = Duration::from_micros(16_667);
 
 fn conf() -> Conf {
@@ -112,6 +114,7 @@ async fn main() {
     audio.play_music(options.music);
     let mut screen = Screen::Title;
     let mut scores = scores::load();
+    #[cfg(not(target_arch = "wasm32"))]
     let mut last_frame = Instant::now();
 
     loop {
@@ -163,7 +166,11 @@ async fn main() {
 
         next_frame().await;
         // Hold to 60 fps when the driver ignores vsync, so the loop never spins a core flat out.
-        std::thread::sleep(FRAME.saturating_sub(last_frame.elapsed()));
-        last_frame = Instant::now();
+        // The browser paces frames itself, and wasm has no clock or sleep to do it with.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::thread::sleep(FRAME.saturating_sub(last_frame.elapsed()));
+            last_frame = Instant::now();
+        }
     }
 }
