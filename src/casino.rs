@@ -352,7 +352,7 @@ mod tests {
             .map(|seed| {
                 let mut casino = Casino::new(Item::Siem, 2_000, seed);
                 while casino.end.is_none() {
-                    casino.spin(Bet::All);
+                    casino.spin(Bet::Center);
                     finish(&mut casino);
                 }
                 casino
